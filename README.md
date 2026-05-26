@@ -8,6 +8,21 @@ Hone is a Chrome Extension (Manifest V3) that provides AI-powered writing tools 
 
 The project is structured into three main execution environments, coordinated via Chrome's messaging system and shared storage.
 
+### 🧩 System Flow
+```mermaid
+graph TD
+    User([User]) -->|Focus Field| Content[Content Script]
+    Content -->|Capture Text| Adapter[Editor Adapter]
+    User -->|Keyboard Shortcut| BG[Background Worker]
+    BG -->|Command Message| Content
+    Content -->|PROCESS_TEXT| BG
+    BG -->|AI Request| AI[AI Provider API]
+    AI -->|Rewritten Text| BG
+    BG -->|Result| Content
+    Content -->|Preview/Apply| User
+    Content -->|Transaction| Editor[Web Page Editor]
+```
+
 ### 1. Content Script (`src/content/`)
 Injected into every webpage. It handles UI rendering, user interaction, and editor manipulation.
 - **Shadow DOM Isolation**: The UI is encapsulated in a Shadow Root to prevent style leaks. See [index.tsx](file:///disk2/desktop/extensions-A/src/content/index.tsx).
@@ -40,45 +55,51 @@ Actions are managed by the [ActionRegistry](file:///disk2/desktop/extensions-A/s
 - **Built-in Actions**: *Improve*, *Paraphrase*, *Fix Spelling*, *Tone Adjustments*, and *Length Adjustments*.
 - **Custom Actions**: Users can define their own prompt templates (using `{{input}}` placeholders), models, and icons. These are stored in `chrome.storage.local`.
 
-### **Data Persistence**
-See [storage.ts](file:///disk2/desktop/extensions-A/src/content/storage.ts) for implementation.
-- **Settings**: Stored in `chrome.storage.local`.
-- **History**: Stored in **IndexedDB** to handle large volumes of previous rewrites efficiently.
+---
+
+## 📂 Detailed File Tree & Responsibilities
+
+```text
+src/
+├── background/
+│   └── service-worker.ts      # [Core] AI provider routing, History management, Chrome Command listeners.
+│                              # Functions: callAIProvider(), fetchOpenRouter(), saveToHistory().
+├── components/
+│   ├── ui/                    # [UI] Reusable Radix-based primitive components (Button, Card, Input, etc.).
+│   ├── action-icon-select.tsx # [UI] Icon picker for custom actions.
+│   └── hone-logo.tsx          # [UI] Brand assets.
+├── content/
+│   ├── actions.ts             # [Logic] ActionRegistry class. Manages built-in/custom prompts & icons.
+│   ├── adapters.ts            # [Logic] EditableAdapter interface & implementations (Native, ContentEditable).
+│   │                          # Functions: getSelection(), replaceRange(), getCaretRect().
+│   ├── api.ts                 # [Utility] Robust fetch wrapper with AbortSignal, timeouts, and streaming support.
+│   ├── app.tsx                # [Main] Root React component for the injected UI. Manages global state (menu, preview).
+│   │                          # Hooks: useGSAP, useEffect (config sync), useCallback (apply transformation).
+│   ├── content.css            # [Styles] Scoped styles for the Shadow DOM container.
+│   ├── editor-detection.ts    # [Logic] Fingerprinting for Slate, Lexical, and Native editors.
+│   ├── index.tsx              # [Entry] Mounts the React app into a Shadow Root with style isolation.
+│   ├── keyboard-guard.ts      # [Logic] Prevents activation keys (Enter, Space) from leaking to host pages during preview.
+│   ├── plain-text-dom.ts      # [Logic] DOM Range/Selection utilities for mapping plain text offsets to DOM nodes.
+│   ├── positioning.ts         # [UI] Floating-UI integration for anchoring the menu to the text caret.
+│   ├── preview-panel.tsx      # [UI] "Before/After" review panel for AI transformations.
+│   ├── storage.ts             # [Data] Chrome Storage & IndexedDB (for History) abstraction layer.
+│   └── transaction-engine.ts  # [Logic] Low-level framework commits (Slate React Fiber traversal, BeforeInput).
+├── lib/
+│   ├── action-icons.tsx       # [UI] Dynamic Lucide icon renderer for actions.
+│   ├── shortcuts.ts           # [Utility] Formatting and labeling for keyboard shortcuts.
+│   └── utils.ts               # [Utility] Tailwind-merge and Class-variance-authority helpers.
+├── options/                   # [Page] Extension settings page (React).
+└── popup/                     # [Page] Extension popup menu (React).
+```
 
 ---
 
 ## 🚀 Development & Build
 
-### **Prerequisites**
-- Node.js & npm
-- Chrome/Edge browser
-
-### **Scripts**
-- `npm run dev`: Starts Vite dev server.
-- `npm run build`: Full build of all entries (pages, background, content).
-- `npm run build:background`: Build only the service worker.
-- `npm run build:content`: Build only the content script.
-
 ### **Vite Multi-Entry Configuration**
 The project uses a custom [vite.config.ts](file:///disk2/desktop/extensions-A/vite.config.ts) that handles different build targets (popup, options, background, content) using environment variables (e.g., `ENTRY=background`).
 
----
-
-## 🎨 Design System
-- **UI Components**: Built with [Radix UI](https://www.radix-ui.com/) and [Shadcn UI](https://ui.shadcn.com/).
+### **Design System**
 - **Theming**: Tailwind CSS 4 with a "Dark Mode" first approach.
-- **Icons**: [Lucide React](https://lucide.dev/).
 - **Typography**: [Geist](https://vercel.com/font) and [Outfit](https://fonts.google.com/specimen/Outfit).
-
----
-
-## 📂 Directory Map
-- `src/assets/`: Static assets and icons.
-- `src/components/`: Shared React components.
-- `src/lib/`: Utility functions, icon rendering, and shortcut helpers.
-- `src/content/`:
-  - `app.tsx`: Main React controller for the injected UI.
-  - `adapters.ts`: Editor-specific logic.
-  - `transaction-engine.ts`: DOM/Framework mutation logic.
-  - `keyboard-guard.ts`: Intercepts keys to prevent host-page interference.
-- `src/background/`: Service worker logic.
+- **Primitives**: Radix UI for accessibility and performance.
