@@ -4,6 +4,8 @@ export type EditorFramework =
   | "native"
   | "lexical"
   | "slate"
+  | "prosemirror"
+  | "twitter"
   | "contenteditable";
 
 export function resolveEditorRoot(element: HTMLElement): HTMLElement {
@@ -16,6 +18,11 @@ export function resolveEditorRoot(element: HTMLElement): HTMLElement {
     "[data-slate-editor='true']",
   ) as HTMLElement | null;
   if (slate) return slate;
+
+  const proseMirror = element.closest(
+    ".ProseMirror",
+  ) as HTMLElement | null;
+  if (proseMirror) return proseMirror;
 
   let node: HTMLElement | null = null;
   if (element.isContentEditable) {
@@ -39,12 +46,20 @@ export function resolveEditorRoot(element: HTMLElement): HTMLElement {
 }
 
 export function detectEditorFramework(element: HTMLElement): EditorFramework {
+  const tag = element.tagName.toLowerCase();
+  if (tag === "textarea" || tag === "input") return "native";
+
+  if (
+    window.location.hostname.includes("twitter.com") ||
+    window.location.hostname.includes("x.com")
+  ) {
+    return "twitter";
+  }
+
   const root = resolveEditorRoot(element);
   if (root.closest('[data-lexical-editor="true"]')) return "lexical";
   if (root.closest("[data-slate-editor='true']")) return "slate";
-
-  const tag = element.tagName.toLowerCase();
-  if (tag === "textarea" || tag === "input") return "native";
+  if (root.closest(".ProseMirror")) return "prosemirror";
 
   return "contenteditable";
 }

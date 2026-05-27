@@ -3,54 +3,112 @@
  * It has direct access to the page's JavaScript context, including React Fibers.
  */
 
-interface SlateTransactionData {
-  type: "HONE_RUN_SLATE_TRANSACTION";
-  targetId: string;
-  replacement: string;
-}
+
 
 window.addEventListener("message", (event) => {
-  if (event.source !== window || event.data?.type !== "HONE_RUN_SLATE_TRANSACTION") {
+  if (event.source !== window) {
     return;
   }
 
-  const { targetId, replacement } = event.data as SlateTransactionData;
-  const element = document.getElementById(targetId);
+  if (event.data?.type === "HONE_RUN_SLATE_TRANSACTION") {
+    const { targetId, replacement } = event.data;
+    const element = document.getElementById(targetId);
 
-  if (!element) {
-    window.postMessage({ type: "HONE_TRANSACTION_RESULT", success: false, error: "Element not found" }, "*");
-    return;
-  }
-
-  try {
-    const fiberKey = Object.keys(element).find(
-      (k) => k.startsWith("__reactFiber$") || k.startsWith("__reactInternalInstance$")
-    );
-
-    if (!fiberKey) {
-      window.postMessage({ type: "HONE_TRANSACTION_RESULT", success: false, error: "React Fiber not found" }, "*");
+    if (!element) {
+      window.postMessage({ type: "HONE_TRANSACTION_RESULT", success: false, error: "Element not found" }, "*");
       return;
     }
 
-    const fiber = (element as any)[fiberKey];
-    
-    // Find Slate instance by traversing up/down the fiber tree
-    const editor = findSlateEditorInFiber(fiber);
+    try {
+      const fiberKey = Object.keys(element).find(
+        (k) => k.startsWith("__reactFiber$") || k.startsWith("__reactInternalInstance$")
+      );
 
-    if (editor) {
-      // Apply the transformation
-      if (editor.deleteFragment && typeof editor.deleteFragment === "function") {
-        editor.deleteFragment();
+      if (!fiberKey) {
+        window.postMessage({ type: "HONE_TRANSACTION_RESULT", success: false, error: "React Fiber not found" }, "*");
+        return;
       }
-      editor.insertText(replacement);
-      if (editor.onChange) editor.onChange();
-      
-      window.postMessage({ type: "HONE_TRANSACTION_RESULT", success: true }, "*");
-    } else {
-      window.postMessage({ type: "HONE_TRANSACTION_RESULT", success: false, error: "Slate editor not found in fiber" }, "*");
+
+      const fiber = (element as any)[fiberKey];
+      const editor = findSlateEditorInFiber(fiber);
+
+      if (editor) {
+        if (editor.deleteFragment && typeof editor.deleteFragment === "function") {
+          editor.deleteFragment();
+        }
+        editor.insertText(replacement);
+        if (editor.onChange) editor.onChange();
+        
+        window.postMessage({ type: "HONE_TRANSACTION_RESULT", success: true }, "*");
+      } else {
+        window.postMessage({ type: "HONE_TRANSACTION_RESULT", success: false, error: "Slate editor not found in fiber" }, "*");
+      }
+    } catch (err: any) {
+      window.postMessage({ type: "HONE_TRANSACTION_RESULT", success: false, error: err.message }, "*");
     }
-  } catch (err: any) {
-    window.postMessage({ type: "HONE_TRANSACTION_RESULT", success: false, error: err.message }, "*");
+  } else if (event.data?.type === "HONE_RUN_REACT_INPUT_TRANSACTION") {
+    const { targetId, newValue } = event.data;
+    const element = document.getElementById(targetId) as HTMLInputElement | HTMLTextAreaElement | null;
+
+    if (!element) {
+      window.postMessage({ type: "HONE_TRANSACTION_RESULT", success: false, error: "Element not found" }, "*");
+      return;
+    }
+
+    try {
+      const prototype = element instanceof HTMLTextAreaElement 
+        ? window.HTMLTextAreaElement.prototype 
+        : window.HTMLInputElement.prototype;
+      const valueSetter = Object.getOwnPropertyDescriptor(prototype, "value")?.set;
+      if (valueSetter) {
+        valueSetter.call(element, newValue);
+      } else {
+        element.value = newValue;
+      }
+
+      const fiberKey = Object.keys(element).find(
+        (k) => k.startsWith("__reactFiber$") || k.startsWith("__reactInternalInstance$")
+      );
+
+      if (fiberKey) {
+        let node = (element as any)[fiberKey];
+        while (node) {
+          const props = node.memoizedProps;
+          if (props) {
+            if (typeof props.onChangeText === 'function') {
+              props.onChangeText(newValue);
+              break;
+            }
+            if (typeof props.onChange === 'function') {
+              props.onChange({
+                target: element,
+                currentTarget: element,
+                preventDefault() {},
+                stopPropagation() {}
+              });
+              break;
+            }
+            if (typeof props.onInput === 'function') {
+              props.onInput({
+                target: element,
+                currentTarget: element,
+                preventDefault() {},
+                stopPropagation() {}
+              });
+              break;
+            }
+          }
+          node = node.return;
+        }
+      }
+
+      element.dispatchEvent(new Event("input", { bubbles: true }));
+      element.dispatchEvent(new Event("change", { bubbles: true }));
+
+      window.postMessage({ type: "HONE_TRANSACTION_RESULT", success: true }, "*");
+    } catch (err: any) {
+      window.postMessage({ type: "HONE_TRANSACTION_RESULT", success: false, error: err.message }, "*");
+    }
   }
 });
 

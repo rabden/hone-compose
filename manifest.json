@@ -1,26 +1,18 @@
 {
   "manifest_version": 3,
   "name": "Hone",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "description": "Hone every field you type in. AI writing tools for inputs and textareas across the web.",
-  "permissions": [
-    "storage"
-  ],
-  "host_permissions": [
-    "<all_urls>"
-  ],
+  "permissions": ["storage"],
+  "host_permissions": ["<all_urls>"],
   "background": {
     "service_worker": "background.js",
     "type": "module"
   },
   "content_scripts": [
     {
-      "matches": [
-        "<all_urls>"
-      ],
-      "js": [
-        "content.js"
-      ],
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
       "run_at": "document_end"
     }
   ],
@@ -45,12 +37,8 @@
   },
   "web_accessible_resources": [
     {
-      "resources": [
-        "main-world-bridge.js"
-      ],
-      "matches": [
-        "<all_urls>"
-      ]
+      "resources": ["main-world-bridge.js"],
+      "matches": ["<all_urls>"]
     }
   ]
 }

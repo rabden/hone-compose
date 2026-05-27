@@ -1,0 +1,139 @@
+import React, { createContext, useContext, useEffect, useRef } from 'react';
+import { cn } from '@/lib/utils';
+
+interface DialogContextType {
+    open: boolean;
+    onOpenChange: (open: boolean) => void;
+}
+
+const DialogContext = createContext<DialogContextType | null>(null);
+
+interface DialogProps {
+    open?: boolean;
+    onOpenChange?: (open: boolean) => void;
+    children: React.ReactNode;
+}
+
+export function Dialog({ open = false, onOpenChange = () => { }, children }: DialogProps) {
+    return (
+        <DialogContext.Provider value={{ open, onOpenChange }}>
+            {children}
+        </DialogContext.Provider>
+    );
+}
+
+interface DialogContentProps extends React.HTMLAttributes<HTMLElement> {
+    children: React.ReactNode;
+    /** Classes applied to the inner styled panel (background, size, padding, etc.) */
+    className?: string;
+    onOpened?: () => void;
+}
+
+export function DialogContent({ children, className, onOpened, ...props }: DialogContentProps) {
+    const context = useContext(DialogContext);
+    const dialogRef = useRef<any>(null);
+
+    if (!context) {
+        throw new Error("DialogContent must be used within a Dialog");
+    }
+
+    const { open, onOpenChange } = context;
+
+    // Sync React prop 'open' → Web Component property
+    useEffect(() => {
+        if (dialogRef.current) {
+            dialogRef.current.open = open;
+        }
+    }, [open]);
+
+    // Inject shadow root style override to prevent MWC's native scrollbar flashing during open/close transitions
+    useEffect(() => {
+        const dialog = dialogRef.current;
+        if (!dialog) return;
+
+        if (dialog.shadowRoot && !dialog.shadowRoot.querySelector('#mwc-scrollbar-fix')) {
+            const style = document.createElement('style');
+            style.id = 'mwc-scrollbar-fix';
+            style.textContent = `
+                .scroller {
+                    scrollbar-width: none !important;
+                }
+                .scroller::-webkit-scrollbar {
+                    display: none !important;
+                }
+            `;
+            dialog.shadowRoot.appendChild(style);
+        }
+    }, []);
+
+    // Listen for close/cancel events from md-dialog (Esc, scrim click)
+    useEffect(() => {
+        const dialog = dialogRef.current;
+        if (!dialog) return;
+
+        const handleClosed = () => {
+            if (open) onOpenChange(false);
+        };
+        const handleOpened = () => {
+            if (onOpened) onOpened();
+        };
+
+        dialog.addEventListener('closed', handleClosed);
+        dialog.addEventListener('cancel', handleClosed);
+        dialog.addEventListener('opened', handleOpened);
+
+        return () => {
+            dialog.removeEventListener('closed', handleClosed);
+            dialog.removeEventListener('cancel', handleClosed);
+            dialog.removeEventListener('opened', handleOpened);
+        };
+    }, [open, onOpenChange, onOpened]);
+
+    return (
+        // @ts-ignore - md-dialog is a custom element
+        <md-dialog ref={dialogRef} {...props}>
+            {/*
+             * We put everything inside slot="content" so the inner styled panel
+             * is the single source of truth for appearance.
+             * md-dialog's container is transparent (see CSS), so the panel
+             * below provides the actual background, border, shadow, and radius.
+             */}
+            <div
+                slot="content"
+                className={cn(
+                    // Default panel styles — override via className
+                    "bg-card border border-border/40 rounded-2xl shadow-2xl overflow-hidden w-full flex flex-col",
+                    className
+                )}
+            >
+                {children}
+            </div>
+        </md-dialog>
+    );
+}
+
+/**
+ * Renders the dialog headline/title.
+ * Note: intentionally does NOT use slot="headline" — the title renders
+ * inside the styled panel (slot="content") so it shares the same background.
+ */
+export function DialogTitle({ children, className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
+    return (
+        <div className={cn("px-6 pt-5 pb-4 border-b border-border/40", className)} {...props}>
+            {children}
+        </div>
+    );
+}
+
+export function DialogTrigger({ children }: any) {
+    const context = useContext(DialogContext);
+    if (!context) throw new Error("DialogTrigger must be used within a Dialog");
+
+    return (
+        <div onClick={() => context.onOpenChange(true)} className="contents cursor-pointer">
+            {children}
+        </div>
+    );
+}
+
+export { DialogContext };

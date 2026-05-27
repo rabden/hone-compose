@@ -58,7 +58,7 @@ export interface EditableAdapter {
    * @param text - The new text to insert
    * @param selectAll - If true, replace entire content instead of selection
    */
-  replaceSelection(text: string, selectAll?: boolean): void;
+  replaceSelection(text: string, selectAll?: boolean): void | Promise<void>;
 
   /**
    * Find-and-replace style edit: splice `replacement` into [start, end) only.
@@ -147,16 +147,112 @@ export class NativeInputAdapter implements EditableAdapter {
     };
   }
 
-  replaceSelection(text: string, selectAll?: boolean): void {
+  private async commitViaMainWorld(newValue: string): Promise<boolean> {
+    if (!this.element.id) {
+      this.element.id = `hone-input-${Math.random().toString(36).slice(2, 11)}`;
+    }
+
+    return new Promise((resolve) => {
+      const handleResult = (event: MessageEvent) => {
+        if (event.source !== window || event.data?.type !== "HONE_TRANSACTION_RESULT") return;
+        
+        window.removeEventListener("message", handleResult);
+        resolve(!!event.data.success);
+      };
+
+      window.addEventListener("message", handleResult);
+
+      window.postMessage({
+        type: "HONE_RUN_REACT_INPUT_TRANSACTION",
+        targetId: this.element.id,
+        newValue: newValue
+      }, "*");
+
+      // Safety timeout
+      setTimeout(() => {
+        window.removeEventListener("message", handleResult);
+        resolve(false);
+      }, 150);
+    });
+  }
+
+  async replaceSelection(text: string, selectAll?: boolean): Promise<void> {
+    const oldValue = this.element.value;
     if (selectAll) {
-      this.element.value = text;
+      // Try Main World Bridge first (traverses React Fiber to invoke state updates)
+      const success = await this.commitViaMainWorld(text);
+      if (success) {
+        return;
+      }
+
+      this.element.focus();
+      this.element.select();
+
+      // Try execCommand first (mimics user typing, preserves undo/redo)
+      try {
+        if (document.execCommand("insertText", false, text)) {
+          this.element.dispatchEvent(new Event("change", { bubbles: true }));
+          return;
+        }
+      } catch {
+        // ignore and fall back
+      }
+
+      // Fallback
+      const valueSetter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(this.element), "value")?.set;
+      if (valueSetter) {
+        valueSetter.call(this.element, text);
+      } else {
+        this.element.value = text;
+      }
+      const tracker = (this.element as any)._valueTracker;
+      if (tracker) {
+        tracker.setValue(oldValue);
+      }
+      this.element.dispatchEvent(new Event("input", { bubbles: true }));
+      this.element.dispatchEvent(new Event("change", { bubbles: true }));
     } else {
       const start = this.element.selectionStart ?? 0;
       const end = this.element.selectionEnd ?? 0;
-      const before = this.element.value.substring(0, start);
-      const after = this.element.value.substring(end);
-      this.element.value = before + text + after;
-      this.element.setSelectionRange(start + text.length, start + text.length);
+      const newValue = oldValue.substring(0, start) + text + oldValue.substring(end);
+
+      // Try Main World Bridge first (traverses React Fiber to invoke state updates)
+      const success = await this.commitViaMainWorld(newValue);
+      if (success) {
+        const caret = start + text.length;
+        this.element.setSelectionRange(caret, caret);
+        return;
+      }
+
+      this.element.focus();
+
+      // Try execCommand first (mimics user typing, preserves undo/redo)
+      try {
+        if (document.execCommand("insertText", false, text)) {
+          this.element.dispatchEvent(new Event("change", { bubbles: true }));
+          return;
+        }
+      } catch {
+        // ignore and fall back
+      }
+
+      // Fallback
+      const valueSetter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(this.element), "value")?.set;
+      if (valueSetter) {
+        valueSetter.call(this.element, newValue);
+      } else {
+        this.element.value = newValue;
+      }
+
+      const tracker = (this.element as any)._valueTracker;
+      if (tracker) {
+        tracker.setValue(oldValue);
+      }
+
+      const caret = start + text.length;
+      this.element.setSelectionRange(caret, caret);
+      this.element.dispatchEvent(new Event("input", { bubbles: true }));
+      this.element.dispatchEvent(new Event("change", { bubbles: true }));
     }
   }
 
@@ -171,11 +267,46 @@ export class NativeInputAdapter implements EditableAdapter {
     if (!located) return false;
 
     const { start: s, end: e } = located;
-    this.element.value =
-      full.substring(0, s) + replacement + full.substring(e);
+    const newValue = full.substring(0, s) + replacement + full.substring(e);
+
+    // Try Main World Bridge first (traverses React Fiber to invoke state updates)
+    const success = await this.commitViaMainWorld(newValue);
+    if (success) {
+      const caret = s + replacement.length;
+      this.element.setSelectionRange(caret, caret);
+      return true;
+    }
+
+    this.element.focus();
+    this.element.setSelectionRange(s, e);
+
+    // Try execCommand first (mimics user typing, preserves undo/redo)
+    try {
+      if (document.execCommand("insertText", false, replacement)) {
+        this.element.dispatchEvent(new Event("change", { bubbles: true }));
+        return true;
+      }
+    } catch {
+      // ignore and fall back
+    }
+
+    // Fallback
+    const valueSetter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(this.element), "value")?.set;
+    if (valueSetter) {
+      valueSetter.call(this.element, newValue);
+    } else {
+      this.element.value = newValue;
+    }
+
+    const tracker = (this.element as any)._valueTracker;
+    if (tracker) {
+      tracker.setValue(full);
+    }
+
     const caret = s + replacement.length;
     this.element.setSelectionRange(caret, caret);
-    this.element.focus();
+    this.element.dispatchEvent(new Event("input", { bubbles: true }));
+    this.element.dispatchEvent(new Event("change", { bubbles: true }));
     return true;
   }
 
@@ -727,6 +858,26 @@ export function resolveContentEditableRoot(
 }
 
 /**
+ * SlateAdapter: Handles Slate.js editors
+ */
+export class SlateAdapter extends ContentEditableAdapter {}
+
+/**
+ * LexicalAdapter: Handles Lexical editors
+ */
+export class LexicalAdapter extends ContentEditableAdapter {}
+
+/**
+ * ProseMirrorAdapter: Handles ProseMirror editors
+ */
+export class ProseMirrorAdapter extends ContentEditableAdapter {}
+
+/**
+ * TwitterAdapter: Handles Twitter/X's custom editor
+ */
+export class TwitterAdapter extends ContentEditableAdapter {}
+
+/**
  * Detect and create the appropriate adapter for an element
  * @param element - The element to adapt
  * @returns An EditableAdapter instance, or null if not adaptable
@@ -747,15 +898,32 @@ export function createAdapter(element: Element | null): EditableAdapter | null {
   }
 
   const el = element as HTMLElement;
+  const root = resolveEditorRoot(el);
+
   if (
-    el.isContentEditable ||
-    el.closest('[contenteditable="true"], [contenteditable=""], [data-lexical-editor="true"], [data-slate-editor="true"]')
+    (window.location.hostname.includes("twitter.com") ||
+     window.location.hostname.includes("x.com")) &&
+    (el.isContentEditable || el.closest('[contenteditable="true"], [contenteditable=""]'))
   ) {
-    return new ContentEditableAdapter(resolveEditorRoot(el));
+    return new TwitterAdapter(root);
   }
 
-  // TODO: Add adapters for Monaco, CodeMirror, ProseMirror, Lexical, etc.
-  // For now, return null for unsupported editors
+  if (root.closest('[data-lexical-editor="true"]')) {
+    return new LexicalAdapter(root);
+  }
+  if (root.closest('[data-slate-editor="true"]')) {
+    return new SlateAdapter(root);
+  }
+  if (root.closest('.ProseMirror')) {
+    return new ProseMirrorAdapter(root);
+  }
+
+  if (
+    el.isContentEditable ||
+    el.closest('[contenteditable="true"], [contenteditable=""]')
+  ) {
+    return new ContentEditableAdapter(root);
+  }
 
   return null;
 }

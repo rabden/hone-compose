@@ -99,6 +99,15 @@ function normalizePlain(s: string): string {
   return s.replace(/\s+/g, " ").trim();
 }
 
+/**
+ * Yield execution to the browser event loop so editor frameworks
+ * (Slate, Draft.js, Lexical) can process focus / selectionchange events
+ * and synchronize their internal state with the DOM selection we just set.
+ */
+function delayForSelectionSync(ms = 30): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function verifyDomReplace(ctx: TransactionContext, maxWaitMs = 150): Promise<boolean> {
   const startTime = performance.now();
 
@@ -187,6 +196,10 @@ async function commitViaMainWorldSlate(ctx: TransactionContext): Promise<boolean
 
   if (!slateRoot) return false;
 
+  // Set DOM selection first so Slate can sync its internal selection
+  prepareDomSelection({ ...ctx, root: slateRoot });
+  await delayForSelectionSync();
+
   // Ensure it has an ID so we can find it in the Main World
   if (!slateRoot.id) {
     slateRoot.id = `hone-slate-${Math.random().toString(36).slice(2, 11)}`;
@@ -224,6 +237,7 @@ async function commitViaMainWorldSlate(ctx: TransactionContext): Promise<boolean
 /** Lexical / many CE: one beforeinput with insertReplacementText */
 async function commitViaBeforeInput(ctx: TransactionContext): Promise<boolean> {
   prepareDomSelection(ctx);
+  await delayForSelectionSync();
 
   try {
     const evt = new InputEvent("beforeinput", {
@@ -243,6 +257,7 @@ async function commitViaBeforeInput(ctx: TransactionContext): Promise<boolean> {
 /** Simulated paste — editors often commit this as a real transaction */
 async function commitViaPasteEvent(ctx: TransactionContext): Promise<boolean> {
   prepareDomSelection(ctx);
+  await delayForSelectionSync();
 
   try {
     const dt = new DataTransfer();
@@ -264,6 +279,7 @@ async function commitViaPasteEvent(ctx: TransactionContext): Promise<boolean> {
 /** Last resort for generic CE — can desync Slate (ghost state on Discord) */
 async function commitViaExecCommand(ctx: TransactionContext): Promise<boolean> {
   prepareDomSelection(ctx);
+  await delayForSelectionSync();
 
   try {
     if (!document.execCommand("insertText", false, ctx.replacement)) {
@@ -334,6 +350,40 @@ export async function applyEditorTransaction(
     }
     if (await commitViaExecCommand(ctx)) {
       return { committed: true, confidence: 0.6, suggestClipboardPaste: false };
+    }
+    return {
+      committed: false,
+      confidence: 0,
+      suggestClipboardPaste: true,
+    };
+  }
+
+
+  if (framework === "prosemirror") {
+    if (await commitViaPasteEvent(ctx)) {
+      return { committed: true, confidence: 0.9, suggestClipboardPaste: false };
+    }
+    if (await commitViaBeforeInput(ctx)) {
+      return { committed: true, confidence: 0.8, suggestClipboardPaste: false };
+    }
+    if (await commitViaExecCommand(ctx)) {
+      return { committed: true, confidence: 0.6, suggestClipboardPaste: false };
+    }
+    return {
+      committed: false,
+      confidence: 0,
+      suggestClipboardPaste: true,
+    };
+  }
+
+  if (framework === "twitter") {
+    // For Twitter/X's custom contenteditable, execCommand("insertText") is the most suitable
+    // basic browser API as it fires native events that React intercepts to update its state.
+    if (await commitViaExecCommand(ctx)) {
+      return { committed: true, confidence: 0.95, suggestClipboardPaste: false };
+    }
+    if (await commitViaPasteEvent(ctx)) {
+      return { committed: true, confidence: 0.8, suggestClipboardPaste: false };
     }
     return {
       committed: false,

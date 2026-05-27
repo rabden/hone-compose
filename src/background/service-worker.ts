@@ -13,12 +13,20 @@ interface HistoryItem {
   model: string;
 }
 
+function cleanAiResponse(text: string): string {
+  if (!text) return "";
+  return text
+    .replace(/<\/?(assistant|assitant|system|user|thought)>/gi, "")
+    .trim();
+}
+
 async function saveToHistory(item: Omit<HistoryItem, 'id' | 'timestamp'>) {
   try {
     const data = await chrome.storage.local.get('history') as any;
     const history = data.history || [];
     const newItem: HistoryItem = {
       ...item,
+      rewrittenText: cleanAiResponse(item.rewrittenText),
       id: crypto.randomUUID(),
       timestamp: Date.now()
     };
@@ -101,6 +109,11 @@ async function fetchOpenRouter(apiKey: string, model: string, prompt: string, sy
 
 // Helper to make API calls
 async function callAIProvider(actionId: string, text: string, url: string): Promise<string> {
+  const result = await callAIProviderRaw(actionId, text, url);
+  return cleanAiResponse(result);
+}
+
+async function callAIProviderRaw(actionId: string, text: string, url: string): Promise<string> {
   const [settings, registry] = await Promise.all([
     chrome.storage.local.get([
       'activeProvider',

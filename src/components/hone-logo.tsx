@@ -1,4 +1,4 @@
-import honeLogoUrl from "@/assets/hone-logo.svg";
+import honeLogoUrl from "@/assets/hone-logo.png";
 import { cn } from "@/lib/utils";
 
 interface HoneLogoProps {
