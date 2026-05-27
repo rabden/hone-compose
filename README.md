@@ -3,7 +3,7 @@
   
   # Hone — AI Writing Assistant for the Web
 
-  [![Chrome Web Store](https://img.shields.io/badge/Chrome_Web_Store-v0.0.0-blue?style=for-the-badge&logo=google-chrome&logoColor=white)](https://chrome.google.com/webstore)
+  [![Chrome Web Store](https://img.shields.io/badge/Chrome_Web_Store-v0.1.0-blue?style=for-the-badge&logo=google-chrome&logoColor=white)](https://chrome.google.com/webstore)
   [![Manifest V3](https://img.shields.io/badge/Manifest-V3-orange?style=for-the-badge&logo=web-extensions&logoColor=white)](https://developer.chrome.com/docs/extensions/mv3/intro/)
   [![React 19](https://img.shields.io/badge/React-19-61dafb?style=for-the-badge&logo=react&logoColor=black)](https://react.dev)
   [![Tailwind v4](https://img.shields.io/badge/Tailwind_CSS-v4.0-38bdf8?style=for-the-badge&logo=tailwind-css&logoColor=white)](https://tailwindcss.com)
@@ -45,7 +45,7 @@ graph TD
 Clone the repository and install dependencies:
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/hone.git
+git clone https://github.com/rabden/hone-extension.git
 cd hone
 
 # Install dependencies
