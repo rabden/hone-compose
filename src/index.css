@@ -68,8 +68,6 @@ md-dialog::part(scrim) {
 
 body {
     font-family: var(--font-sans);
-    background-color: #0b0f19;
-    color: #f1f5f9;
 }
 
 /* Custom Scrollbar */
@@ -136,7 +134,7 @@ body {
     --radius-2xl: calc(var(--radius) * 1.8);
     --radius-3xl: calc(var(--radius) * 2.2);
     --radius-4xl: calc(var(--radius) * 2.6);
-    --color-destructive-foreground: hsl(var(--destructive-foreground));
+    --color-destructive-foreground: var(--destructive-foreground);
     --color-color-sidebar-ring: var(----color-sidebar-ring);
     --color-color-sidebar-border: var(----color-sidebar-border);
     --color-color-sidebar-accent-foreground: var(
@@ -208,7 +206,7 @@ body {
     --sidebar-accent-foreground: oklch(0.205 0 0);
     --sidebar-border: oklch(0.922 0 0);
     --sidebar-ring: oklch(0.708 0 0);
-    --destructive-foreground: hsl(0 0% 100%);
+    --destructive-foreground: hsl(6, 100%, 98%);
 
     /* Material Web System Tokens */
     --md-sys-color-primary: var(--primary);
@@ -249,8 +247,8 @@ body {
     --md-sys-color-shadow: #000000;
 
     /* Typeface Tokens */
-    --md-ref-typeface-brand: 'Geist Variable', sans-serif;
-    --md-ref-typeface-plain: 'Geist Variable', sans-serif;
+    --md-ref-typeface-brand: "Geist Variable", sans-serif;
+    --md-ref-typeface-plain: "Geist Variable", sans-serif;
 
     /* Shape Tokens */
     --md-sys-shape-corner-none: 0px;
@@ -304,6 +302,7 @@ body {
     --sidebar-accent-foreground: oklch(0.985 0 0);
     --sidebar-border: oklch(1 0 0 / 10%);
     --sidebar-ring: oklch(0.556 0 0);
+    --destructive-foreground: hsl(355, 100%, 14%);
 
     /* Material Web Tokens Mapping (Dark Mode) */
     --md-sys-color-primary: var(--primary);
@@ -334,9 +333,9 @@ body {
     --md-sys-color-outline: var(--border);
     --md-sys-color-outline-variant: var(--input);
     --md-sys-color-error: var(--destructive);
-    --md-sys-color-on-error: var(--background);
+    --md-sys-color-on-error: var(--destructive-foreground);
     --md-sys-color-error-container: var(--destructive);
-    --md-sys-color-on-error-container: var(--foreground);
+    --md-sys-color-on-error-container: var(--destructive-foreground);
     --md-sys-color-inverse-surface: var(--foreground);
     --md-sys-color-inverse-on-surface: var(--background);
     --md-sys-color-inverse-primary: var(--primary-foreground);

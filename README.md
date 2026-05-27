@@ -3,42 +3,19 @@
 
   # Hone — AI Writing Assistant for the Web
 
-  [![Chrome Web Store](https://img.shields.io/badge/Chrome_Web_Store-v0.1.0-blue?style=for-the-badge&logo=google-chrome&logoColor=white)](https://chrome.google.com/webstore)
   [![Manifest V3](https://img.shields.io/badge/Manifest-V3-orange?style=for-the-badge&logo=web-extensions&logoColor=white)](https://developer.chrome.com/docs/extensions/mv3/intro/)
-  [![React 19](https://img.shields.io/badge/React-19-61dafb?style=for-the-badge&logo=react&logoColor=black)](https://react.dev)
-  [![Tailwind v4](https://img.shields.io/badge/Tailwind_CSS-v4.0-38bdf8?style=for-the-badge&logo=tailwind-css&logoColor=white)](https://tailwindcss.com)
+  [![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
+  [![React](https://img.shields.io/badge/React-19-61dafb?style=for-the-badge&logo=react&logoColor=black)](https://react.dev)
+  [![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-v4-38bdf8?style=for-the-badge&logo=tailwind-css&logoColor=white)](https://tailwindcss.com)
+  [![shadcn/ui](https://img.shields.io/badge/shadcn/ui-000000?style=for-the-badge&logo=shadcnui&logoColor=white)](https://ui.shadcn.com)
+  [![Radix UI](https://img.shields.io/badge/Radix_UI-161618?style=for-the-badge&logo=radix-ui&logoColor=white)](https://www.radix-ui.com)
+  [![Lucide](https://img.shields.io/badge/Lucide-F56565?style=for-the-badge&logo=lucide&logoColor=white)](https://lucide.dev)
+  [![Material Web](https://img.shields.io/badge/Material_Web-6750A4?style=for-the-badge&logo=materialdesign&logoColor=white)](https://material-web.dev)
 
   **Hone is a professional-grade browser extension that brings modern LLM capabilities directly into any text box, editor, or textarea on the web.**
 </div>
 
 ---
-
-<br>
-
-## 📸 Showcase
-
-<table>
-  <tr>
-    <td width="33%" align="center">
-      <img src="./src/assets/popup.png" alt="Hone Popup UI" width="100%" style="border-radius:12px;border:1px solid #333;" />
-      <br><br>
-      <strong>Extension Popup</strong><br>
-      <span style="font-size:13px;color:#888;">Active engine, shortcuts & quick settings</span>
-    </td>
-    <td width="33%" align="center">
-      <img src="./src/assets/dashboard.png" alt="Hone Dashboard" width="100%" style="border-radius:12px;border:1px solid #333;" />
-      <br><br>
-      <strong>Options Dashboard</strong><br>
-      <span style="font-size:13px;color:#888;">Status overview, metrics & recent activity</span>
-    </td>
-    <td width="33%" align="center">
-      <img src="./src/assets/extension.png" alt="Hone Extension in Action" width="100%" style="border-radius:12px;border:1px solid #333;" />
-      <br><br>
-      <strong>In Action</strong><br>
-      <span style="font-size:13px;color:#888;">Floating menu over a web text field</span>
-    </td>
-  </tr>
-</table>
 
 <br>
 
@@ -110,7 +87,7 @@ Expand brief notes into detailed, thorough prose.
 </table>
 
 <p align="center">
-  <strong>+ Custom actions</strong> — build your own AI prompts with custom icons, colors, per-action providers, and a preview-before-replace mode.
+  <strong>+ 🛠️ Custom Actions</strong> — the real power of Hone. Build your own AI tools tailored to your workflow. Assign them icons, colors, even per-action models. <em>This is what makes an open-source tool truly open-source — you're not stuck with what we built, you build what you need.</em>
 </p>
 
 ---
@@ -138,8 +115,8 @@ Hone works wherever you type on the web. Here's what it does in plain language:
   <dt><strong>🗂️ Drafting a Notion doc or Google Doc</strong></dt>
   <dd>Write freely first, then refine sentence by sentence using any Hone action — no context switching to another tab or tool.</dd>
 
-  <dt><strong>🎨 Creating custom writing recipes</strong></dt>
-  <dd>Use <em>Actions Studio</em> to build a prompt like "Translate this to Spanish but keep the tone casual" and assign it a custom icon and shortcut. It shows up in your menu alongside the built-in actions.</dd>
+  <dt><strong>🎨 Creating custom writing tools</strong></dt>
+  <dd><em>Actions Studio</em> lets you build your own AI-powered text tools. For example: create a <strong>"Summarize"</strong> action with the prompt <code>Summarize the following text into 3 bullet points: {{input}}</code>, assign it a <em>FileText</em> icon in purple, and bind it to <kbd>Alt+Shift+S</kbd>. It appears in your menu just like a built-in action — except you designed it for exactly what you need.</dd>
 
   <dt><strong>🔍 Reviewing before committing</strong></dt>
   <dd>Enable <em>Preview before replacing</em> on any action to see a before/after panel before applying changes to your text.</dd>
@@ -166,33 +143,21 @@ Hone is provider-agnostic. Bring your own API key — or use the preconfigured f
 
 ## 🎨 Interactive Flow
 
-```
-  User focuses a text field
-           │
-    ┌──────▼──────┐
-    │  ✨ Hone     │  ← Purple sparkle dot appears beside the caret
-    │  Trigger Dot │     (hide it in settings for keyboard-only mode)
-    └──────┬──────┘
-           │ click or press Alt+Shift+D
-    ┌──────▼──────┐
-    │  Action     │  ← Floating menu with all available actions
-    │  Menu       │     (improve, paraphrase, fix, tone, length, custom)
-    └──────┬──────┘
-           │ select an action
-    ┌──────▼──────┐
-    │  AI Engine  │  ← Your configured provider processes the text
-    │  (provider) │     (OpenAI / Anthropic / Gemini / OpenRouter)
-    └──────┬──────┘
-           │ result returned
-    ┌──────▼──────┐
-    │  Preview    │  ← Optional before/after comparison panel
-    │  Panel      │     (accept or discard)
-    └──────┬──────┘
-           │ accept
-    ┌──────▼──────┐
-    │  Text       │  ← Rewritten text committed in-place
-    │  Replaced   │     (native input, Slate, Lexical, ProseMirror, or generic)
-    └─────────────┘
+```mermaid
+graph TD
+    User([User]) -->|Focuses text field| Trigger[✨ Hone Trigger Dot]
+    Trigger -->|Click / Alt+Shift+D| Menu[Floating Action Menu]
+    Menu -->|Select action| Engine[AI Provider Engine]
+    Engine -->|Returns result| Preview[Before/After Preview Panel]
+    Preview -->|Accept| Replace[Text Replaced In-Place]
+    Preview -->|Discard| User
+
+    style User fill:none,stroke:#666,stroke-width:2
+    style Trigger fill:#1e1e2e,stroke:#cba6f7,stroke-width:2
+    style Menu fill:#1e1e2e,stroke:#cba6f7,stroke-width:2
+    style Engine fill:#1e1e2e,stroke:#89b4fa,stroke-width:2
+    style Preview fill:#1e1e2e,stroke:#a6e3a1,stroke-width:2
+    style Replace fill:#1e1e2e,stroke:#f9e2af,stroke-width:2
 ```
 
 ---
@@ -214,13 +179,22 @@ Hone is provider-agnostic. Bring your own API key — or use the preconfigured f
 | **Longer** | Expands text with relevant detail and descriptive depth |
 | **Custom actions** | User-defined prompts with custom icon, color, provider, model, and temperature |
 
-### Actions Studio
+### 🛠️ Actions Studio — Build Your Own Tools
 
-Build your own AI writing recipes from the Options page:
+Hone isn't limited to what we built. The **Actions Studio** is the heart of the project — it lets anyone create custom AI-powered text tools without writing code. You define the prompt, pick an icon and color, and it sits in your menu alongside the built-in actions. **That's the point: an open-source tool that you shape to fit your workflow, not the other way around.**
 
+**Example — a "Summarize" tool:**
+1. Click **Create New Action** in Actions Studio
+2. Name it `Summarize`
+3. Set the prompt template to: `Summarize this into 3 concise bullet points:\n\n{{input}}`
+4. Pick the `FileText` icon, set color to purple
+5. Optionally assign it to a specific provider/model
+6. Save — it's now in your action menu on any website
+
+**Everything you can configure:**
 - **Prompt templates** with `{{input}}` variable — the selected text gets injected at rewrite time
 - **System prompts** — set context/role instructions for the AI
-- **Icon picker** — choose from Lucide icons to identify your action
+- **Icon picker** — choose from 100+ Lucide icons to identify your action
 - **Accent color** — pick from 8 preset colors for visual distinction
 - **Per-action provider** — override the global provider for a specific action
 - **Per-action model** — target a specific model for this action only
@@ -278,6 +252,43 @@ The Options page gives you full control:
 - **Spring physics** — `cubic-bezier(0.175, 0.885, 0.32, 1.275)` for natural, bouncy micro-interactions
 - **Web Audio API haptics** — buttons and switches produce tactile audio feedback
 - **Trigger dot** — purple sparkle icon that appears when you focus any text field (toggleable)
+
+---
+
+## 📸 Showcase
+
+<table>
+  <tr>
+    <td width="50%" align="center">
+      <img src="./src/assets/popup.png" alt="Hone Popup UI" width="100%" style="border-radius:12px;border:1px solid #333;" />
+      <br><br>
+      <strong>Extension Popup</strong><br>
+      <span style="font-size:13px;color:#888;">Active engine, shortcuts & quick settings</span>
+    </td>
+    <td width="50%" align="center">
+      <img src="./src/assets/dashboard.png" alt="Hone Dashboard" width="100%" style="border-radius:12px;border:1px solid #333;" />
+      <br><br>
+      <strong>Options Dashboard</strong><br>
+      <span style="font-size:13px;color:#888;">Status overview, metrics & recent activity</span>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center">
+      <img src="./src/assets/extension.png" alt="Hone Extension in Action" width="100%" style="border-radius:12px;border:1px solid #333;" />
+      <br><br>
+      <strong>In Action</strong><br>
+      <span style="font-size:13px;color:#888;">Floating menu over a web text field</span>
+    </td>
+    <td width="50%" align="center">
+      <img src="./src/assets/new-action.png" alt="Hone Custom Action Editor" width="100%" style="border-radius:12px;border:1px solid #333;" />
+      <br><br>
+      <strong>Actions Studio</strong><br>
+      <span style="font-size:13px;color:#888;">Build your own writing tools</span>
+    </td>
+  </tr>
+</table>
+
+<br>
 
 ---
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import {
   Key,
@@ -232,6 +232,7 @@ export default function Options() {
     message: string;
     type: "success" | "error";
   } | null>(null);
+  const [initialLoadComplete, setInitialLoadComplete] = useState(false);
 
   // Fetch initial settings from local storage
   useEffect(() => {
@@ -316,7 +317,78 @@ export default function Options() {
         if (res.history) setHistory(res.history);
       });
     loadCustomActions().then(setCustomActions);
+    setInitialLoadComplete(true);
   }, []);
+
+  // Auto-save provider settings on change
+  useEffect(() => {
+    if (!initialLoadComplete) return;
+    chrome.storage.local.set({
+      activeProvider,
+      openaiKey,
+      openaiModel,
+      openaiEndpoint,
+      anthropicKey,
+      anthropicModel,
+      geminiKey,
+      geminiModel,
+      openrouterKey,
+      openrouterModel,
+      openrouterPaidKey,
+      openrouterPaidModel,
+      googleAiStudioKey,
+      googleAiStudioModel,
+    }).catch(console.error);
+  }, [
+    initialLoadComplete,
+    activeProvider,
+    openaiKey,
+    openaiModel,
+    openaiEndpoint,
+    anthropicKey,
+    anthropicModel,
+    geminiKey,
+    geminiModel,
+    openrouterKey,
+    openrouterModel,
+    openrouterPaidKey,
+    openrouterPaidModel,
+    googleAiStudioKey,
+    googleAiStudioModel,
+  ]);
+
+  // Auto-save shortcut & appearance settings on change
+  useEffect(() => {
+    if (!initialLoadComplete) return;
+    chrome.storage.local.set({
+      shortcutKey,
+      shortcutCtrl,
+      shortcutAlt,
+      shortcutShift,
+      shortcutMeta,
+      shortcutAction,
+      dropdownShortcutKey,
+      dropdownShortcutCtrl,
+      dropdownShortcutAlt,
+      dropdownShortcutShift,
+      dropdownShortcutMeta,
+      hideDot,
+    }).catch(console.error);
+  }, [
+    initialLoadComplete,
+    shortcutKey,
+    shortcutCtrl,
+    shortcutAlt,
+    shortcutShift,
+    shortcutMeta,
+    shortcutAction,
+    dropdownShortcutKey,
+    dropdownShortcutCtrl,
+    dropdownShortcutAlt,
+    dropdownShortcutShift,
+    dropdownShortcutMeta,
+    hideDot,
+  ]);
 
   // Show status toasts
   const triggerSaveStatus = (message: string, type: "success" | "error") => {
@@ -324,53 +396,6 @@ export default function Options() {
     setTimeout(() => setSaveStatus(null), 3000);
   };
 
-  // Save Settings handler
-  const handleSave = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-
-    if (activeProvider === "openrouter" && !openrouterKey.trim()) {
-      triggerSaveStatus(
-        "OpenRouter API Key is required for OpenRouter Free.",
-        "error",
-      );
-      return;
-    }
-
-    try {
-      await chrome.storage.local.set({
-        activeProvider,
-        openaiKey,
-        openaiModel,
-        openaiEndpoint,
-        anthropicKey,
-        anthropicModel,
-        geminiKey,
-        geminiModel,
-        openrouterKey,
-        openrouterModel,
-        openrouterPaidKey,
-        openrouterPaidModel,
-        googleAiStudioKey,
-        googleAiStudioModel,
-        shortcutKey,
-        shortcutCtrl,
-        shortcutAlt,
-        shortcutShift,
-        shortcutMeta,
-        shortcutAction,
-        dropdownShortcutKey,
-        dropdownShortcutCtrl,
-        dropdownShortcutAlt,
-        dropdownShortcutShift,
-        dropdownShortcutMeta,
-        hideDot,
-      });
-      triggerSaveStatus("Settings successfully saved!", "success");
-    } catch (err) {
-      console.error(err);
-      triggerSaveStatus("Failed to save settings.", "error");
-    }
-  };
 
   // Handle shortcut recording keypresses
   useEffect(() => {
@@ -810,10 +835,7 @@ export default function Options() {
                       </p>
                     </div>
 
-                    <form
-                      onSubmit={handleSave}
-                      className="flex flex-col"
-                    >
+                    <div className="flex flex-col">
                       {/* Active Provider Selector Row */}
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 py-5 border-b border-border/40">
                         <div className="pr-4">
@@ -1159,19 +1181,7 @@ export default function Options() {
                         </div>
                       )}
 
-                      {/* Save Button Row */}
-                      <div className="flex justify-end pt-6">
-                        <MaterialDesign3Button
-                          variant="default"
-                          size="default"
-                          shape="round"
-                          type="submit"
-                        >
-                          <Save className="w-4 h-4" />
-                          Save API Keys
-                        </MaterialDesign3Button>
-                      </div>
-                    </form>
+                    </div>
                   </div>
                 )}
 
@@ -1187,10 +1197,7 @@ export default function Options() {
                       </p>
                     </div>
 
-                    <form
-                      onSubmit={handleSave}
-                      className="flex flex-col"
-                    >
+                    <div className="flex flex-col">
                       {/* Active Key Combination Row */}
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 py-5 border-b border-border/40">
                         <div className="pr-4">
@@ -1388,19 +1395,7 @@ export default function Options() {
                         </div>
                       </div>
 
-                      {/* Save Button Row */}
-                      <div className="flex justify-end pt-6">
-                        <MaterialDesign3Button
-                          variant="default"
-                          size="default"
-                          shape="round"
-                          type="submit"
-                        >
-                          <Save className="w-4 h-4" />
-                          Save Shortcuts
-                        </MaterialDesign3Button>
-                      </div>
-                    </form>
+                    </div>
                   </div>
                 )}
 
@@ -1436,11 +1431,10 @@ export default function Options() {
                         </div>
                         {history.length > 0 && (
                           <MaterialDesign3Button
-                            variant="outline"
+                            variant="destructive"
                             size="sm"
                             shape="round"
                             onClick={handleClearAllHistory}
-                            className="hover:text-red-500 hover:border-red-500/20 text-xs shrink-0"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                             Clear All
@@ -1595,7 +1589,7 @@ export default function Options() {
                               {/* Actions */}
                               <div className="flex gap-2 justify-end pt-3 border-t border-border/40">
                                 <MaterialDesign3Button
-                                  variant="ghost"
+                                  variant="destructive"
                                   size="sm"
                                   shape="round"
                                   onClick={() => {
@@ -1603,7 +1597,6 @@ export default function Options() {
                                     setHistoryDialogOpen(false);
                                     setSelectedHistoryItem(null);
                                   }}
-                                  className="text-muted-foreground hover:text-red-500 text-xs"
                                 >
                                   <Trash2 className="w-3.5 h-3.5" />
                                   Delete Entry
@@ -1818,7 +1811,7 @@ export default function Options() {
 
                               {!isNewAction && (
                                 <MaterialDesign3Button
-                                  variant="outline"
+                                  variant="destructive"
                                   size="sm"
                                   shape="round"
                                   type="button"
@@ -1840,7 +1833,6 @@ export default function Options() {
                                       "success",
                                     );
                                   }}
-                                  className="text-red-400 hover:text-red-300 hover:border-red-500/30"
                                 >
                                   <Trash2 className="w-3.5 h-3.5" />
                                   Delete
