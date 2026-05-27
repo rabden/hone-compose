@@ -15,6 +15,37 @@
 
 <br>
 
+## 📸 Showcase
+
+<table>
+  <tr>
+    <td width="33%" align="center">
+      <img src="./src/assets/popup.png" alt="Hone Popup UI" width="100%" style="border-radius:12px;border:1px solid #333;" />
+      <br><br>
+      <strong>Extension Popup</strong><br>
+      <span style="font-size:13px;color:#888;">Active engine, shortcuts & quick settings</span>
+    </td>
+    <td width="33%" align="center">
+      <img src="./src/assets/dashboard.png" alt="Hone Dashboard" width="100%" style="border-radius:12px;border:1px solid #333;" />
+      <br><br>
+      <strong>Options Dashboard</strong><br>
+      <span style="font-size:13px;color:#888;">Status overview, metrics & recent activity</span>
+    </td>
+    <td width="33%" align="center">
+      <img src="./src/assets/extension.png" alt="Hone Extension in Action" width="100%" style="border-radius:12px;border:1px solid #333;" />
+      <br><br>
+      <strong>In Action</strong><br>
+      <span style="font-size:13px;color:#888;">Floating menu over a web text field</span>
+    </td>
+  </tr>
+</table>
+
+<br>
+
+---
+
+<br>
+
 <table>
 <tr>
 <td width="33%" align="center">
@@ -239,6 +270,8 @@ The Options page gives you full control:
 
 ### UI Highlights
 
+- **Modern shadcn/ui components** — built on Radix primitives for accessible, composable UI patterns
+- **Material Web Components** — Google's Material Design 3 web components for dialogs, menus, switches, and buttons
 - **Shadow DOM isolation** — page CSS can't leak into Hone's interface
 - **Floating UI** — menu and preview panels follow the text caret automatically (flip, shift, collision detection)
 - **Glassmorphic MD3 design** — Material Design 3 tokens with frosted-glass surfaces
