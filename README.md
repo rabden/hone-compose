@@ -1,6 +1,6 @@
 <div align="center">
   <img src="./src/assets/hone-logo.png" alt="Hone Logo" width="120" height="120" />
-  
+
   # Hone — AI Writing Assistant for the Web
 
   [![Chrome Web Store](https://img.shields.io/badge/Chrome_Web_Store-v0.1.0-blue?style=for-the-badge&logo=google-chrome&logoColor=white)](https://chrome.google.com/webstore)
@@ -13,82 +13,293 @@
 
 ---
 
-## ✨ Features
+<br>
 
-- **🪄 Inline Magic**: Prompt-based text editing, rewrite suggestions, style refinement, and spelling fixes directly inline in any editor.
-- **⚡ High-Fidelity Rich-Text Sync**: Custom transaction engine seamlessly updates React-controlled frameworks (Slate, Lexical, ProseMirror) and native inputs on platforms like Discord, WhatsApp Web, and Twitter/X.
-- **🎨 Glassmorphic MD3 UI**: Elegant overlay elements built on Material Design 3, boasting physics-based spring easing and dynamic micro-animations.
-- **🔊 Tactile Haptics**: Immersive Web Audio API haptic engine that generates clicking sound effects and tactile cues during UI interactions.
-- **🔄 Multi-Model Orchestration**: Configure multiple API providers (OpenAI, Anthropic, Gemini, OpenRouter) with customizable system prompts and model profiles.
-- **🔍 Smart Text Boundary Inference**: Intelligently infers edits at different granularity levels (selection, sentence, paragraph, full field) when no text is explicitly highlighted.
+<table>
+<tr>
+<td width="33%" align="center">
+
+### 🪄 Improve
+Polish grammar, flow, and vocabulary in-place.
+
+</td>
+<td width="33%" align="center">
+
+### 🔄 Paraphrase
+Rewrite naturally while keeping the original meaning intact.
+
+</td>
+<td width="33%" align="center">
+
+### ✅ Fix Spelling
+Catch typos, grammar slips, and awkward phrasing instantly.
+
+</td>
+</tr>
+<tr>
+<td width="33%" align="center">
+
+### 👔 Professional
+Shift tone to business-appropriate with confidence.
+
+</td>
+<td width="33%" align="center">
+
+### 💬 Casual
+Make text conversational and easy to read.
+
+</td>
+<td width="33%" align="center">
+
+### ⚡ Exciting
+Add energy, enthusiasm, and engagement.
+
+</td>
+</tr>
+<tr>
+<td width="33%" align="center">
+
+### ❤️ Friendly
+Warm, polite, and approachable phrasing.
+
+</td>
+<td width="33%" align="center">
+
+### 🔽 Shorter
+Condense rambling text into crisp, direct sentences.
+
+</td>
+<td width="33%" align="center">
+
+### 🔼 Longer
+Expand brief notes into detailed, thorough prose.
+
+</td>
+</tr>
+</table>
+
+<p align="center">
+  <strong>+ Custom actions</strong> — build your own AI prompts with custom icons, colors, per-action providers, and a preview-before-replace mode.
+</p>
 
 ---
 
-## 🎨 Interactive Overview
+## 🧠 Use Cases
 
-Hone floats beside your cursor, waiting to transform your text:
+Hone works wherever you type on the web. Here's what it does in plain language:
 
-```mermaid
-graph TD
-    User([User Types]) -->|Focus text field| HoneDot((Hone Dot Trigger))
-    HoneDot -->|Click| Menu[Floating Action Menu]
-    Menu -->|Select Action| AI[AI API Provider]
-    AI -->|Rewrite Text| Preview[Before/After Preview Panel]
-    Preview -->|Accept| Editor[Target Web Editor]
+<dl>
+  <dt><strong>📝 Polishing a work email</strong></dt>
+  <dd>You draft a reply in Gmail, hit <kbd>Alt+Shift+D</kbd>, pick <em>Improve writing</em>, and Hone rewrites it to sound clear and professional — right inside the compose box.</dd>
+
+  <dt><strong>✍️ Replying on social media</strong></dt>
+  <dd>Writing a tweet or a Reddit comment that doesn't quite land? Select the text and ask Hone to make it <em>Casual</em> or <em>Friendly</em> so it reads naturally.</dd>
+
+  <dt><strong>📄 Filling in a job application</strong></dt>
+  <dd>You've typed a short answer in a textarea. Hone can <em>Lengthen</em> it to add detail, or shift to <em>Professional</em> tone before you submit.</dd>
+
+  <dt><strong>🐛 Fixing a bug report</strong></dt>
+  <dd>You wrote a rough description in GitHub Issues. Use <em>Fix spelling & grammar</em> to clean it up, then <em>Paraphrase</em> so it's clearer for the team.</dd>
+
+  <dt><strong>💬 Chatting on Discord or WhatsApp Web</strong></dt>
+  <dd>Hone integrates deeply with Slate.js (Discord) and Lexical (WhatsApp Web) — run actions directly inside rich-text editors without breaking formatting.</dd>
+
+  <dt><strong>🗂️ Drafting a Notion doc or Google Doc</strong></dt>
+  <dd>Write freely first, then refine sentence by sentence using any Hone action — no context switching to another tab or tool.</dd>
+
+  <dt><strong>🎨 Creating custom writing recipes</strong></dt>
+  <dd>Use <em>Actions Studio</em> to build a prompt like "Translate this to Spanish but keep the tone casual" and assign it a custom icon and shortcut. It shows up in your menu alongside the built-in actions.</dd>
+
+  <dt><strong>🔍 Reviewing before committing</strong></dt>
+  <dd>Enable <em>Preview before replacing</em> on any action to see a before/after panel before applying changes to your text.</dd>
+</dl>
+
+---
+
+## 🔌 API Providers
+
+Hone is provider-agnostic. Bring your own API key — or use the preconfigured free tier.
+
+| Provider | How to use | Pricing |
+|---|---|---|
+| **OpenRouter Free** | Get a free API key at [openrouter.ai](https://openrouter.ai). Hone auto-cycles through 5 free models (Gemma 4 26B, Nemotron 3 30B, Llama 3.2 3B, etc.) with up to 3 retry passes. | **Free-of-cost** with rate-limit fallback |
+| **OpenRouter Paid** | Use any model slug from OpenRouter's catalog (GPT-4o, Claude, etc.). | Pay-as-you-go via OpenRouter credits |
+| **OpenAI** | Bring your own `sk-proj-...` key. Supports custom endpoints (proxies, local gateways). | Your OpenAI plan |
+| **Anthropic Claude** | Paste your `sk-ant-...` key from the Anthropic Console. | Your Anthropic plan |
+| **Google Gemini** | Use a free API key from [aistudio.google.com](https://aistudio.google.com). Generous free tier. | **Free tier available** |
+| **Google AI Studio** | Gemma models via `@google/genai` SDK with thinking config. Also uses aistudio keys. | **Free tier available** |
+
+> **No API key? Start with OpenRouter Free** — sign up at openrouter.ai, grab a key, paste it in Hone's settings, and you're good to go. Zero cost.
+
+---
+
+## 🎨 Interactive Flow
+
 ```
+  User focuses a text field
+           │
+    ┌──────▼──────┐
+    │  ✨ Hone     │  ← Purple sparkle dot appears beside the caret
+    │  Trigger Dot │     (hide it in settings for keyboard-only mode)
+    └──────┬──────┘
+           │ click or press Alt+Shift+D
+    ┌──────▼──────┐
+    │  Action     │  ← Floating menu with all available actions
+    │  Menu       │     (improve, paraphrase, fix, tone, length, custom)
+    └──────┬──────┘
+           │ select an action
+    ┌──────▼──────┐
+    │  AI Engine  │  ← Your configured provider processes the text
+    │  (provider) │     (OpenAI / Anthropic / Gemini / OpenRouter)
+    └──────┬──────┘
+           │ result returned
+    ┌──────▼──────┐
+    │  Preview    │  ← Optional before/after comparison panel
+    │  Panel      │     (accept or discard)
+    └──────┬──────┘
+           │ accept
+    ┌──────▼──────┐
+    │  Text       │  ← Rewritten text committed in-place
+    │  Replaced   │     (native input, Slate, Lexical, ProseMirror, or generic)
+    └─────────────┘
+```
+
+---
+
+## ✨ Features — Deep Dive
+
+### Text Actions
+
+| Action | What it does |
+|---|---|
+| **Improve writing** | Enhances grammar, flow, vocabulary — makes any text polished and engaging |
+| **Paraphrase** | Rewrites while preserving meaning — fresh wording, natural flow |
+| **Fix spelling & grammar** | Corrects errors without changing tone or structure |
+| **Professional tone** | Shifts text to clear, business-appropriate language |
+| **Casual tone** | Makes text conversational and easy to read |
+| **Exciting tone** | Adds enthusiasm and energy |
+| **Friendly tone** | Warms up the phrasing |
+| **Shorter** | Condenses text to be direct and concise |
+| **Longer** | Expands text with relevant detail and descriptive depth |
+| **Custom actions** | User-defined prompts with custom icon, color, provider, model, and temperature |
+
+### Actions Studio
+
+Build your own AI writing recipes from the Options page:
+
+- **Prompt templates** with `{{input}}` variable — the selected text gets injected at rewrite time
+- **System prompts** — set context/role instructions for the AI
+- **Icon picker** — choose from Lucide icons to identify your action
+- **Accent color** — pick from 8 preset colors for visual distinction
+- **Per-action provider** — override the global provider for a specific action
+- **Per-action model** — target a specific model for this action only
+- **Temperature slider** — control creativity (0.0 = deterministic, 2.0 = max creativity)
+- **Preview mode** — toggle before/after review panel instead of inline replacement
+- **Enable/disable** — turn actions on/off without deleting them
+- **Test playground** — run your action against sample text directly in the options page
+
+### Smart Text Boundary Inference
+
+When no text is selected, Hone intelligently guesses what you want to rewrite:
+
+1. **Selection** — explicitly highlighted text
+2. **Sentence** — auto-detected via regex
+3. **Paragraph** — blank-line delimited block
+4. **Full field** — entire editor contents
+
+Cycle through options in the action menu with a single click.
+
+### Rich-Text Editor Compatibility
+
+| Editor | Integration method |
+|---|---|
+| **Slate.js** (Discord) | React Fiber traversal, direct `editor.insertText()` call |
+| **Lexical** (Facebook, WhatsApp Web) | `beforeinput` event with `insertReplacementText` |
+| **ProseMirror** | Contenteditable-based DOM manipulation |
+| **Twitter/X** | Custom editor adapter |
+| **Native inputs** | `<input>`, `<textarea>` — via `execCommand` and value tracker |
+| **Generic contenteditable** | Fallback DOM range manipulation |
+
+### Keyboard Shortcuts
+
+- **Menu toggle** — configurable combo (default: `Alt+Shift+D`) to open/close the floating action menu
+- **Quick action** — configurable combo to run a specific action instantly without opening the menu
+- **System commands** — manifest-level shortcuts that work even when websites intercept keystrokes
+- **Shortcut recorder** — press any key combination to capture it in settings
+
+### Configuration & Dashboard
+
+The Options page gives you full control:
+
+- **Dashboard** — at-a-glance status: API connection, active shortcuts, total rewrites, recent activity
+- **API Providers** — manage keys, models, and endpoints for all 6 providers
+- **Key Bindings** — record custom shortcuts, hide the floating dot (keyboard-only mode)
+- **Rewrite History** — searchable, virtual-scrolled log with before/after detail view, copy, and delete
+- **Actions Studio** — create, edit, and test custom actions
+
+### UI Highlights
+
+- **Shadow DOM isolation** — page CSS can't leak into Hone's interface
+- **Floating UI** — menu and preview panels follow the text caret automatically (flip, shift, collision detection)
+- **Glassmorphic MD3 design** — Material Design 3 tokens with frosted-glass surfaces
+- **Spring physics** — `cubic-bezier(0.175, 0.885, 0.32, 1.275)` for natural, bouncy micro-interactions
+- **Web Audio API haptics** — buttons and switches produce tactile audio feedback
+- **Trigger dot** — purple sparkle icon that appears when you focus any text field (toggleable)
 
 ---
 
 ## 🚀 Quick Start
 
-### 1. Installation
-Clone the repository and install dependencies:
+### 1. Install
+
 ```bash
-# Clone the repository
 git clone https://github.com/rabden/hone-extension.git
 cd hone
-
-# Install dependencies
 npm install
 ```
 
-### 2. Build for Production
-Compile all three execution environments (pages, background, content):
+### 2. Build
+
 ```bash
-# Compile and build extension
 npm run build
 ```
-This outputs the compiled extension assets inside the `dist/` directory.
+
+Outputs to `dist/`.
 
 ### 3. Load in Chrome
-1. Open Google Chrome and navigate to `chrome://extensions/`.
-2. Toggle **Developer mode** in the top-right corner.
-3. Click **Load unpacked** in the top-left corner.
-4. Select the `dist/` folder from the root of this project.
+
+1. Open `chrome://extensions/`
+2. Enable **Developer mode** (top-right)
+3. Click **Load unpacked** (top-left)
+4. Select the `dist/` directory
+
+### 4. Add an API key
+
+- Click the Hone icon in the toolbar, then **Open settings**
+- Go to **API Providers**, pick your provider, paste your key
+- Or grab a free key from [openrouter.ai](https://openrouter.ai) and select **OpenRouter Free**
+
+### 5. Use it
+
+Focus any text input on any webpage. Press `Alt+Shift+D` (default) or click the purple sparkle dot. Pick an action — your text transforms in-place.
 
 ---
 
-## ⚙️ Configuration
+## 📚 Technical Architecture
 
-Open Hone's **Options Page** to customize your setup:
-- **API Keys**: Add credentials for OpenAI, Anthropic, Gemini, or OpenRouter.
-- **Custom Actions**: Define your own prompts, custom Lucide icons, and target colors.
-- **Shortcuts**: Map custom key combinations (e.g. `Alt+Shift+D`) to launch Hone or execute specific actions instantly.
-- **History Logs**: Review a local audit log of all previous rewrites and adjustments.
-
----
-
-## 📚 Technical Specifications
-
-Hone is engineered with high-performance browser extension architectures:
-- **Shadow DOM Isolation**: Prevents stylesheet leaks from host websites from breaking Hone's UI.
-- **Main World Bridge**: Traverses React Fiber trees natively to invoke component event handlers (`onChangeText`, `onChange`) directly in the page context.
-- **Zero-Permission Policy**: Fully complies with minimal permission guidelines (requires only `storage` access; no clipboard or tab tracking).
+| Component | What it does |
+|---|---|
+| **Content Script** | Injected into every page. Renders the menu/preview UI in a Shadow DOM. Detects editor frameworks (Slate, Lexical, etc.) and adapts accordingly. |
+| **Background Worker** | Routes AI requests to the configured provider. Handles OpenRouter Free model fallback cycling. Saves rewrite history. |
+| **Main World Bridge** | Runs in the page's main JavaScript context. Traverses React Fiber trees to invoke editor event handlers that are inaccessible from the isolated world. |
+| **Floating UI** | `@floating-ui/dom` for auto-positioning relative to the text caret (flip, shift, collision detection). |
+| **Transaction Engine** | Low-level framework-specific commit logic — React Fiber walking, `beforeinput` events, `execCommand` — to inject rewritten text without breaking the host editor's state. |
 
 > [!NOTE]
-> For a detailed guide on the internal codebase structure, React Fiber traversals, and individual file responsibilities, refer to our [Architecture & Code Documentation](architecture.md).
+> For a deep dive into React Fiber traversal, editor adapter architecture, and file-by-file breakdown, see [architecture.md](architecture.md).
 
 ---
 
 ## 📄 License
+
 This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
