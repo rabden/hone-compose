@@ -8,7 +8,58 @@ export type EditorFramework =
   | "twitter"
   | "contenteditable";
 
+export function isXHost(): boolean {
+  const host = window.location.hostname.toLowerCase();
+  return (
+    host === "x.com" ||
+    host.endsWith(".x.com") ||
+    host === "twitter.com" ||
+    host.endsWith(".twitter.com")
+  );
+}
+
+/** X compose/reply: tweetTextarea_* wrapper with nested contenteditable. */
+export function resolveTwitterComposeRoot(
+  element: HTMLElement,
+): HTMLElement | null {
+  const host = element.closest(
+    '[data-testid^="tweetTextarea"]',
+  ) as HTMLElement | null;
+  if (!host) return null;
+
+  let editable: HTMLElement | null = null;
+  const ce = host.getAttribute("contenteditable");
+  if (host.isContentEditable || ce === "true" || ce === "") {
+    editable = host;
+  } else {
+    editable = host.querySelector(
+      '[contenteditable="true"], [contenteditable=""]',
+    ) as HTMLElement | null;
+    if (!editable) {
+      const textbox = host.querySelector('[role="textbox"]');
+      if (textbox instanceof HTMLElement && textbox.isContentEditable) {
+        editable = textbox;
+      }
+    }
+  }
+
+  if (!editable) return null;
+
+  while (
+    editable.parentElement?.isContentEditable &&
+    host.contains(editable.parentElement)
+  ) {
+    editable = editable.parentElement;
+  }
+
+  return editable;
+}
+
 export function resolveEditorRoot(element: HTMLElement): HTMLElement {
+  if (isXHost()) {
+    const twitterRoot = resolveTwitterComposeRoot(element);
+    if (twitterRoot) return twitterRoot;
+  }
   const lexical = element.closest(
     '[data-lexical-editor="true"]',
   ) as HTMLElement | null;
@@ -49,10 +100,7 @@ export function detectEditorFramework(element: HTMLElement): EditorFramework {
   const tag = element.tagName.toLowerCase();
   if (tag === "textarea" || tag === "input") return "native";
 
-  if (
-    window.location.hostname.includes("twitter.com") ||
-    window.location.hostname.includes("x.com")
-  ) {
+  if (isXHost()) {
     return "twitter";
   }
 

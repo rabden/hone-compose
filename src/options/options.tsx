@@ -808,7 +808,7 @@ export default function Options() {
                                     {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                   </span>
                                 </div>
-                                <p className="text-[10px] text-muted-foreground/70 truncate leading-normal mt-0.5">
+                                <p className="font-noto text-[10px] text-muted-foreground/70 truncate leading-normal mt-0.5">
                                   {item.originalText}
                                 </p>
                               </div>
@@ -1493,7 +1493,7 @@ export default function Options() {
                                     >
                                       {getActionName(item.action)}
                                     </Badge>
-                                    <span className="text-xs text-foreground/80 truncate leading-normal flex-1">
+                                    <span className="font-noto text-xs text-foreground/80 truncate leading-normal flex-1">
                                       {item.rewrittenText}
                                     </span>
                                   </div>
@@ -1572,7 +1572,7 @@ export default function Options() {
                                   <span className="text-[9px] text-muted-foreground uppercase font-semibold tracking-wide">
                                     Original
                                   </span>
-                                  <div className="text-xs text-muted-foreground whitespace-pre-wrap leading-relaxed max-h-44 overflow-y-auto pr-1">
+                                  <div className="font-noto text-xs text-muted-foreground whitespace-pre-wrap leading-relaxed max-h-44 overflow-y-auto pr-1">
                                     {selectedHistoryItem.originalText}
                                   </div>
                                 </div>
@@ -1580,7 +1580,7 @@ export default function Options() {
                                   <span className="text-[9px] text-foreground uppercase font-semibold tracking-wide">
                                     Rewritten
                                   </span>
-                                  <div className="text-xs text-foreground whitespace-pre-wrap leading-relaxed max-h-44 overflow-y-auto pr-1">
+                                  <div className="font-noto text-xs text-foreground whitespace-pre-wrap leading-relaxed max-h-44 overflow-y-auto pr-1">
                                     {selectedHistoryItem.rewrittenText}
                                   </div>
                                 </div>

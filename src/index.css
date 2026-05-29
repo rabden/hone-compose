@@ -3,6 +3,7 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/geist";
+@import "@fontsource-variable/noto-sans";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -358,4 +359,8 @@ body {
     html {
         @apply font-sans;
     }
+}
+
+.font-noto {
+    font-family: "Noto Sans Variable", "Noto Sans", sans-serif;
 }

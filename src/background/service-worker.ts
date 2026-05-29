@@ -65,22 +65,44 @@ function chatMessages(system?: string, prompt?: string) {
   return msgs;
 }
 
-async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs = 12000): Promise<Response> {
-  const controller = new AbortController();
-  const id = setTimeout(() => controller.abort(), timeoutMs);
+let activeAIAbort: AbortController | null = null;
 
-  try {
-    const response = await fetch(url, {
-      ...options,
-      signal: controller.signal,
-    });
-    return response;
-  } finally {
-    clearTimeout(id);
-  }
+function mergeAbortSignals(timeoutMs: number, external?: AbortSignal): AbortSignal {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  const abort = () => controller.abort();
+  external?.addEventListener('abort', abort);
+
+  controller.signal.addEventListener(
+    'abort',
+    () => {
+      clearTimeout(timeoutId);
+      external?.removeEventListener('abort', abort);
+    },
+    { once: true },
+  );
+
+  return controller.signal;
 }
 
-async function fetchOpenRouter(apiKey: string, model: string, prompt: string, system?: string): Promise<string> {
+async function fetchWithTimeout(
+  url: string,
+  options: RequestInit,
+  timeoutMs = 12000,
+  externalSignal?: AbortSignal,
+): Promise<Response> {
+  const signal = mergeAbortSignals(timeoutMs, externalSignal);
+  return fetch(url, { ...options, signal });
+}
+
+async function fetchOpenRouter(
+  apiKey: string,
+  model: string,
+  prompt: string,
+  system?: string,
+  externalSignal?: AbortSignal,
+): Promise<string> {
   const res = await fetchWithTimeout('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -94,7 +116,7 @@ async function fetchOpenRouter(apiKey: string, model: string, prompt: string, sy
       messages: chatMessages(system, prompt),
       temperature: 0.7
     })
-  }, 15000); // 15s timeout for OpenRouter
+  }, 15000, externalSignal);
 
   if (!res.ok) {
     const errorJson = await res.json().catch(() => ({}));
@@ -108,12 +130,22 @@ async function fetchOpenRouter(apiKey: string, model: string, prompt: string, sy
 }
 
 // Helper to make API calls
-async function callAIProvider(actionId: string, text: string, url: string): Promise<string> {
-  const result = await callAIProviderRaw(actionId, text, url);
+async function callAIProvider(
+  actionId: string,
+  text: string,
+  url: string,
+  signal?: AbortSignal,
+): Promise<string> {
+  const result = await callAIProviderRaw(actionId, text, url, signal);
   return cleanAiResponse(result);
 }
 
-async function callAIProviderRaw(actionId: string, text: string, url: string): Promise<string> {
+async function callAIProviderRaw(
+  actionId: string,
+  text: string,
+  url: string,
+  signal?: AbortSignal,
+): Promise<string> {
   const [settings, registry] = await Promise.all([
     chrome.storage.local.get([
       'activeProvider',
@@ -155,7 +187,7 @@ async function callAIProviderRaw(actionId: string, text: string, url: string): P
         messages: chatMessages(system, prompt),
         temperature: 0.7
       })
-    }, 15000);
+    }, 15000, signal);
 
     if (!res.ok) {
       const errorJson = await res.json().catch(() => ({}));
@@ -194,7 +226,7 @@ async function callAIProviderRaw(actionId: string, text: string, url: string): P
         'dangerously-allow-browser': 'true'
       },
       body: JSON.stringify(body)
-    }, 20000);
+    }, 20000, signal);
 
     if (!res.ok) {
       const errorJson = await res.json().catch(() => ({}));
@@ -229,7 +261,7 @@ async function callAIProviderRaw(actionId: string, text: string, url: string): P
         'Content-Type': 'application/json'
       },
       body: JSON.stringify(body)
-    }, 15000);
+    }, 15000, signal);
 
     if (!res.ok) {
       const errorJson = await res.json().catch(() => ({}));
@@ -250,7 +282,7 @@ async function callAIProviderRaw(actionId: string, text: string, url: string): P
     if (!apiKey) throw new Error('OpenRouter Paid API Key is missing. Please add it in the extension options.');
     if (!model) throw new Error('OpenRouter Paid Model Name is missing. Please add it in the extension options.');
 
-    const resultText = await fetchOpenRouter(apiKey, model, prompt, system);
+    const resultText = await fetchOpenRouter(apiKey, model, prompt, system, signal);
     await saveToHistory({ originalText: text, rewrittenText: resultText, action: actionId, url, provider: 'openrouter_paid', model });
     return resultText;
 
@@ -284,6 +316,9 @@ async function callAIProviderRaw(actionId: string, text: string, url: string): P
 
     let resultText = '';
     for await (const chunk of response) {
+      if (signal?.aborted) {
+        throw new DOMException('Aborted', 'AbortError');
+      }
       if (chunk.text) {
         resultText += chunk.text;
       }
@@ -324,12 +359,15 @@ async function callAIProviderRaw(actionId: string, text: string, url: string): P
       const currentModel = attempts[idx];
       try {
         console.log(`OpenRouter Free: Attempt ${idx + 1} using model ${currentModel}`);
-        const resultText = await fetchOpenRouter(apiKey, currentModel, prompt, system);
+        const resultText = await fetchOpenRouter(apiKey, currentModel, prompt, system, signal);
         
         // Save using OpenRouter Free provider but with the specific model that succeeded!
         await saveToHistory({ originalText: text, rewrittenText: resultText, action: actionId, url, provider: 'openrouter', model: currentModel });
         return resultText;
       } catch (err: any) {
+        if (signal?.aborted) {
+          throw err;
+        }
         console.warn(`OpenRouter Free: Attempt ${idx + 1} (${currentModel}) failed:`, err.message);
         lastError = err;
       }
@@ -370,19 +408,44 @@ chrome.commands.onCommand.addListener((command: string) => {
 
 // Listen for messages from content scripts
 chrome.runtime.onMessage.addListener((message: any, sender: chrome.runtime.MessageSender, sendResponse: (response?: any) => void) => {
+  if (message.type === 'ABORT_PROCESS_TEXT') {
+    activeAIAbort?.abort();
+    activeAIAbort = null;
+    sendResponse({ success: true });
+    return false;
+  }
+
   if (message.type === 'PROCESS_TEXT') {
-    const { action, text } = message;
+    const { action, text, requestId } = message;
     const url = sender.tab?.url || 'unknown webpage';
-    
-    callAIProvider(action, text, url)
+
+    activeAIAbort?.abort();
+    const controller = new AbortController();
+    activeAIAbort = controller;
+
+    callAIProvider(action, text, url, controller.signal)
       .then((rewrittenText) => {
-        sendResponse({ success: true, text: rewrittenText });
+        sendResponse({ success: true, text: rewrittenText, requestId });
       })
-      .catch((error) => {
-        console.error('AI processing error:', error);
-        sendResponse({ success: false, error: error.message });
+      .catch((error: Error) => {
+        const aborted =
+          error?.name === 'AbortError' || controller.signal.aborted;
+        if (!aborted) {
+          console.error('AI processing error:', error);
+        }
+        sendResponse({
+          success: false,
+          aborted,
+          error: aborted ? undefined : error.message,
+          requestId,
+        });
+      })
+      .finally(() => {
+        if (activeAIAbort === controller) {
+          activeAIAbort = null;
+        }
       });
 
-    return true; // Keep message channel open for async response
+    return true;
   }
 });

@@ -8,7 +8,7 @@ import {
   offsetFromDomPoint,
   setDomSelectionByOffsets,
 } from "./plain-text-dom";
-import { resolveEditorRoot } from "./editor-detection";
+import { isXHost, resolveEditorRoot } from "./editor-detection";
 import {
   notifyEditorChange,
   replaceInContentEditable,
@@ -505,12 +505,17 @@ export class ContentEditableAdapter implements EditableAdapter {
       const range = selection.getRangeAt(0);
       const rects = range.getClientRects();
       if (rects.length > 0) {
-        return rects[0];
+        const rect = rects[0];
+        // Accept rects with valid position even if dimensions are zero
+        if (rect.left !== 0 || rect.top !== 0 || rect.width !== 0 || rect.height !== 0) {
+          return rect;
+        }
       }
     }
 
     // Fallback to element's bounding rect
-    return this.element.getBoundingClientRect();
+    const elRect = this.element.getBoundingClientRect();
+    return elRect;
   }
 
   focus(): void {
@@ -779,15 +784,6 @@ export function computeInferenceOptions(adapter: EditableAdapter) {
           })()
         : undefined;
 
-  const sentenceBounds = findSentenceBoundaries(fullText, caret);
-  const sentenceOpt = {
-    text: fullText.substring(sentenceBounds.start, sentenceBounds.end),
-    start: sentenceBounds.start,
-    end: sentenceBounds.end,
-    isSelection: false,
-    level: 'sentence' as const,
-  };
-
   const paragraphBounds = findParagraphBoundaries(fullText, caret);
   const paragraphOpt = {
     text: fullText.substring(paragraphBounds.start, paragraphBounds.end),
@@ -805,15 +801,13 @@ export function computeInferenceOptions(adapter: EditableAdapter) {
     level: 'field' as const,
   };
 
-  // Choose best: prefer explicit selection, else sentence if meaningful, else paragraph, else field
+  // Choose best: prefer explicit selection, else paragraph if meaningful, else field
   let best: InferredSelection = fieldOpt;
   if (selectionOpt) best = selectionOpt;
-  else if (sentenceOpt.text.trim().length > 0 && sentenceOpt.text.trim().length < fullText.trim().length) best = sentenceOpt;
   else if (paragraphOpt.text.trim().length > 0 && paragraphOpt.text.trim().length < fullText.trim().length) best = paragraphOpt;
 
   return {
     selection: selectionOpt,
-    sentence: sentenceOpt,
     paragraph: paragraphOpt,
     field: fieldOpt,
     best,
@@ -901,9 +895,10 @@ export function createAdapter(element: Element | null): EditableAdapter | null {
   const root = resolveEditorRoot(el);
 
   if (
-    (window.location.hostname.includes("twitter.com") ||
-     window.location.hostname.includes("x.com")) &&
-    (el.isContentEditable || el.closest('[contenteditable="true"], [contenteditable=""]'))
+    isXHost() &&
+    (el.isContentEditable ||
+      el.closest('[contenteditable="true"], [contenteditable=""]') ||
+      el.closest('[data-testid^="tweetTextarea"]'))
   ) {
     return new TwitterAdapter(root);
   }

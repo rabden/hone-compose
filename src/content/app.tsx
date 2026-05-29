@@ -1,18 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
-import {
-  ChevronUp,
-  Sparkles,
-  RefreshCw,
-  Feather,
-  Check,
-  AlertCircle,
-  Briefcase,
-  MessageSquare,
-  Zap,
-  Heart,
-  Minimize2,
-  Maximize2,
-} from "lucide-react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import {
   createAdapter,
   isEditableElement,
@@ -21,13 +7,17 @@ import {
   resolveActiveContext,
   type InferredSelection,
   type ActiveContext,
+  type EditableAdapter,
 } from "./adapters";
 import { copyForManualPaste } from "./rich-editor-replace";
 import { autoPositionElement, type VirtualElement } from "./positioning";
 import { ActionRegistry, type ActionHandler } from "./actions";
-import { renderActionIcon } from "@/lib/action-icons";
 import { PreviewPanel } from "./preview-panel";
 import type { PendingPreview } from "./preview-types";
+import { FloatingActionMenu } from "./floating-action-menu";
+import { OverlayToast, TriggerDot } from "./overlay-chrome";
+import { TargetHighlight } from "./target-highlight";
+import { ConfirmDialog } from "./confirm-dialog";
 import {
   consumeKeyboardEvent,
   isActivationKey,
@@ -80,19 +70,36 @@ export default function App({
   const [pendingPreview, setPendingPreview] = useState<PendingPreview | null>(
     null,
   );
+  const [isAiProcessing, setIsAiProcessing] = useState(false);
+  const [processingSpan, setProcessingSpan] = useState<{
+    start: number;
+    end: number;
+  } | null>(null);
+  const [actionConfirm, setActionConfirm] = useState<{
+    action: string;
+    actionLabel: string;
+    override?: InferredSelection;
+  } | null>(null);
+  const [confirmPos, setConfirmPos] = useState({ top: 0, left: 0 });
 
   const menuRef = useRef<HTMLDivElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);
+  const confirmRef = useRef<HTMLDivElement>(null);
   const registryRef = useRef<ActionRegistry | null>(null);
   const focusedActionIdxRef = useRef(0);
   const suppressKeysUntilRef = useRef(0);
-  const dotRef = useRef<HTMLDivElement>(null);
+  const dotRef = useRef<HTMLButtonElement>(null);
   const isInsideShadow = useRef(false);
   const isMenuOpenRef = useRef(false);
   const pendingPreviewRef = useRef(false);
+  const actionConfirmRef = useRef(false);
+  const isAiProcessingRef = useRef(false);
+  const aiRequestIdRef = useRef(0);
   const editorElementRef = useRef<HTMLElement | null>(null);
   const savedSelectionRef = useRef<unknown>(null);
   const activeContextRef = useRef<ActiveContext | null>(null);
+  const processingAdapterRef = useRef<EditableAdapter | null>(null);
+  const processingSpanRef = useRef<{ start: number; end: number } | null>(null);
   const anchorRectRef = useRef<DOMRect | null>(null);
   const rafRef = useRef(0);
   const blurTimeoutRef = useRef(0);
@@ -145,6 +152,12 @@ export default function App({
   const restoreEditorFocus = useCallback(() => {
     const el = editorElementRef.current;
     if (!el || !document.contains(el)) return;
+    // Check if focus has already moved to a different element
+    const active = document.activeElement;
+    if (active && active !== el && !el.contains(active)) {
+      // Focus has moved to a different element, don't steal it back
+      return;
+    }
     el.focus({ preventScroll: true });
     const adapter = createAdapter(el);
     if (adapter && savedSelectionRef.current != null) {
@@ -211,6 +224,9 @@ export default function App({
       }
 
       setPendingPreview(null);
+      // Clear saved focus after applying to prevent focus stealing
+      editorElementRef.current = null;
+      savedSelectionRef.current = null;
       suppressKeysUntilRef.current = performance.now() + 250;
       showToast(`Applied (${preview.span.level})`, "success");
     };
@@ -220,6 +236,8 @@ export default function App({
 
   const discardPendingPreview = useCallback(() => {
     setPendingPreview(null);
+    setIsAiProcessing(false);
+    setProcessingSpan(null);
   }, []);
 
   // Load config from storage
@@ -295,7 +313,7 @@ export default function App({
   }, []);
 
   // ── AI action dispatcher ──
-  const triggerAIAction = useCallback(
+  const executeAIAction = useCallback(
     (action: string, overrideInference?: InferredSelection) => {
       const ctx = activeContextRef.current;
       const adapter = ctx?.adapter;
@@ -312,13 +330,33 @@ export default function App({
       }
 
       setIsMenuOpen(false);
+      setActionConfirm(null);
       suppressKeysUntilRef.current = performance.now() + 250;
 
       const fieldSnapshot = adapter.getText();
+      setProcessingSpan({ start: span.start, end: span.end });
+      setIsAiProcessing(true);
+      processingAdapterRef.current = adapter;
+      processingSpanRef.current = { start: span.start, end: span.end };
+
+      const requestId = ++aiRequestIdRef.current;
 
       chrome.runtime.sendMessage(
-        { type: "PROCESS_TEXT", action, text: span.text },
-        async (response: { success: boolean; text?: string; error?: string }) => {
+        { type: "PROCESS_TEXT", action, text: span.text, requestId },
+        async (response: {
+          success: boolean;
+          text?: string;
+          error?: string;
+          aborted?: boolean;
+          requestId?: number;
+        }) => {
+          if (requestId !== aiRequestIdRef.current) return;
+
+          setIsAiProcessing(false);
+          setProcessingSpan(null);
+          processingAdapterRef.current = null;
+          processingSpanRef.current = null;
+
           if (chrome.runtime.lastError) {
             showToast(
               "Could not reach Hone. Is the extension service worker running?",
@@ -326,6 +364,8 @@ export default function App({
             );
             return;
           }
+
+          if (response?.aborted) return;
 
           if (response?.success && response.text) {
             const handler = registryRef.current?.get(action);
@@ -380,6 +420,9 @@ export default function App({
               return;
             }
 
+            // Clear saved focus after applying to prevent focus stealing
+            editorElementRef.current = null;
+            savedSelectionRef.current = null;
             showToast(`Done! (${span.level})`, "success");
           } else {
             showToast(response?.error || "AI request failed.", "error");
@@ -389,6 +432,51 @@ export default function App({
     },
     [showToast],
   );
+
+  const triggerAIAction = useCallback(
+    (action: string, overrideInference?: InferredSelection) => {
+      if (isAiProcessingRef.current) {
+        const handler = registryRef.current?.get(action);
+        setIsMenuOpen(false);
+        setActionConfirm({
+          action,
+          actionLabel: handler?.name ?? action,
+          override: overrideInference,
+        });
+        return;
+      }
+      executeAIAction(action, overrideInference);
+    },
+    [executeAIAction],
+  );
+
+  const confirmAbortAndRun = useCallback(() => {
+    const pending = actionConfirm;
+    if (!pending) return;
+
+    setActionConfirm(null);
+    aiRequestIdRef.current += 1;
+    chrome.runtime.sendMessage({ type: "ABORT_PROCESS_TEXT" }, () => {
+      setIsAiProcessing(false);
+      setProcessingSpan(null);
+      executeAIAction(pending.action, pending.override);
+    });
+  }, [actionConfirm, executeAIAction]);
+
+  const confirmCancelGeneration = useCallback(() => {
+    setActionConfirm(null);
+    aiRequestIdRef.current += 1;
+    chrome.runtime.sendMessage({ type: "ABORT_PROCESS_TEXT" }, () => {
+      setIsAiProcessing(false);
+      setProcessingSpan(null);
+      processingAdapterRef.current = null;
+      processingSpanRef.current = null;
+    });
+  }, []);
+
+  const cancelActionConfirm = useCallback(() => {
+    setActionConfirm(null);
+  }, []);
 
   // ── Unified entry point: resolve context and open the assistant ──
   const openAssistant = useCallback(
@@ -470,6 +558,27 @@ export default function App({
         const el = activeContextRef.current?.adapter?.getElement();
         if (el) el.focus();
       }
+
+      // 4. Left/Right arrow keys to change inference level when menu is open
+      if (isMenuOpen && inferenceOptions) {
+        if (e.key === "ArrowLeft") {
+          e.preventDefault();
+          cycleInferenceLevel(-1);
+        } else if (e.key === "ArrowRight") {
+          e.preventDefault();
+          cycleInferenceLevel(1);
+        }
+      }
+
+      // 5. Escape key to cancel AI generation
+      if (e.key === "Escape" && isAiProcessing && !actionConfirm) {
+        e.preventDefault();
+        setActionConfirm({
+          action: "cancel_generation",
+          actionLabel: "cancel generation",
+          override: undefined,
+        });
+      }
     };
 
     window.addEventListener("keydown", handleKeyDown, true);
@@ -512,6 +621,10 @@ export default function App({
 
       const target = e.target as Element;
       if (isEditableElement(target)) {
+        // Clear saved focus when user focuses a new input to prevent focus stealing
+        editorElementRef.current = null;
+        savedSelectionRef.current = null;
+
         const adapter = createAdapter(target);
         if (adapter) {
           const ctx: ActiveContext = {
@@ -524,7 +637,8 @@ export default function App({
           setActiveContext(ctx);
           anchorRectRef.current = ctx.rect;
           setAnchorRect(ctx.rect);
-          setIsMenuOpen(false);
+          // Don't close menu when user focuses a new input - let them open it in the new input
+          // setIsMenuOpen(false);
           try {
             const opts = computeInferenceOptions(adapter);
             setInferenceOptions(opts);
@@ -539,14 +653,26 @@ export default function App({
 
     const onFocusOut = (e: FocusEvent) => {
       if (isInsideShadow.current) return;
-      if (isMenuOpenRef.current || pendingPreviewRef.current) return;
+      if (
+        isMenuOpenRef.current ||
+        pendingPreviewRef.current ||
+        actionConfirmRef.current
+      ) {
+        return;
+      }
 
       const relatedTarget = e.relatedTarget as Element | null;
       if (relatedTarget && isEditableElement(relatedTarget)) return;
 
       blurTimeoutRef.current = window.setTimeout(() => {
         if (isInsideShadow.current) return;
-        if (isMenuOpenRef.current || pendingPreviewRef.current) return;
+        if (
+          isMenuOpenRef.current ||
+          pendingPreviewRef.current ||
+          actionConfirmRef.current
+        ) {
+          return;
+        }
         activeContextRef.current = null;
         setActiveContext(null);
         anchorRectRef.current = null;
@@ -555,29 +681,13 @@ export default function App({
       }, 120);
     };
 
-    const handleRestoreFocus = () => {
-      const ctx = resolveActiveContext();
-      if (ctx) {
-        activeContextRef.current = ctx;
-        setActiveContext(ctx);
-        anchorRectRef.current = ctx.rect;
-        setAnchorRect(ctx.rect);
-      }
-    };
-
     window.addEventListener("focusin", onFocusIn, true);
     window.addEventListener("focusout", onFocusOut, true);
-    window.addEventListener("focus", handleRestoreFocus);
-    document.addEventListener("visibilitychange", handleRestoreFocus);
-
-    handleRestoreFocus();
 
     return () => {
       if (blurTimeoutRef.current) clearTimeout(blurTimeoutRef.current);
       window.removeEventListener("focusin", onFocusIn, true);
       window.removeEventListener("focusout", onFocusOut, true);
-      window.removeEventListener("focus", handleRestoreFocus);
-      document.removeEventListener("visibilitychange", handleRestoreFocus);
     };
   }, []);
 
@@ -632,7 +742,7 @@ export default function App({
     if (!isMenuOpen || !menuRef.current || !anchorRectRef.current) return;
 
     const virtualEl: VirtualElement = {
-      getBoundingClientRect: () => anchorRectRef.current!,
+      getBoundingClientRect: () => anchorRectRef.current || new DOMRect(0, 0, 0, 0),
     };
 
     return autoPositionElement(virtualEl, menuRef.current, setMenuPos, {
@@ -696,21 +806,26 @@ export default function App({
   }, [pendingPreview]);
 
   useEffect(() => {
+    actionConfirmRef.current = !!actionConfirm;
+  }, [actionConfirm]);
+
+  useEffect(() => {
+    isAiProcessingRef.current = isAiProcessing;
+  }, [isAiProcessing]);
+
+  useEffect(() => {
     if (!pendingPreview) return;
     saveEditorFocus();
-    requestAnimationFrame(() => restoreEditorFocus());
-  }, [pendingPreview, saveEditorFocus, restoreEditorFocus]);
+  }, [pendingPreview, saveEditorFocus]);
 
-  // ── Keep editor focused while menu is open; restore when it closes ──
+  // ── Keep editor focused while menu is open ──
   useEffect(() => {
     if (isMenuOpen) {
       setFocusedActionIdx(0);
       saveEditorFocus();
-      requestAnimationFrame(() => restoreEditorFocus());
-    } else {
-      requestAnimationFrame(() => restoreEditorFocus());
     }
-  }, [isMenuOpen, saveEditorFocus, restoreEditorFocus]);
+    // Don't restore focus when menu closes - user may have intentionally moved to another input
+  }, [isMenuOpen, saveEditorFocus]);
 
   useEffect(() => {
     focusedActionIdxRef.current = focusedActionIdx;
@@ -780,7 +895,7 @@ export default function App({
     }
 
     const virtualEl: VirtualElement = {
-      getBoundingClientRect: () => anchorRectRef.current!,
+      getBoundingClientRect: () => anchorRectRef.current || new DOMRect(0, 0, 0, 0),
     };
 
     return autoPositionElement(virtualEl, previewRef.current, setPreviewPos, {
@@ -789,9 +904,25 @@ export default function App({
     });
   }, [pendingPreview]);
 
+  // ── Confirm dialog floating position ──
+  useEffect(() => {
+    if (!actionConfirm || !confirmRef.current || !anchorRectRef.current) {
+      return;
+    }
+
+    const virtualEl: VirtualElement = {
+      getBoundingClientRect: () => anchorRectRef.current || new DOMRect(0, 0, 0, 0),
+    };
+
+    return autoPositionElement(virtualEl, confirmRef.current, setConfirmPos, {
+      placement: "top",
+      gap: 6,
+    });
+  }, [actionConfirm]);
+
   // ── Capture keyboard so Enter/Space never reach the field behind ──
   useEffect(() => {
-    if (!isMenuOpen && !pendingPreview) return;
+    if (!isMenuOpen && !pendingPreview && !actionConfirm) return;
 
     const armSuppression = () => {
       suppressKeysUntilRef.current = performance.now() + 250;
@@ -801,6 +932,24 @@ export default function App({
       if (shouldSuppressActivationKey(e, suppressKeysUntilRef.current)) {
         consumeKeyboardEvent(e);
         return;
+      }
+
+      if (actionConfirm) {
+        if (isActivationKey(e.key)) {
+          consumeKeyboardEvent(e);
+          confirmAbortAndRun();
+          armSuppression();
+          return;
+        }
+        if (e.key === "Escape") {
+          consumeKeyboardEvent(e);
+          cancelActionConfirm();
+          return;
+        }
+        if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+          consumeKeyboardEvent(e);
+          return;
+        }
       }
 
       if (pendingPreview) {
@@ -870,10 +1019,13 @@ export default function App({
   }, [
     isMenuOpen,
     pendingPreview,
+    actionConfirm,
     actionItemCount,
     activateMenuActionAtIndex,
     applyPendingPreview,
     discardPendingPreview,
+    confirmAbortAndRun,
+    cancelActionConfirm,
   ]);
 
   const handleShadowEnter = () => {
@@ -883,14 +1035,90 @@ export default function App({
     isInsideShadow.current = false;
   };
 
+  const highlightSpan = useMemo(() => {
+    const adapter = activeContext?.adapter;
+    if (!adapter) {
+      // If AI is processing and we have a saved span, use it
+      if (isAiProcessing && processingSpanRef.current) {
+        return processingSpanRef.current;
+      }
+      return null;
+    }
+
+    if (pendingPreview) {
+      return {
+        start: pendingPreview.span.start,
+        end: pendingPreview.span.end,
+      };
+    }
+
+    if (isAiProcessing && processingSpan) {
+      return processingSpan;
+    }
+
+    if (isMenuOpen) {
+      const override =
+        inferenceOptions && selectedInferenceLevel
+          ? (inferenceOptions[selectedInferenceLevel] as InferredSelection)
+          : undefined;
+      const span = resolveReplacementSpan(adapter, override);
+      if (span.end <= span.start) return null;
+      return { start: span.start, end: span.end };
+    }
+
+    return null;
+  }, [
+    activeContext?.adapter,
+    pendingPreview,
+    isAiProcessing,
+    processingSpan,
+    isMenuOpen,
+    inferenceOptions,
+    selectedInferenceLevel,
+  ]);
+
+  const highlightActive =
+    !!highlightSpan &&
+    (!!activeContext?.adapter || isAiProcessing) &&
+    highlightSpan.end > highlightSpan.start;
+
   // ── Render ──
-  if (!pendingPreview && (!anchorRect || !activeContext)) return null;
+  if (
+    !pendingPreview &&
+    !isAiProcessing &&
+    !actionConfirm &&
+    !isMenuOpen &&
+    (!anchorRect || !activeContext)
+  ) {
+    return null;
+  }
 
   const rect = anchorRect;
   const showFieldChrome =
     !!activeContext && !!rect && rect.height >= 5;
 
-  const menuWidth = 240;
+  const menuWidth = 264;
+  const previewWidth = 300;
+
+  const cycleInferenceLevel = (direction: -1 | 1) => {
+    if (!selectedInferenceLevel) return;
+    const order: Array<"selection" | "paragraph" | "field"> = [
+      "selection",
+      "paragraph",
+      "field",
+    ];
+    // Handle case where current level might be "sentence" from previous state
+    const currentLevel = selectedInferenceLevel === "sentence" ? "paragraph" : selectedInferenceLevel;
+    const idx = order.indexOf(currentLevel as "selection" | "paragraph" | "field");
+    const next = order[(idx + direction + order.length) % order.length];
+    setSelectedInferenceLevel(next);
+  };
+
+  const getInferenceOverride = (): InferredSelection | undefined => {
+    if (!inferenceOptions || !selectedInferenceLevel) return undefined;
+    return inferenceOptions[selectedInferenceLevel] as InferredSelection | undefined;
+  };
+
   const showDot =
     showFieldChrome && !hideDot && activeContext!.type === "input";
   const dotSize = 16;
@@ -910,14 +1138,48 @@ export default function App({
       onMouseEnter={handleShadowEnter}
       onMouseLeave={handleShadowLeave}
     >
+      <TargetHighlight
+        adapter={isAiProcessing ? processingAdapterRef.current : (activeContext?.adapter ?? null)}
+        start={highlightSpan?.start ?? 0}
+        end={highlightSpan?.end ?? 0}
+        mode={isAiProcessing ? "loading" : "idle"}
+        active={highlightActive}
+        onRestoreSelection={restoreEditorFocus}
+      />
+
       {/* ── Preview dialog (custom actions with preview replace mode) ── */}
+      {actionConfirm && (
+        <ConfirmDialog
+          panelRef={confirmRef}
+          message={
+            actionConfirm.action === "cancel_generation"
+              ? "Are you sure you want to cancel the AI generation?"
+              : `An action is already running. Abort it and run “${actionConfirm.actionLabel}”?`
+          }
+          top={confirmPos.top}
+          left={confirmPos.left}
+          width={previewWidth}
+          onConfirm={() => {
+            suppressKeysUntilRef.current = performance.now() + 250;
+            if (actionConfirm.action === "cancel_generation") {
+              confirmCancelGeneration();
+            } else {
+              confirmAbortAndRun();
+            }
+          }}
+          onCancel={cancelActionConfirm}
+          onPointerEnter={handleShadowEnter}
+          onPointerLeave={handleShadowLeave}
+        />
+      )}
+
       {pendingPreview && (
         <PreviewPanel
           panelRef={previewRef}
           preview={pendingPreview}
           top={previewPos.top}
           left={previewPos.left}
-          width={menuWidth}
+          width={previewWidth}
           onApply={() => {
             suppressKeysUntilRef.current = performance.now() + 250;
             applyPendingPreview();
@@ -928,14 +1190,17 @@ export default function App({
         />
       )}
 
-      {/* ── Dot trigger (input type only) ── */}
       {showDot && (() => {
         const el = activeContext!.adapter?.getElement();
         if (!el) return null;
         const elRect = el.getBoundingClientRect();
         return (
-          <div
-            ref={dotRef}
+          <TriggerDot
+            dotRef={dotRef}
+            bottom={window.innerHeight - elRect.bottom + 4}
+            right={window.innerWidth - elRect.right + 4}
+            size={dotSize}
+            loading={isAiProcessing}
             onMouseDown={(e) => {
               e.preventDefault();
               e.stopPropagation();
@@ -961,32 +1226,31 @@ export default function App({
               }
               setIsMenuOpen((prev) => !prev);
             }}
-            style={{
-              position: "fixed",
-              bottom: `${window.innerHeight - elRect.bottom + 4}px`,
-              right: `${window.innerWidth - elRect.right + 4}px`,
-              width: `${dotSize}px`,
-              height: `${dotSize}px`,
-              pointerEvents: "auto",
-              zIndex: 2147483647,
-              background: "#8B5CF6",
-              borderRadius: "50%",
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              boxShadow: "0 0 12px rgba(139, 92, 246, 0.6)",
-            }}
-          >
-            <ChevronUp size={10} color="white" strokeWidth={3} style={{ pointerEvents: "none" }} />
-          </div>
+          />
         );
       })()}
 
-      {/* ── Floating Action Menu ── */}
       {showFieldChrome && isMenuOpen && (
-        <div
-          ref={menuRef}
+        <FloatingActionMenu
+          menuRef={menuRef}
+          top={menuPos.top}
+          left={menuPos.left}
+          width={menuWidth}
+          shortcut={dropdownShortcut}
+          quickShortcut={shortcut}
+          inferenceOptions={inferenceOptions}
+          selectedInferenceLevel={selectedInferenceLevel}
+          onInferencePrev={() => cycleInferenceLevel(-1)}
+          onInferenceNext={() => cycleInferenceLevel(1)}
+          customActions={customActions}
+          focusedActionIdx={focusedActionIdx}
+          onFocusAction={setFocusedActionIdx}
+          onTriggerAction={triggerAIAction}
+          hasAdapter={!!activeContext?.adapter}
+          customActionStartIdx={PRIMARY_ACTION_COUNT}
+          toneActionStartIdx={toneActionStartIdx}
+          lengthActionStartIdx={lengthActionStartIdx}
+          getInferenceOverride={getInferenceOverride}
           onMouseDownCapture={(e) => {
             e.preventDefault();
             isInsideShadow.current = true;
@@ -995,539 +1259,10 @@ export default function App({
           onMouseDown={(e) => {
             e.stopPropagation();
           }}
-          style={{
-            outline: "none",
-            position: "fixed",
-            top: `${menuPos.top}px`,
-            left: `${menuPos.left}px`,
-            width: `${menuWidth}px`,
-            pointerEvents: "auto",
-            zIndex: 2147483646,
-            background: "#09090b",
-            border: "1px solid #27272a",
-            borderRadius: "6px",
-            padding: "5px",
-            boxShadow:
-              "0 10px 30px -10px rgba(0, 0, 0, 0.7), 0 1px 3px rgba(255, 255, 255, 0.02)",
-            display: "flex",
-            flexDirection: "column",
-            gap: "2px",
-            fontFamily: "Geist, 'Outfit', -apple-system, sans-serif",
-            animation: "fadeInUp 0.1s cubic-bezier(0.16, 1, 0.3, 1)",
-          }}
-        >
-          {/* Header */}
-          <div
-            style={{
-              padding: "6px 8px 4px",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <Sparkles style={{ width: 11, height: 11, color: "#fafafa" }} />
-              <span
-                style={{
-                  fontSize: 9,
-                  fontWeight: 700,
-                  color: "#71717a",
-                  letterSpacing: "0.08em",
-                  textTransform: "uppercase",
-                }}
-              >
-                HONE
-              </span>
-            </div>
-            {shortcut && shortcut.key && (
-              <span
-                style={{
-                  fontSize: 8,
-                  color: "#52525b",
-                  fontWeight: 600,
-                  background: "rgba(255, 255, 255, 0.03)",
-                  border: "1px solid rgba(255, 255, 255, 0.04)",
-                  padding: "2px 4px",
-                  borderRadius: 3,
-                  fontFamily: "monospace",
-                }}
-              >
-                {shortcut.alt ? "⌥" : ""}
-                {shortcut.shift ? "⇧" : ""}
-                {shortcut.ctrl ? "⌃" : ""}
-                {shortcut.key.toUpperCase()}
-              </span>
-            )}
-          </div>
-
-          <div style={{ height: 1, background: "#27272a", margin: "4px 0" }} />
-
-          {/* Inference chooser */}
-          {inferenceOptions && selectedInferenceLevel && (
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-                padding: "6px 8px",
-              }}
-            >
-              <button
-                onClick={() => {
-                  const order: Array<
-                    "selection" | "sentence" | "paragraph" | "field"
-                  > = ["selection", "sentence", "paragraph", "field"];
-                  const idx = order.indexOf(selectedInferenceLevel);
-                  const next = order[(idx - 1 + order.length) % order.length];
-                  setSelectedInferenceLevel(next);
-                }}
-                style={{
-                  background: "transparent",
-                  border: "1px solid #27272a",
-                  color: "#a1a1aa",
-                  padding: "4px",
-                  borderRadius: 4,
-                }}
-                title="Previous inference level"
-              >
-                ‹
-              </button>
-
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div
-                  style={{ fontSize: 11, color: "#e6e6e9", fontWeight: 700 }}
-                >
-                  {(selectedInferenceLevel || "").toUpperCase()}
-                </div>
-                <div
-                  style={{
-                    fontSize: 11,
-                    color: "#a1a1aa",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {(() => {
-                    const opt =
-                      inferenceOptions[
-                        selectedInferenceLevel as string as keyof typeof inferenceOptions
-                      ];
-                    if (!opt) return "";
-                    const t = (opt.text || "").replace(/\s+/g, " ").trim();
-                    return t.length > 80 ? t.slice(0, 77) + "..." : t;
-                  })()}
-                </div>
-              </div>
-
-              <button
-                onClick={() => {
-                  const order: Array<
-                    "selection" | "sentence" | "paragraph" | "field"
-                  > = ["selection", "sentence", "paragraph", "field"];
-                  const idx = order.indexOf(selectedInferenceLevel);
-                  const next = order[(idx + 1) % order.length];
-                  setSelectedInferenceLevel(next);
-                }}
-                style={{
-                  background: "transparent",
-                  border: "1px solid #27272a",
-                  color: "#a1a1aa",
-                  padding: "4px",
-                  borderRadius: 4,
-                }}
-                title="Next inference level"
-              >
-                ›
-              </button>
-            </div>
-          )}
-
-          {/* Primary actions (only when adapter exists) */}
-          {activeContext?.adapter && (
-            <>
-              {[
-                {
-                  action: "improve",
-                  icon: <Feather style={{ width: 12, height: 12 }} />,
-                  label: "Improve writing",
-                },
-                {
-                  action: "paraphrase",
-                  icon: <RefreshCw style={{ width: 12, height: 12 }} />,
-                  label: "Paraphrase text",
-                },
-                {
-                  action: "fix_spelling",
-                  icon: <Check style={{ width: 12, height: 12 }} />,
-                  label: "Fix spelling & grammar",
-                },
-              ].map((item, i) => (
-                <button
-                  key={item.action}
-                  data-action-idx={i}
-                  onClick={() => {
-                    const override =
-                      inferenceOptions && selectedInferenceLevel
-                        ? inferenceOptions[selectedInferenceLevel]
-                        : undefined;
-                    triggerAIAction(item.action, override);
-                  }}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                    width: "100%",
-                    background: focusedActionIdx === i
-                      ? "rgba(255, 255, 255, 0.04)"
-                      : "none",
-                    border: "none",
-                    padding: "6px 8px",
-                    borderRadius: 4,
-                    color: focusedActionIdx === i ? "#ffffff" : "#a1a1aa",
-                    fontSize: 11,
-                    fontWeight: 500,
-                    cursor: "pointer",
-                    textAlign: "left",
-                    fontFamily: "inherit",
-                    transition: "all 0.1s ease",
-                  }}
-                  onMouseEnter={() => setFocusedActionIdx(i)}
-                >
-                  <span
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      color: "#71717a",
-                      transition: "color 0.1s",
-                    }}
-                  >
-                    {item.icon}
-                  </span>
-                  {item.label}
-                </button>
-              ))}
-
-              {/* ── Custom Actions ── */}
-              {customActions.length > 0 && (
-                <>
-                  <div
-                    style={{
-                      height: 1,
-                      background: "#27272a",
-                      margin: "4px 0",
-                    }}
-                  />
-                  <div
-                    style={{
-                      padding: "2px 8px",
-                      fontSize: 8.5,
-                      fontWeight: 700,
-                      color: "#71717a",
-                      textTransform: "uppercase",
-                      letterSpacing: "0.08em",
-                    }}
-                  >
-                    Custom Actions
-                  </div>
-                  {customActions.map((ca, i) => {
-                    const idx = PRIMARY_ACTION_COUNT + i;
-                    const isFocused = focusedActionIdx === idx;
-                    return (
-                      <button
-                        key={ca.id}
-                        data-action-idx={idx}
-                        onClick={() => {
-                          const override =
-                            inferenceOptions && selectedInferenceLevel
-                              ? inferenceOptions[selectedInferenceLevel]
-                              : undefined;
-                          triggerAIAction(ca.id, override);
-                        }}
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 8,
-                          width: "100%",
-                          background: isFocused
-                            ? "rgba(255, 255, 255, 0.04)"
-                            : "none",
-                          border: "none",
-                          padding: "6px 8px",
-                          borderRadius: 4,
-                          color: isFocused ? "#ffffff" : "#a1a1aa",
-                          fontSize: 11,
-                          fontWeight: 500,
-                          cursor: "pointer",
-                          textAlign: "left",
-                          fontFamily: "inherit",
-                          transition: "all 0.1s ease",
-                        }}
-                        onMouseEnter={() => setFocusedActionIdx(idx)}
-                      >
-                        <span
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            color: "#71717a",
-                          }}
-                        >
-                          {renderActionIcon(ca.icon, {
-                            size: 12,
-                            color: ca.color || "#8B5CF6",
-                          })}
-                        </span>
-                        {ca.name}
-                      </button>
-                    );
-                  })}
-                </>
-              )}
-
-              <div
-                style={{ height: 1, background: "#27272a", margin: "4px 0" }}
-              />
-
-              {/* Change Tone */}
-              <div
-                style={{
-                  padding: "2px 8px",
-                  fontSize: 8.5,
-                  fontWeight: 700,
-                  color: "#71717a",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.08em",
-                }}
-              >
-                Change Tone
-              </div>
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "1fr 1fr",
-                  gap: 4,
-                  padding: "2px 4px 4px",
-                }}
-              >
-                {[
-                  {
-                    action: "tone_professional",
-                    icon: <Briefcase style={{ width: 11, height: 11 }} />,
-                    label: "Professional",
-                  },
-                  {
-                    action: "tone_casual",
-                    icon: <MessageSquare style={{ width: 11, height: 11 }} />,
-                    label: "Casual",
-                  },
-                  {
-                    action: "tone_exciting",
-                    icon: <Zap style={{ width: 11, height: 11 }} />,
-                    label: "Exciting",
-                  },
-                  {
-                    action: "tone_friendly",
-                    icon: <Heart style={{ width: 11, height: 11 }} />,
-                    label: "Friendly",
-                  },
-                ].map((item, i) => {
-                  const idx = toneActionStartIdx + i;
-                  const isFocused = focusedActionIdx === idx;
-                  return (
-                    <button
-                      key={item.action}
-                      data-action-idx={idx}
-                      onClick={() => {
-                        const override =
-                          inferenceOptions && selectedInferenceLevel
-                            ? inferenceOptions[selectedInferenceLevel]
-                            : undefined;
-                        triggerAIAction(item.action, override);
-                      }}
-                      style={{
-                        background: isFocused
-                          ? "rgba(255, 255, 255, 0.04)"
-                          : "transparent",
-                        border: `1px solid ${isFocused ? "#3f3f46" : "#27272a"}`,
-                        borderRadius: 4,
-                        padding: "5px 8px",
-                        color: isFocused ? "#ffffff" : "#a1a1aa",
-                        fontSize: 10,
-                        cursor: "pointer",
-                        textAlign: "left",
-                        fontFamily: "inherit",
-                        fontWeight: 500,
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 6,
-                        transition: "all 0.1s ease",
-                      }}
-                      onMouseEnter={() => setFocusedActionIdx(idx)}
-                    >
-                      <span
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          color: "#71717a",
-                          transition: "color 0.1s",
-                        }}
-                      >
-                        {item.icon}
-                      </span>
-                      {item.label}
-                    </button>
-                  );
-                })}
-              </div>
-
-              <div
-                style={{ height: 1, background: "#27272a", margin: "4px 0" }}
-              />
-
-              {/* Change Length */}
-              <div
-                style={{
-                  padding: "2px 8px",
-                  fontSize: 8.5,
-                  fontWeight: 700,
-                  color: "#71717a",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.08em",
-                }}
-              >
-                Change Length
-              </div>
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "1fr 1fr",
-                  gap: 4,
-                  padding: "2px 4px 6px",
-                }}
-              >
-                {[
-                  {
-                    action: "length_shorter",
-                    icon: <Minimize2 style={{ width: 11, height: 11 }} />,
-                    label: "Shorter",
-                  },
-                  {
-                    action: "length_longer",
-                    icon: <Maximize2 style={{ width: 11, height: 11 }} />,
-                    label: "Longer",
-                  },
-                ].map((item, i) => {
-                  const idx = lengthActionStartIdx + i;
-                  const isFocused = focusedActionIdx === idx;
-                  return (
-                    <button
-                      key={item.action}
-                      data-action-idx={idx}
-                      onClick={() => {
-                        const override =
-                          inferenceOptions && selectedInferenceLevel
-                            ? inferenceOptions[selectedInferenceLevel]
-                            : undefined;
-                        triggerAIAction(item.action, override);
-                      }}
-                      style={{
-                        background: isFocused
-                          ? "rgba(255, 255, 255, 0.04)"
-                          : "transparent",
-                        border: `1px solid ${isFocused ? "#3f3f46" : "#27272a"}`,
-                        borderRadius: 4,
-                        padding: "5px 8px",
-                        color: isFocused ? "#ffffff" : "#a1a1aa",
-                        fontSize: 10,
-                        cursor: "pointer",
-                        textAlign: "left",
-                        fontFamily: "inherit",
-                        fontWeight: 500,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        gap: 6,
-                        transition: "all 0.1s ease",
-                      }}
-                      onMouseEnter={() => setFocusedActionIdx(idx)}
-                    >
-                      <span
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          color: "#71717a",
-                          transition: "color 0.1s",
-                        }}
-                      >
-                        {item.icon}
-                      </span>
-                      {item.label}
-                    </button>
-                  );
-                })}
-              </div>
-            </>
-          )}
-
-          {/* Read-only selection: limited options */}
-          {!activeContext?.adapter && (
-            <div
-              style={{
-                padding: "8px",
-                color: "#a1a1aa",
-                fontSize: 11,
-                textAlign: "center",
-              }}
-            >
-              Text selected (read-only)
-            </div>
-          )}
-        </div>
+        />
       )}
 
-      {/* ── Toast Notification ── */}
-      {toast && (
-        <div
-          style={{
-            position: "fixed",
-            bottom: 24,
-            right: 24,
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            padding: "8px 14px",
-            borderRadius: 8,
-            fontSize: 11.5,
-            fontWeight: 600,
-            fontFamily: "'Outfit', system-ui, -apple-system, sans-serif",
-            boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
-            pointerEvents: "auto",
-            zIndex: 2147483647,
-            background: "rgba(9,12,22,0.95)",
-            border:
-              toast.type === "success"
-                ? "1px solid rgba(34,197,94,0.3)"
-                : "1px solid rgba(239,68,68,0.3)",
-            color: toast.type === "success" ? "#4ade80" : "#f87171",
-            animation: "fadeInUp 0.15s ease-out",
-          }}
-        >
-          {toast.type === "success" ? (
-            <Check style={{ width: 13, height: 13, color: "#22c55e" }} />
-          ) : (
-            <AlertCircle style={{ width: 13, height: 13, color: "#ef4444" }} />
-          )}
-          {toast.message}
-        </div>
-      )}
-
-      <style>{`
-        @keyframes spin { to { transform: rotate(360deg); } }
-        @keyframes fadeInUp {
-          from { opacity: 0; transform: translateY(4px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-      `}</style>
+      {toast && <OverlayToast message={toast.message} type={toast.type} />}
     </div>
   );
 }

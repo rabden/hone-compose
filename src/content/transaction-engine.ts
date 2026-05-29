@@ -4,7 +4,12 @@
  * WhatsApp/Lexical: insertReplacementText beforeinput.
  */
 
-import { detectEditorFramework, resolveEditorRoot } from "./editor-detection";
+import {
+  detectEditorFramework,
+  isXHost,
+  resolveEditorRoot,
+  resolveTwitterComposeRoot,
+} from "./editor-detection";
 import {
   extractPlainText,
   selectPlainTextRange,
@@ -149,13 +154,18 @@ async function verifyDomReplace(ctx: TransactionContext, maxWaitMs = 150): Promi
 
 function prepareDomSelection(ctx: TransactionContext): void {
   const { root, start, end, expectedSlice } = ctx;
-  root.focus({ preventScroll: true });
+  // Only focus if the element is already focused or is the active element
+  // This prevents focus stealing when user has moved to another input
+  const active = document.activeElement;
+  if (!active || active === root || root.contains(active)) {
+    root.focus({ preventScroll: true });
+  }
 
   if (
-    !selectPlainTextRange(root, start, end, expectedSlice, { focus: true }) &&
-    !setDomSelectionByOffsets(root, start, end, { focus: true })
+    !selectPlainTextRange(root, start, end, expectedSlice, { focus: false }) &&
+    !setDomSelectionByOffsets(root, start, end, { focus: false })
   ) {
-    setDomSelectionByOffsets(root, start, end, { focus: true });
+    setDomSelectionByOffsets(root, start, end, { focus: false });
   }
 
   syncSelectionChange();
@@ -276,6 +286,59 @@ async function commitViaPasteEvent(ctx: TransactionContext): Promise<boolean> {
   }
 }
 
+/**
+ * X/Twitter: execCommand + React handlers in Main World (isolated world can ghost-state).
+ */
+async function commitViaMainWorldTwitter(
+  ctx: TransactionContext,
+): Promise<boolean> {
+  const host = (ctx.root.closest('[data-testid^="tweetTextarea"]') ??
+    ctx.root) as HTMLElement;
+
+  if (!host.id) {
+    host.id = `hone-twitter-${Math.random().toString(36).slice(2, 11)}`;
+  }
+
+  prepareDomSelection(ctx);
+  await delayForSelectionSync(40);
+
+  return new Promise((resolve) => {
+    const handleResult = (event: MessageEvent) => {
+      if (
+        event.source !== window ||
+        event.data?.type !== "HONE_TRANSACTION_RESULT"
+      ) {
+        return;
+      }
+
+      window.removeEventListener("message", handleResult);
+      if (event.data.success) {
+        verifyDomReplace(ctx).then(resolve);
+      } else {
+        resolve(false);
+      }
+    };
+
+    window.addEventListener("message", handleResult);
+
+    window.postMessage(
+      {
+        type: "HONE_RUN_TWITTER_TRANSACTION",
+        targetId: host.id,
+        replacement: ctx.replacement,
+        start: ctx.start,
+        end: ctx.end,
+      },
+      "*",
+    );
+
+    setTimeout(() => {
+      window.removeEventListener("message", handleResult);
+      resolve(false);
+    }, 1200);
+  });
+}
+
 /** Last resort for generic CE — can desync Slate (ghost state on Discord) */
 async function commitViaExecCommand(ctx: TransactionContext): Promise<boolean> {
   prepareDomSelection(ctx);
@@ -360,14 +423,13 @@ export async function applyEditorTransaction(
 
 
   if (framework === "prosemirror") {
-    if (await commitViaPasteEvent(ctx)) {
+    // For ProseMirror, only try beforeinput - paste event can cause double insertion
+    // because ProseMirror handles paste events internally and may duplicate the text
+    if (await commitViaBeforeInput(ctx)) {
       return { committed: true, confidence: 0.9, suggestClipboardPaste: false };
     }
-    if (await commitViaBeforeInput(ctx)) {
-      return { committed: true, confidence: 0.8, suggestClipboardPaste: false };
-    }
     if (await commitViaExecCommand(ctx)) {
-      return { committed: true, confidence: 0.6, suggestClipboardPaste: false };
+      return { committed: true, confidence: 0.7, suggestClipboardPaste: false };
     }
     return {
       committed: false,
@@ -377,13 +439,17 @@ export async function applyEditorTransaction(
   }
 
   if (framework === "twitter") {
-    // For Twitter/X's custom contenteditable, execCommand("insertText") is the most suitable
-    // basic browser API as it fires native events that React intercepts to update its state.
-    if (await commitViaExecCommand(ctx)) {
+    if (await commitViaMainWorldTwitter(ctx)) {
       return { committed: true, confidence: 0.95, suggestClipboardPaste: false };
+    }
+    if (await commitViaBeforeInput(ctx)) {
+      return { committed: true, confidence: 0.85, suggestClipboardPaste: false };
     }
     if (await commitViaPasteEvent(ctx)) {
       return { committed: true, confidence: 0.8, suggestClipboardPaste: false };
+    }
+    if (await commitViaExecCommand(ctx)) {
+      return { committed: true, confidence: 0.55, suggestClipboardPaste: false };
     }
     return {
       committed: false,
@@ -437,7 +503,9 @@ export function buildTransactionContext(
   beforeText: string,
   expectedSlice: string,
 ): TransactionContext {
-  const root = resolveEditorRoot(element);
+  const root =
+    (isXHost() ? resolveTwitterComposeRoot(element) : null) ??
+    resolveEditorRoot(element);
   return {
     root,
     replacement,

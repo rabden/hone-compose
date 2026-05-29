@@ -51,6 +51,11 @@ export default defineConfig(() => {
     return {
       plugins: [react(), tailwindcss()],
       define,
+      resolve: {
+        alias: {
+          '@': resolve(__dirname, './src'),
+        },
+      },
       build: {
         emptyOutDir: false,
         outDir: 'dist',

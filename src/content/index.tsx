@@ -54,6 +54,14 @@ function mount() {
     overflow: 'visible',
   });
   reactTarget.className = 'ai-assistant-shadow-root';
+  const syncColorScheme = () => {
+    const dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    reactTarget.classList.toggle('dark', dark);
+  };
+  syncColorScheme();
+  window
+    .matchMedia('(prefers-color-scheme: dark)')
+    .addEventListener('change', syncColorScheme);
   shadowRoot.appendChild(reactTarget);
 
   // Portal container for floating elements (dropdowns, tooltips, etc.)

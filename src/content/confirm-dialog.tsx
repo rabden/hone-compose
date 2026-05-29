@@ -2,18 +2,15 @@ import type { RefObject } from "react";
 import { CornerDownLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import type { PendingPreview } from "./preview-types";
 
-export type { PendingPreview } from "./preview-types";
-
-interface PreviewPanelProps {
-  preview: PendingPreview;
+interface ConfirmDialogProps {
+  message: string;
   top: number;
   left: number;
   width: number;
   panelRef: RefObject<HTMLDivElement | null>;
-  onApply: () => void;
-  onDiscard: () => void;
+  onConfirm: () => void;
+  onCancel: () => void;
   onPointerEnter?: () => void;
   onPointerLeave?: () => void;
 }
@@ -21,24 +18,22 @@ interface PreviewPanelProps {
 const pillButtonClass =
   "h-6 rounded-full px-2.5 text-[10px] font-medium gap-1 [&_svg]:size-3";
 
-export function PreviewPanel({
-  preview,
+export function ConfirmDialog({
+  message,
   top,
   left,
   width,
   panelRef,
-  onApply,
-  onDiscard,
+  onConfirm,
+  onCancel,
   onPointerEnter,
   onPointerLeave,
-}: PreviewPanelProps) {
-  const body = preview.resultText.trim() || "(empty)";
-
+}: ConfirmDialogProps) {
   return (
     <div
       ref={panelRef}
-      role="dialog"
-      aria-label="Preview AI suggestion"
+      role="alertdialog"
+      aria-labelledby="hone-confirm-title"
       onMouseEnter={onPointerEnter}
       onMouseLeave={onPointerLeave}
       onMouseDown={(e) => {
@@ -64,15 +59,12 @@ export function PreviewPanel({
         Esc
       </span>
 
-      <div
-        className={cn(
-          "font-noto max-h-48 min-h-[2.5rem] overflow-y-auto pr-6",
-          "text-[12px] leading-relaxed text-foreground",
-          "whitespace-pre-wrap break-words",
-        )}
+      <p
+        id="hone-confirm-title"
+        className="pr-6 text-[11px] leading-relaxed text-foreground"
       >
-        {body}
-      </div>
+        {message}
+      </p>
 
       <div className="flex items-center justify-end gap-1 pt-0.5">
         <Button
@@ -81,7 +73,7 @@ export function PreviewPanel({
           size="xs"
           className={pillButtonClass}
           onMouseDown={(e) => e.preventDefault()}
-          onClick={onDiscard}
+          onClick={onCancel}
         >
           Cancel
         </Button>
@@ -91,10 +83,10 @@ export function PreviewPanel({
           size="xs"
           className={cn(pillButtonClass, "bg-primary text-primary-foreground")}
           onMouseDown={(e) => e.preventDefault()}
-          onClick={onApply}
+          onClick={onConfirm}
         >
           <CornerDownLeft strokeWidth={2.25} aria-hidden />
-          Enter
+          Yes
         </Button>
       </div>
     </div>
