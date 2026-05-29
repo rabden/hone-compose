@@ -71,7 +71,7 @@ export function autoPositionElement(
     fallbackPlacement?: boolean;
   } = {}
 ): () => void {
-  const cleanup = autoUpdate(referenceEl as any, floatingEl, async () => {
+  const cleanup = autoUpdate(referenceEl as unknown as Element, floatingEl, async () => {
     const pos = await positionElement(referenceEl, floatingEl, options);
     onPosition(pos);
   });

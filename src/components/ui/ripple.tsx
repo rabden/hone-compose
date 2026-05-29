@@ -18,9 +18,8 @@ export const Ripple = React.forwardRef<HTMLElement, RippleProps>(({
     ...props
 }, ref) => {
     return (
-        // @ts-ignore - md-ripple is a custom element
         <md-ripple
-            ref={ref as any}
+            ref={ref as React.Ref<HTMLElement>}
             disabled={disabled}
             for={htmlFor}
             unbounded={unbounded}

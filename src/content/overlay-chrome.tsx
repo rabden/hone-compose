@@ -26,8 +26,8 @@ export function TriggerDot({
       disabled={loading}
       className={cn(
         "fixed flex items-center justify-center rounded-full",
-        "bg-[var(--brand)] text-white shadow-md",
-        "ring-2 ring-[color-mix(in_oklch,var(--brand)_35%,transparent)]",
+        "bg-primary text-primary-foreground shadow-md",
+        "ring-2 ring-primary/35",
         "transition-[transform,box-shadow] duration-150 ease-out",
         !loading && "hover:scale-105 active:scale-95",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",

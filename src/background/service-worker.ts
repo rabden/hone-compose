@@ -22,7 +22,7 @@ function cleanAiResponse(text: string): string {
 
 async function saveToHistory(item: Omit<HistoryItem, 'id' | 'timestamp'>) {
   try {
-    const data = await chrome.storage.local.get('history') as any;
+    const data = await chrome.storage.local.get('history') as { history?: HistoryItem[] };
     const history = data.history || [];
     const newItem: HistoryItem = {
       ...item,
@@ -146,25 +146,24 @@ async function callAIProviderRaw(
   url: string,
   signal?: AbortSignal,
 ): Promise<string> {
-  const [settings, registry] = await Promise.all([
-    chrome.storage.local.get([
-      'activeProvider',
-      'openaiKey',
-      'openaiModel',
-      'openaiEndpoint',
-      'anthropicKey',
-      'anthropicModel',
-      'geminiKey',
-      'geminiModel',
-      'openrouterKey',
-      'openrouterModel',
-      'openrouterPaidKey',
-      'openrouterPaidModel',
-      'googleAiStudioKey',
-      'googleAiStudioModel'
-    ]) as any,
-    getRegistry()
+  const rawSettings = await chrome.storage.local.get([
+    'activeProvider',
+    'openaiKey',
+    'openaiModel',
+    'openaiEndpoint',
+    'anthropicKey',
+    'anthropicModel',
+    'geminiKey',
+    'geminiModel',
+    'openrouterKey',
+    'openrouterModel',
+    'openrouterPaidKey',
+    'openrouterPaidModel',
+    'googleAiStudioKey',
+    'googleAiStudioModel'
   ]);
+  const settings = rawSettings as Record<string, string | undefined>;
+  const registry = await getRegistry();
 
   const provider = settings.activeProvider || 'openrouter';
   const { system, user: prompt } = buildSystemPrompt(registry.buildPrompt(actionId, text));
@@ -207,7 +206,7 @@ async function callAIProviderRaw(
 
     if (!apiKey) throw new Error('Anthropic API Key is missing. Please add it in the extension options.');
 
-    const body: any = {
+    const body: Record<string, unknown> = {
       model,
       max_tokens: 1024,
       messages: [{ role: 'user', content: prompt }],
@@ -246,7 +245,7 @@ async function callAIProviderRaw(
 
     if (!apiKey) throw new Error('Gemini API Key is missing. Please add it in the extension options.');
 
-    const body: any = {
+    const body: Record<string, unknown> = {
       contents: [{
         parts: [{ text: prompt }]
       }]
@@ -292,7 +291,7 @@ async function callAIProviderRaw(
 
     if (!apiKey) throw new Error('Google AI Studio API Key is missing. Please add it in the extension options.');
 
-    const config: any = {
+    const config: Record<string, unknown> = {
       thinkingConfig: {
         thinkingLevel: ThinkingLevel.MINIMAL,
       },
@@ -364,12 +363,13 @@ async function callAIProviderRaw(
         // Save using OpenRouter Free provider but with the specific model that succeeded!
         await saveToHistory({ originalText: text, rewrittenText: resultText, action: actionId, url, provider: 'openrouter', model: currentModel });
         return resultText;
-      } catch (err: any) {
+      } catch (err: unknown) {
         if (signal?.aborted) {
           throw err;
         }
-        console.warn(`OpenRouter Free: Attempt ${idx + 1} (${currentModel}) failed:`, err.message);
-        lastError = err;
+        const error = err as Error;
+        console.warn(`OpenRouter Free: Attempt ${idx + 1} (${currentModel}) failed:`, error.message);
+        lastError = error;
       }
     }
 
@@ -407,7 +407,7 @@ chrome.commands.onCommand.addListener((command: string) => {
 });
 
 // Listen for messages from content scripts
-chrome.runtime.onMessage.addListener((message: any, sender: chrome.runtime.MessageSender, sendResponse: (response?: any) => void) => {
+chrome.runtime.onMessage.addListener((message: Record<string, unknown>, sender: chrome.runtime.MessageSender, sendResponse: (response?: unknown) => void) => {
   if (message.type === 'ABORT_PROCESS_TEXT') {
     activeAIAbort?.abort();
     activeAIAbort = null;
@@ -423,20 +423,21 @@ chrome.runtime.onMessage.addListener((message: any, sender: chrome.runtime.Messa
     const controller = new AbortController();
     activeAIAbort = controller;
 
-    callAIProvider(action, text, url, controller.signal)
+    callAIProvider(action as string, text as string, url, controller.signal)
       .then((rewrittenText) => {
         sendResponse({ success: true, text: rewrittenText, requestId });
       })
-      .catch((error: Error) => {
+      .catch((error: unknown) => {
+        const err = error instanceof Error ? error : new Error(String(error));
         const aborted =
-          error?.name === 'AbortError' || controller.signal.aborted;
+          err.name === 'AbortError' || controller.signal.aborted;
         if (!aborted) {
-          console.error('AI processing error:', error);
+          console.error('AI processing error:', err);
         }
         sendResponse({
           success: false,
           aborted,
-          error: aborted ? undefined : error.message,
+          error: aborted ? undefined : err.message,
           requestId,
         });
       })

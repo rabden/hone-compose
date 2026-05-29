@@ -31,7 +31,7 @@ interface DialogContentProps extends React.HTMLAttributes<HTMLElement> {
 
 export function DialogContent({ children, className, onOpened, ...props }: DialogContentProps) {
     const context = useContext(DialogContext);
-    const dialogRef = useRef<any>(null);
+    const dialogRef = useRef<HTMLElement & { open: boolean }>(null);
 
     if (!context) {
         throw new Error("DialogContent must be used within a Dialog");
@@ -90,7 +90,6 @@ export function DialogContent({ children, className, onOpened, ...props }: Dialo
     }, [open, onOpenChange, onOpened]);
 
     return (
-        // @ts-ignore - md-dialog is a custom element
         <md-dialog ref={dialogRef} {...props}>
             {/*
              * We put everything inside slot="content" so the inner styled panel
@@ -125,7 +124,7 @@ export function DialogTitle({ children, className, ...props }: React.HTMLAttribu
     );
 }
 
-export function DialogTrigger({ children }: any) {
+export function DialogTrigger({ children }: { children: React.ReactNode }) {
     const context = useContext(DialogContext);
     if (!context) throw new Error("DialogTrigger must be used within a Dialog");
 

@@ -25,8 +25,8 @@ export function locatePlainTextSpan(
   expectedText?: string,
 ): { start: number; end: number } | null {
   const len = fullText.length;
-  let s = Math.max(0, Math.min(start, len));
-  let e = Math.max(s, Math.min(end, len));
+  const s = Math.max(0, Math.min(start, len));
+  const e = Math.max(s, Math.min(end, len));
 
   if (expectedText === undefined) {
     return { start: s, end: e };
@@ -111,6 +111,8 @@ export async function replaceInContentEditable(
   return await applyEditorTransaction(ctx);
 }
 
-export function notifyEditorChange(_element: HTMLElement): void {}
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export function notifyEditorChange(_element: HTMLElement): void {
+}
 
 export { extractPlainText, setDomSelectionByOffsets };

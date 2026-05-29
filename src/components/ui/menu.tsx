@@ -34,6 +34,7 @@ type MdMenuItemProps = React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>
 };
 
 declare module 'react' {
+    // eslint-disable-next-line @typescript-eslint/no-namespace
     namespace JSX {
         interface IntrinsicElements {
             'md-menu': MdMenuProps;
@@ -101,7 +102,7 @@ export const Menu = React.forwardRef<HTMLElement, MenuProps>(({
 
     // Set anchorElement imperatively (can't be done via attribute)
     useEffect(() => {
-        const menuEl = resolvedRef.current as any;
+        const menuEl = resolvedRef.current as HTMLElement & { anchorElement?: HTMLElement | null };
         if (menuEl && anchorElement) {
             menuEl.anchorElement = anchorElement;
         }
@@ -131,9 +132,8 @@ export const Menu = React.forwardRef<HTMLElement, MenuProps>(({
     }, [onOpening, onOpened, onClosing, onClosed, resolvedRef]);
 
     return (
-        // @ts-ignore - md-menu is a custom element
         <md-menu
-            ref={resolvedRef as any}
+            ref={resolvedRef as React.Ref<HTMLElement>}
             anchor={anchor}
             positioning={positioning}
             quick={quick || undefined}
@@ -185,9 +185,8 @@ export const MenuItem = React.forwardRef<HTMLElement, MenuItemProps>(({
     ...props
 }, ref) => {
     return (
-        // @ts-ignore - md-menu-item is a custom element
         <md-menu-item
-            ref={ref as any}
+            ref={ref as React.Ref<HTMLElement>}
             disabled={disabled || undefined}
             type={type}
             href={href}

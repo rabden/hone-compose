@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import Popup from './popup';
 import '../index.css';
 
+// eslint-disable-next-line react-refresh/only-export-components
 function App() {
   useEffect(() => {
     const mq = window.matchMedia('(prefers-color-scheme: dark)');

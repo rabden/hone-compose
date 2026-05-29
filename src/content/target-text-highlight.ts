@@ -152,6 +152,7 @@ export function applyTargetTextHighlight(
   end: number,
   _mode: TargetHighlightMode = "idle",
 ): void {
+  void _mode;
   clearTargetTextHighlight();
 
   const s = Math.max(0, Math.min(start, end));

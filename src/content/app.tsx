@@ -39,10 +39,11 @@ interface Shortcut {
 }
 
 export default function App({
-  portalContainer: _portalContainer,
+  portalContainer,
 }: {
   portalContainer?: HTMLElement;
 }) {
+  void portalContainer;
   const [activeContext, setActiveContext] = useState<ActiveContext | null>(
     null,
   );
@@ -59,7 +60,7 @@ export default function App({
     action: "toggle_menu",
   });
   const [hideDot, setHideDot] = useState(false);
-  const [inferenceOptions, setInferenceOptions] = useState<any | null>(null);
+  const [inferenceOptions, setInferenceOptions] = useState<Record<string, unknown> | null>(null);
   const [selectedInferenceLevel, setSelectedInferenceLevel] = useState<
     "selection" | "sentence" | "paragraph" | "field" | null
   >(null);
@@ -75,6 +76,7 @@ export default function App({
     start: number;
     end: number;
   } | null>(null);
+  const [processingAdapter, setProcessingAdapter] = useState<EditableAdapter | null>(null);
   const [actionConfirm, setActionConfirm] = useState<{
     action: string;
     actionLabel: string;
@@ -256,7 +258,7 @@ export default function App({
         "dropdownShortcutShift",
         "dropdownShortcutMeta",
         "hideDot",
-      ])) as any;
+      ])) as Record<string, unknown>;
 
       if (res.shortcutKey) {
         setShortcut({
@@ -265,12 +267,12 @@ export default function App({
           alt: !!res.shortcutAlt,
           shift: !!res.shortcutShift,
           meta: !!res.shortcutMeta,
-          action: res.shortcutAction || "fix_spelling",
+          action: (res.shortcutAction as string) || "fix_spelling",
         });
       }
 
       setDropdownShortcut({
-        key: (res.dropdownShortcutKey || "d").toLowerCase(),
+        key: ((res.dropdownShortcutKey as string) || "d").toLowerCase(),
         ctrl: !!res.dropdownShortcutCtrl,
         alt:
           res.dropdownShortcutAlt !== undefined
@@ -337,6 +339,7 @@ export default function App({
       setProcessingSpan({ start: span.start, end: span.end });
       setIsAiProcessing(true);
       processingAdapterRef.current = adapter;
+      setProcessingAdapter(adapter);
       processingSpanRef.current = { start: span.start, end: span.end };
 
       const requestId = ++aiRequestIdRef.current;
@@ -355,6 +358,7 @@ export default function App({
           setIsAiProcessing(false);
           setProcessingSpan(null);
           processingAdapterRef.current = null;
+          setProcessingAdapter(null);
           processingSpanRef.current = null;
 
           if (chrome.runtime.lastError) {
@@ -470,6 +474,7 @@ export default function App({
       setIsAiProcessing(false);
       setProcessingSpan(null);
       processingAdapterRef.current = null;
+      setProcessingAdapter(null);
       processingSpanRef.current = null;
     });
   }, []);
@@ -498,7 +503,7 @@ export default function App({
           const opts = computeInferenceOptions(ctx.adapter);
           setInferenceOptions(opts);
           setSelectedInferenceLevel(opts.best?.level ?? null);
-        } catch (_err) {
+        } catch {
           setInferenceOptions(null);
           setSelectedInferenceLevel(null);
         }
@@ -514,6 +519,24 @@ export default function App({
     },
     [showToast, triggerAIAction],
   );
+
+  const cycleInferenceLevel = useCallback((direction: -1 | 1) => {
+    if (!selectedInferenceLevel) return;
+    const order: Array<"selection" | "paragraph" | "field"> = [
+      "selection",
+      "paragraph",
+      "field",
+    ];
+    const currentLevel = selectedInferenceLevel === "sentence" ? "paragraph" : selectedInferenceLevel;
+    const idx = order.indexOf(currentLevel as "selection" | "paragraph" | "field");
+    const next = order[(idx + direction + order.length) % order.length];
+    setSelectedInferenceLevel(next);
+  }, [selectedInferenceLevel]);
+
+  const getInferenceOverride = useCallback((): InferredSelection | undefined => {
+    if (!inferenceOptions || !selectedInferenceLevel) return undefined;
+    return inferenceOptions[selectedInferenceLevel] as InferredSelection | undefined;
+  }, [inferenceOptions, selectedInferenceLevel]);
 
   // ── Keyboard shortcut listener ──
   useEffect(() => {
@@ -583,14 +606,14 @@ export default function App({
 
     window.addEventListener("keydown", handleKeyDown, true);
     return () => window.removeEventListener("keydown", handleKeyDown, true);
-  }, [shortcut, dropdownShortcut, isMenuOpen, openAssistant]);
+  }, [shortcut, dropdownShortcut, isMenuOpen, openAssistant, actionConfirm, cycleInferenceLevel, inferenceOptions, isAiProcessing]);
 
   // ── Chrome command shortcuts (manifest commands) ──
   useEffect(() => {
     const handleCommand = (
-      message: any,
+      message: Record<string, unknown>,
       _sender: chrome.runtime.MessageSender,
-      sendResponse: (response?: any) => void,
+      sendResponse: (response?: unknown) => void,
     ) => {
       if (message.type === "COMMAND_TRIGGERED" && message.action) {
         if (message.action === "toggle_menu") {
@@ -600,7 +623,7 @@ export default function App({
             openAssistant();
           }
         } else {
-          openAssistant(message.action);
+          openAssistant(message.action as string);
         }
         sendResponse({ success: true });
       }
@@ -643,7 +666,7 @@ export default function App({
             const opts = computeInferenceOptions(adapter);
             setInferenceOptions(opts);
             setSelectedInferenceLevel(opts.best?.level ?? null);
-          } catch (_err) {
+          } catch {
             setInferenceOptions(null);
             setSelectedInferenceLevel(null);
           }
@@ -754,7 +777,7 @@ export default function App({
   // ── Click outside to close ──
   useEffect(() => {
     if (!isMenuOpen) return;
-    const handleClick = (_e: MouseEvent) => {
+    const handleClick = () => {
       if (!isInsideShadow.current) {
         setIsMenuOpen(false);
       }
@@ -821,8 +844,9 @@ export default function App({
   // ── Keep editor focused while menu is open ──
   useEffect(() => {
     if (isMenuOpen) {
-      setFocusedActionIdx(0);
+      const timeout = setTimeout(() => setFocusedActionIdx(0), 0);
       saveEditorFocus();
+      return () => clearTimeout(timeout);
     }
     // Don't restore focus when menu closes - user may have intentionally moved to another input
   }, [isMenuOpen, saveEditorFocus]);
@@ -834,16 +858,18 @@ export default function App({
   // Keep focus index valid when custom actions load or change while menu is open
   useEffect(() => {
     if (!isMenuOpen || actionItemCount === 0) return;
-    setFocusedActionIdx((prev) =>
-      prev >= actionItemCount ? actionItemCount - 1 : prev,
-    );
+    const timeout = setTimeout(() =>
+      setFocusedActionIdx((prev) =>
+        prev >= actionItemCount ? actionItemCount - 1 : prev,
+      ), 0);
+    return () => clearTimeout(timeout);
   }, [isMenuOpen, actionItemCount]);
 
   const activateMenuActionAtIndex = useCallback(
     (idx: number) => {
-      const override =
+      const override: InferredSelection | undefined =
         inferenceOptions && selectedInferenceLevel
-          ? inferenceOptions[selectedInferenceLevel]
+          ? (inferenceOptions[selectedInferenceLevel] as InferredSelection | undefined)
           : undefined;
 
       const primary = ["improve", "paraphrase", "fix_spelling"] as const;
@@ -855,25 +881,26 @@ export default function App({
       ] as const;
       const lengths = ["length_shorter", "length_longer"] as const;
 
-      let actionId: string | null = null;
-      if (idx < PRIMARY_ACTION_COUNT) {
-        actionId = primary[idx] ?? null;
-      } else if (idx < PRIMARY_ACTION_COUNT + customActions.length) {
-        actionId = customActions[idx - PRIMARY_ACTION_COUNT]?.id ?? null;
-      } else if (
-        idx <
-        PRIMARY_ACTION_COUNT + customActions.length + TONE_ACTION_COUNT
-      ) {
-        actionId =
-          tones[idx - PRIMARY_ACTION_COUNT - customActions.length] ?? null;
-      } else {
+      const actionId = (() => {
+        if (idx < PRIMARY_ACTION_COUNT) {
+          return primary[idx] ?? null;
+        }
+        if (idx < PRIMARY_ACTION_COUNT + customActions.length) {
+          return customActions[idx - PRIMARY_ACTION_COUNT]?.id ?? null;
+        }
+        if (
+          idx <
+          PRIMARY_ACTION_COUNT + customActions.length + TONE_ACTION_COUNT
+        ) {
+          return tones[idx - PRIMARY_ACTION_COUNT - customActions.length] ?? null;
+        }
         const lenIdx =
           idx -
           PRIMARY_ACTION_COUNT -
           customActions.length -
           TONE_ACTION_COUNT;
-        actionId = lengths[lenIdx] ?? null;
-      }
+        return lengths[lenIdx] ?? null;
+      })();
 
       if (actionId) {
         suppressKeysUntilRef.current = performance.now() + 250;
@@ -1039,8 +1066,8 @@ export default function App({
     const adapter = activeContext?.adapter;
     if (!adapter) {
       // If AI is processing and we have a saved span, use it
-      if (isAiProcessing && processingSpanRef.current) {
-        return processingSpanRef.current;
+      if (isAiProcessing && processingSpan) {
+        return processingSpan;
       }
       return null;
     }
@@ -1100,25 +1127,6 @@ export default function App({
   const menuWidth = 264;
   const previewWidth = 300;
 
-  const cycleInferenceLevel = (direction: -1 | 1) => {
-    if (!selectedInferenceLevel) return;
-    const order: Array<"selection" | "paragraph" | "field"> = [
-      "selection",
-      "paragraph",
-      "field",
-    ];
-    // Handle case where current level might be "sentence" from previous state
-    const currentLevel = selectedInferenceLevel === "sentence" ? "paragraph" : selectedInferenceLevel;
-    const idx = order.indexOf(currentLevel as "selection" | "paragraph" | "field");
-    const next = order[(idx + direction + order.length) % order.length];
-    setSelectedInferenceLevel(next);
-  };
-
-  const getInferenceOverride = (): InferredSelection | undefined => {
-    if (!inferenceOptions || !selectedInferenceLevel) return undefined;
-    return inferenceOptions[selectedInferenceLevel] as InferredSelection | undefined;
-  };
-
   const showDot =
     showFieldChrome && !hideDot && activeContext!.type === "input";
   const dotSize = 16;
@@ -1139,7 +1147,7 @@ export default function App({
       onMouseLeave={handleShadowLeave}
     >
       <TargetHighlight
-        adapter={isAiProcessing ? processingAdapterRef.current : (activeContext?.adapter ?? null)}
+        adapter={isAiProcessing ? (processingAdapter ?? null) : (activeContext?.adapter ?? null)}
         start={highlightSpan?.start ?? 0}
         end={highlightSpan?.end ?? 0}
         mode={isAiProcessing ? "loading" : "idle"}
@@ -1217,7 +1225,7 @@ export default function App({
                       const opts = computeInferenceOptions(ctx.adapter);
                       setInferenceOptions(opts);
                       setSelectedInferenceLevel(opts.best?.level ?? null);
-                    } catch (_err) {
+                    } catch {
                       setInferenceOptions(null);
                       setSelectedInferenceLevel(null);
                     }
@@ -1238,7 +1246,7 @@ export default function App({
           width={menuWidth}
           shortcut={dropdownShortcut}
           quickShortcut={shortcut}
-          inferenceOptions={inferenceOptions}
+          inferenceOptions={inferenceOptions as Record<string, { text?: string }> | null}
           selectedInferenceLevel={selectedInferenceLevel}
           onInferencePrev={() => cycleInferenceLevel(-1)}
           onInferenceNext={() => cycleInferenceLevel(1)}

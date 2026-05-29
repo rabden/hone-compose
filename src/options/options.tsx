@@ -222,6 +222,7 @@ export default function Options() {
     [history, historySearch]
   );
 
+  // eslint-disable-next-line react-hooks/incompatible-library
   const historyVirtualizer = useVirtualizer({
     count: filteredHistory.length,
     getScrollElement: () => historyParentRef.current,
@@ -266,39 +267,40 @@ export default function Options() {
         "hideDot",
         "history",
       ])
-      .then((res: any) => {
-        if (res.activeProvider) setActiveProvider(res.activeProvider);
+      .then((res: Record<string, unknown>) => {
+        const r = res as Record<string, string | undefined>;
+        if (r.activeProvider) setActiveProvider(r.activeProvider);
 
-        if (res.openaiKey) setOpenaiKey(res.openaiKey);
-        if (res.openaiModel) setOpenaiModel(res.openaiModel);
-        if (res.openaiEndpoint) setOpenaiEndpoint(res.openaiEndpoint);
+        if (r.openaiKey) setOpenaiKey(r.openaiKey);
+        if (r.openaiModel) setOpenaiModel(r.openaiModel);
+        if (r.openaiEndpoint) setOpenaiEndpoint(r.openaiEndpoint);
 
-        if (res.anthropicKey) setAnthropicKey(res.anthropicKey);
-        if (res.anthropicModel) setAnthropicModel(res.anthropicModel);
+        if (r.anthropicKey) setAnthropicKey(r.anthropicKey);
+        if (r.anthropicModel) setAnthropicModel(r.anthropicModel);
 
-        if (res.geminiKey) setGeminiKey(res.geminiKey);
-        if (res.geminiModel) setGeminiModel(res.geminiModel);
+        if (r.geminiKey) setGeminiKey(r.geminiKey);
+        if (r.geminiModel) setGeminiModel(r.geminiModel);
 
-        if (res.openrouterKey) setOpenrouterKey(res.openrouterKey);
-        if (res.openrouterModel) setOpenrouterModel(res.openrouterModel);
+        if (r.openrouterKey) setOpenrouterKey(r.openrouterKey);
+        if (r.openrouterModel) setOpenrouterModel(r.openrouterModel);
 
-        if (res.openrouterPaidKey) setOpenrouterPaidKey(res.openrouterPaidKey);
-        if (res.openrouterPaidModel)
-          setOpenrouterPaidModel(res.openrouterPaidModel);
+        if (r.openrouterPaidKey) setOpenrouterPaidKey(r.openrouterPaidKey);
+        if (r.openrouterPaidModel)
+          setOpenrouterPaidModel(r.openrouterPaidModel);
 
-        if (res.googleAiStudioKey) setGoogleAiStudioKey(res.googleAiStudioKey);
-        if (res.googleAiStudioModel)
-          setGoogleAiStudioModel(res.googleAiStudioModel);
+        if (r.googleAiStudioKey) setGoogleAiStudioKey(r.googleAiStudioKey);
+        if (r.googleAiStudioModel)
+          setGoogleAiStudioModel(r.googleAiStudioModel);
 
-        if (res.shortcutKey) setShortcutKey(res.shortcutKey);
+        if (r.shortcutKey) setShortcutKey(r.shortcutKey);
         setShortcutCtrl(!!res.shortcutCtrl);
         setShortcutAlt(!!res.shortcutAlt);
         setShortcutShift(!!res.shortcutShift);
         setShortcutMeta(!!res.shortcutMeta);
-        if (res.shortcutAction) setShortcutAction(res.shortcutAction);
+        if (r.shortcutAction) setShortcutAction(r.shortcutAction);
 
-        if (res.dropdownShortcutKey !== undefined)
-          setDropdownShortcutKey(res.dropdownShortcutKey);
+        if (r.dropdownShortcutKey !== undefined)
+          setDropdownShortcutKey(r.dropdownShortcutKey);
         setDropdownShortcutCtrl(!!res.dropdownShortcutCtrl);
         setDropdownShortcutAlt(
           res.dropdownShortcutAlt !== undefined
@@ -314,7 +316,7 @@ export default function Options() {
 
         setHideDot(!!res.hideDot);
 
-        if (res.history) setHistory(res.history);
+        if (res.history) setHistory(res.history as HistoryItem[]);
       });
     loadCustomActions().then(setCustomActions);
     setInitialLoadComplete(true);
@@ -2178,8 +2180,8 @@ export default function Options() {
                                                 `Error: ${response?.error || "Unknown error"}`,
                                               );
                                             }
-                                          } catch (err: any) {
-                                            setTestResult(`Error: ${err.message}`);
+                                          } catch (err: unknown) {
+                                            setTestResult(`Error: ${(err as Error).message}`);
                                           }
                                           setTestLoading(false);
                                         }}

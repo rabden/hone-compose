@@ -47,7 +47,7 @@ export function ModernDropdown({
     // Set anchor element imperatively for Material Web
     useEffect(() => {
         if (menuRef.current && anchorRef.current) {
-            (menuRef.current as any).anchorElement = anchorRef.current;
+            (menuRef.current as HTMLElement & { anchorElement: HTMLElement }).anchorElement = anchorRef.current;
         }
     }, []);
 

@@ -4,6 +4,7 @@ import { MaterialRegistry } from '@/components/material-registry';
 import Options from './options';
 import '../index.css';
 
+// eslint-disable-next-line react-refresh/only-export-components
 function App() {
   useEffect(() => {
     const mq = window.matchMedia('(prefers-color-scheme: dark)');

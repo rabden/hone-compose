@@ -12,8 +12,8 @@ import { isXHost, resolveEditorRoot } from "./editor-detection";
 import {
   notifyEditorChange,
   replaceInContentEditable,
-  type TransactionResult,
 } from "./rich-editor-replace";
+import type { TransactionResult } from "./rich-editor-replace";
 
 export interface SelectionInfo {
   text: string;
@@ -153,7 +153,7 @@ export class NativeInputAdapter implements EditableAdapter {
     }
 
     return new Promise((resolve) => {
-      const handleResult = (event: MessageEvent) => {
+      const handleResult = (event: MessageEvent<{ type: string; success?: boolean }>) => {
         if (event.source !== window || event.data?.type !== "HONE_TRANSACTION_RESULT") return;
         
         window.removeEventListener("message", handleResult);
@@ -205,7 +205,7 @@ export class NativeInputAdapter implements EditableAdapter {
       } else {
         this.element.value = text;
       }
-      const tracker = (this.element as any)._valueTracker;
+      const tracker = (this.element as HTMLInputElement & { _valueTracker?: { setValue(v: string): void } })._valueTracker;
       if (tracker) {
         tracker.setValue(oldValue);
       }
@@ -244,7 +244,7 @@ export class NativeInputAdapter implements EditableAdapter {
         this.element.value = newValue;
       }
 
-      const tracker = (this.element as any)._valueTracker;
+      const tracker = (this.element as HTMLInputElement & { _valueTracker?: { setValue(v: string): void } })._valueTracker;
       if (tracker) {
         tracker.setValue(oldValue);
       }
@@ -298,7 +298,7 @@ export class NativeInputAdapter implements EditableAdapter {
       this.element.value = newValue;
     }
 
-    const tracker = (this.element as any)._valueTracker;
+    const tracker = (this.element as HTMLInputElement & { _valueTracker?: { setValue(v: string): void } })._valueTracker;
     if (tracker) {
       tracker.setValue(full);
     }
@@ -580,8 +580,8 @@ function locateTextSpan(
   expectedText?: string,
 ): { start: number; end: number } | null {
   const len = fullText.length;
-  let s = Math.max(0, Math.min(start, len));
-  let e = Math.max(s, Math.min(end, len));
+  const s = Math.max(0, Math.min(start, len));
+  const e = Math.max(s, Math.min(end, len));
 
   if (expectedText === undefined) {
     return { start: s, end: e };
@@ -677,7 +677,7 @@ function findSentenceBoundaries(text: string, index: number): { start: number; e
 function findParagraphBoundaries(text: string, index: number): { start: number; end: number } {
   const lines = text.split('\n');
   let pos = 0;
-  let lineIndex = 0;
+  let lineIndex: number;
   for (lineIndex = 0; lineIndex < lines.length; lineIndex++) {
     const line = lines[lineIndex];
     const start = pos;
@@ -830,14 +830,11 @@ export function resolveContentEditableRoot(
   ) as HTMLElement | null;
   if (slate) return slate;
 
-  let node: HTMLElement | null = null;
-  if (element.isContentEditable) {
-    node = element;
-  } else {
-    node = element.closest(
-      '[contenteditable="true"], [contenteditable=""]',
-    ) as HTMLElement | null;
-  }
+  let node: HTMLElement | null = element.isContentEditable
+    ? element
+    : element.closest(
+        '[contenteditable="true"], [contenteditable=""]',
+      ) as HTMLElement | null;
 
   if (!node) return null;
 

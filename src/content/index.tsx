@@ -1,6 +1,5 @@
 import { createRoot } from 'react-dom/client';
 import App from './app';
-// @ts-ignore - Vite raw/inline import loader
 import cssText from './content.css?inline';
 
 // Inject Main World bridge for React/Slate access

@@ -71,9 +71,9 @@ function useShimmerRects(
 
   useEffect(() => {
     if (end <= start) {
-      setRects([]);
       prevRectsRef.current = [];
-      return;
+      const timeout = setTimeout(() => setRects([]), 0);
+      return () => clearTimeout(timeout);
     }
 
     const measure = () => {

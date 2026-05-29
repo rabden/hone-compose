@@ -90,14 +90,6 @@ function inferencePreview(
   return t.length > 72 ? `${t.slice(0, 69)}…` : t;
 }
 
-function SectionLabel({ children }: { children: ReactNode }) {
-  return (
-    <p className="px-2 pt-1 pb-0.5 text-[10px] font-medium text-muted-foreground">
-      {children}
-    </p>
-  );
-}
-
 export function FloatingActionMenu({
   menuRef,
   top,
@@ -154,33 +146,52 @@ export function FloatingActionMenu({
       </header>
 
       {inferenceOptions && selectedInferenceLevel ? (
-        <div className="mx-1.5 mb-0.5 rounded-lg border border-border/60 bg-muted/30 p-1.5">
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              className="hone-chip-btn"
-              onClick={onInferencePrev}
-              aria-label="Previous text scope"
-            >
-              ‹
-            </button>
-            <div className="min-w-0 flex-1 px-0.5">
-              <p className="text-[10px] font-semibold capitalize text-foreground">
-                {selectedInferenceLevel}
-              </p>
-              <p className="truncate text-[10px] leading-snug text-muted-foreground">
+        <div className="mx-1 mb-0.5 flex h-7 gap-0">
+          {/* Left button */}
+          <button
+            type="button"
+            className="flex h-7 w-[18px] items-center justify-center rounded-l-lg text-muted-foreground hover:text-foreground"
+            style={{
+              backgroundColor:
+                "color-mix(in oklch, var(--foreground) 8%, transparent)",
+            }}
+            onClick={onInferencePrev}
+            aria-label="Previous text scope"
+          >
+            ‹
+          </button>
+
+          {/* Center text area */}
+          <div
+            className="flex min-w-0 flex-1 items-center justify-start px-2"
+            style={{
+              backgroundColor:
+                "color-mix(in oklch, var(--foreground) 6%, transparent)",
+            }}
+          >
+            <span className="truncate text-[11px] font-medium capitalize leading-tight text-foreground">
+              {selectedInferenceLevel}
+              {inferencePreview(inferenceOptions, selectedInferenceLevel) &&
+                " • "}
+              <span className="font-normal text-muted-foreground">
                 {inferencePreview(inferenceOptions, selectedInferenceLevel)}
-              </p>
-            </div>
-            <button
-              type="button"
-              className="hone-chip-btn"
-              onClick={onInferenceNext}
-              aria-label="Next text scope"
-            >
-              ›
-            </button>
+              </span>
+            </span>
           </div>
+
+          {/* Right button */}
+          <button
+            type="button"
+            className="flex h-7 w-[18px] items-center justify-center rounded-r-lg text-muted-foreground hover:text-foreground"
+            style={{
+              backgroundColor:
+                "color-mix(in oklch, var(--foreground) 8%, transparent)",
+            }}
+            onClick={onInferenceNext}
+            aria-label="Next text scope"
+          >
+            ›
+          </button>
         </div>
       ) : null}
 
@@ -192,7 +203,9 @@ export function FloatingActionMenu({
                 key={item.action}
                 idx={i}
                 focused={focusedActionIdx === i}
-                icon={<item.icon className="size-3.5 shrink-0" strokeWidth={2} />}
+                icon={
+                  <item.icon className="size-3.5 shrink-0" strokeWidth={2} />
+                }
                 label={item.label}
                 shortcut={shortcut?.action === item.action ? shortcut : null}
                 onFocus={() => onFocusAction(i)}
@@ -202,36 +215,38 @@ export function FloatingActionMenu({
           </div>
 
           {customActions.length > 0 ? (
-            <>
-              <div className="mx-2 my-0.5 h-px bg-border/60" />
-              <SectionLabel>Custom</SectionLabel>
-              <div className="flex flex-col gap-0.5 px-0.5">
-                {customActions.map((ca, i) => {
-                  const idx = customActionStartIdx + i;
-                  const actionShortcut = quickShortcut?.action === ca.id ? quickShortcut : ca.shortcut;
-                  return (
-                    <MenuRow
-                      key={ca.id}
-                      idx={idx}
-                      focused={focusedActionIdx === idx}
-                      icon={renderActionIcon(ca.icon, {
-                        size: 14,
-                        color: ca.color || "var(--brand)",
-                      })}
-                      label={ca.name}
-                      shortcut={actionShortcut}
-                      onFocus={() => onFocusAction(idx)}
-                      onSelect={() => onTriggerAction(ca.id, override)}
-                    />
-                  );
-                })}
-              </div>
-            </>
+            <div className="flex flex-col gap-0.5 px-0.5">
+              {customActions.map((ca, i) => {
+                const idx = customActionStartIdx + i;
+                const actionShortcut =
+                  quickShortcut?.action === ca.id ? quickShortcut : ca.shortcut;
+                return (
+                  <MenuRow
+                    key={ca.id}
+                    idx={idx}
+                    focused={focusedActionIdx === idx}
+                    icon={renderActionIcon(ca.icon, {
+                      size: 14,
+                      color: ca.color || "var(--foreground)",
+                    })}
+                    label={ca.name}
+                    shortcut={actionShortcut}
+                    onFocus={() => onFocusAction(idx)}
+                    onSelect={() => onTriggerAction(ca.id, override)}
+                  />
+                );
+              })}
+            </div>
           ) : null}
 
-          <div className="mx-2 my-0.5 h-px bg-border/60" />
-          <SectionLabel>Tone</SectionLabel>
-          <div className="grid grid-cols-2 gap-1 px-1 pb-0.5">
+          <div className="flex items-center gap-2 px-2 py-0.5">
+            <div className="flex-1 h-px bg-border/60" />
+            <span className="text-[9px] font-medium uppercase tracking-wider text-muted-foreground/60">
+              Change Tone or length
+            </span>
+            <div className="flex-1 h-px bg-border/60" />
+          </div>
+          <div className="grid grid-cols-2 gap-1 px-1">
             {TONE_ACTIONS.map((item, i) => {
               const idx = toneActionStartIdx + i;
               return (
@@ -249,10 +264,6 @@ export function FloatingActionMenu({
                 </button>
               );
             })}
-          </div>
-
-          <SectionLabel>Length</SectionLabel>
-          <div className="grid grid-cols-2 gap-1 px-1 pb-1">
             {LENGTH_ACTIONS.map((item, i) => {
               const idx = lengthActionStartIdx + i;
               return (
@@ -261,7 +272,7 @@ export function FloatingActionMenu({
                   type="button"
                   data-action-idx={idx}
                   data-focused={focusedActionIdx === idx ? "true" : undefined}
-                  className="hone-tone-btn justify-center"
+                  className="hone-tone-btn"
                   onMouseEnter={() => onFocusAction(idx)}
                   onClick={() => onTriggerAction(item.action, override)}
                 >
@@ -294,7 +305,13 @@ function MenuRow({
   focused: boolean;
   icon: ReactNode;
   label: string;
-  shortcut?: { key: string; ctrl: boolean; alt: boolean; shift: boolean; meta?: boolean } | null;
+  shortcut?: {
+    key: string;
+    ctrl: boolean;
+    alt: boolean;
+    shift: boolean;
+    meta?: boolean;
+  } | null;
   onFocus: () => void;
   onSelect: () => void;
 }) {

@@ -181,7 +181,7 @@ function runTwitterTransaction(
 
   document.dispatchEvent(new Event("selectionchange"));
 
-  let inserted = false;
+  let inserted: boolean;
   try {
     inserted = document.execCommand("insertText", false, replacement);
   } catch {

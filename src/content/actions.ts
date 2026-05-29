@@ -56,6 +56,7 @@ export class ActionRegistry {
       category,
       enabled: true,
       replaceMode: "replace",
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       buildPrompt(input: string, _ctx: ActionContext) {
         return { user: buildPrompt(input) };
       },
@@ -192,6 +193,7 @@ export class ActionRegistry {
       provider: ca.provider,
       model: ca.model,
       temperature: ca.temperature,
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       buildPrompt(input: string, _ctx: ActionContext): PromptPayload {
         const user = ca.promptTemplate.replace(/\{\{input\}\}/g, input);
         return { system: ca.systemPrompt, user };

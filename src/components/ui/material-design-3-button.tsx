@@ -18,7 +18,7 @@ const EASING_STANDARD = "cubic-bezier(0.2, 0, 0, 1)";
 const playTactilePopSound = () => {
   try {
     // Safely initialize Web Audio API
-    const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+    const AudioContext: typeof window.AudioContext | undefined = window.AudioContext || (window as { webkitAudioContext?: typeof window.AudioContext }).webkitAudioContext;
     if (!AudioContext) return;
     
     const ctx = new AudioContext();
@@ -42,7 +42,7 @@ const playTactilePopSound = () => {
 
     osc.start(now);
     osc.stop(now + 0.05);
-  } catch (e) {
+  } catch {
     // Silently fail if audio context is restricted by the browser (e.g. before user interaction)
   }
 };
@@ -508,4 +508,6 @@ const SplitButton = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDi
 );
 SplitButton.displayName = "SplitButton";
 
-export { Button, buttonVariants, SplitButton };
+export { Button, SplitButton }
+// eslint-disable-next-line react-refresh/only-export-components
+export { buttonVariants };

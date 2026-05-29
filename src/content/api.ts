@@ -5,7 +5,7 @@
 
 export interface RequestOptions {
   method?: 'GET' | 'POST' | 'PUT' | 'DELETE';
-  body?: any;
+  body?: unknown;
   headers?: Record<string, string>;
   timeout?: number; // milliseconds
   maxRetries?: number;
@@ -26,7 +26,7 @@ export interface RequestResult<T> {
  * Make an HTTP request with retry logic and timeout
  * Automatically aborts on timeout or external abort signal
  */
-export async function request<T = any>(
+export async function request<T = unknown>(
   url: string,
   options: RequestOptions = {}
 ): Promise<RequestResult<T>> {

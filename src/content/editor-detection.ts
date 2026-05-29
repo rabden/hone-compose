@@ -27,18 +27,22 @@ export function resolveTwitterComposeRoot(
   ) as HTMLElement | null;
   if (!host) return null;
 
-  let editable: HTMLElement | null = null;
+  let editable: HTMLElement | null;
   const ce = host.getAttribute("contenteditable");
   if (host.isContentEditable || ce === "true" || ce === "") {
     editable = host;
   } else {
-    editable = host.querySelector(
+    const inner = host.querySelector(
       '[contenteditable="true"], [contenteditable=""]',
     ) as HTMLElement | null;
-    if (!editable) {
+    if (inner) {
+      editable = inner;
+    } else {
       const textbox = host.querySelector('[role="textbox"]');
       if (textbox instanceof HTMLElement && textbox.isContentEditable) {
         editable = textbox;
+      } else {
+        editable = null;
       }
     }
   }
@@ -75,14 +79,11 @@ export function resolveEditorRoot(element: HTMLElement): HTMLElement {
   ) as HTMLElement | null;
   if (proseMirror) return proseMirror;
 
-  let node: HTMLElement | null = null;
-  if (element.isContentEditable) {
-    node = element;
-  } else {
-    node = element.closest(
-      '[contenteditable="true"], [contenteditable=""]',
-    ) as HTMLElement | null;
-  }
+  let node: HTMLElement | null = element.isContentEditable
+    ? element
+    : element.closest(
+        '[contenteditable="true"], [contenteditable=""]',
+      ) as HTMLElement | null;
 
   if (!node) return element;
 
