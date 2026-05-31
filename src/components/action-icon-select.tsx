@@ -41,10 +41,7 @@ export function ActionIconSelect({
     const timer = setTimeout(() => searchRef.current?.focus(), 0);
 
     const onPointerDown = (event: MouseEvent) => {
-      if (
-        rootRef.current &&
-        !rootRef.current.contains(event.target as Node)
-      ) {
+      if (rootRef.current && !rootRef.current.contains(event.target as Node)) {
         setOpen(false);
         setSearch("");
       }
@@ -80,9 +77,9 @@ export function ActionIconSelect({
         aria-expanded={open}
         onClick={() => setOpen((prev) => !prev)}
         className={cn(
-          "flex h-9 w-full items-center justify-between gap-2 rounded-lg border border-border/80 bg-background px-3",
-          "text-xs transition-all duration-150 hover:bg-muted/40",
-          open && "border-foreground/25 ring-2 ring-ring/30",
+          "flex h-9 w-full items-center justify-between gap-2 rounded-lg border border-input bg-secondary/80 hover:bg-secondary px-3",
+          "text-xs transition-colors",
+          open && "border-ring ring-3 ring-ring/50",
         )}
       >
         <span className="flex min-w-0 items-center gap-2">

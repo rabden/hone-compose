@@ -47,6 +47,7 @@ export async function positionElement(
 
   const result = await computePosition(referenceEl, floatingEl, {
     placement,
+    strategy: 'fixed',
     middleware,
   });
 

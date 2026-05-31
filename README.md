@@ -1,7 +1,7 @@
 <div align="center">
   <img src="./src/assets/hone-logo.png" alt="Hone Logo" width="120" height="120" />
 
-  # Hone — AI Writing Assistant for the Web
+  # Hone compose — AI Writing Assistant for the Web
 
   [![Manifest V3](https://img.shields.io/badge/Manifest-V3-orange?style=for-the-badge&logo=web-extensions&logoColor=white)](https://developer.chrome.com/docs/extensions/mv3/intro/)
   [![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org)

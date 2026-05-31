@@ -23,7 +23,6 @@ import {
 import {
   SidebarProvider,
   Sidebar,
-  SidebarHeader,
   SidebarContent,
   SidebarGroup,
   SidebarGroupContent,
@@ -33,7 +32,12 @@ import {
   useSidebar,
   SidebarFooter,
 } from "@/components/ui/sidebar";
-import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/components/ui/tooltip";
+import {
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+  TooltipProvider,
+} from "@/components/ui/tooltip";
 import { Button as MaterialDesign3Button } from "@/components/ui/material-design-3-button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -54,6 +58,10 @@ import {
   loadCustomActions,
   saveCustomAction,
   deleteCustomAction,
+  getHistory,
+  clearHistory,
+  addHistoryEntry,
+  deleteHistoryEntry,
 } from "../content/storage";
 import { ActionIconSelect } from "@/components/action-icon-select";
 import { HoneLogo } from "@/components/hone-logo";
@@ -75,6 +83,12 @@ import {
 } from "@/components/ui/material-dialog";
 
 const OPENROUTER_FREE_MODELS = [
+  { id: "google/gemma-4-31b-it:free", label: "Gemma 4 31B" },
+  { id: "openai/gpt-oss-120b:free", label: "GPT-OSS 120B" },
+  { id: "z-ai/glm-4.5-air:free", label: "GLM 4.5 Air" },
+  { id: "meta-llama/llama-3.3-70b-instruct:free", label: "Llama 3.3 70B" },
+  { id: "moonshotai/kimi-k2.6:free", label: "Kimi K2.6" },
+  { id: "minimax/minimax-m2.5:free", label: "Minimax M2.5" },
   { id: "google/gemma-4-26b-a4b-it:free", label: "Gemma 4 26B" },
   { id: "poolside/laguna-xs.2:free", label: "Laguna XS.2" },
   { id: "openai/gpt-oss-20b:free", label: "GPT-OSS 20B" },
@@ -103,23 +117,6 @@ interface HistoryItem {
   model: string;
 }
 
-function SidebarHeaderInner() {
-  const { state, toggleSidebar } = useSidebar();
-  const isCollapsed = state === "collapsed";
-
-  return (
-    <div className="flex w-full">
-      <button
-        onClick={toggleSidebar}
-        className="flex items-center justify-center p-1.5 w-8 h-8 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted/50 active:bg-muted/70 transition-all cursor-pointer ml-1 mt-1"
-        title={isCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
-      >
-        <PanelLeftIcon className={cn("size-4", isCollapsed && "rotate-180")} />
-      </button>
-    </div>
-  );
-}
-
 function SidebarWhitespaceTrigger() {
   const { state, setOpen } = useSidebar();
   const isCollapsed = state === "collapsed";
@@ -142,6 +139,26 @@ function SidebarWhitespaceTrigger() {
         Expand
       </TooltipContent>
     </Tooltip>
+  );
+}
+
+function SidebarToggleInHeader() {
+  const { toggleSidebar, state } = useSidebar();
+  const isCollapsed = state === "collapsed";
+
+  return (
+    <button
+      onClick={toggleSidebar}
+      className="flex items-center justify-center p-1.5 w-8 h-8 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted/50 active:bg-muted/70 active:scale-[0.98] transition-all duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] cursor-pointer"
+      title={isCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
+    >
+      <PanelLeftIcon
+        className={cn(
+          "size-4 transition-transform duration-200 ease-[cubic-bezier(0.16,1,0.3,1)]",
+          isCollapsed && "rotate-180",
+        )}
+      />
+    </button>
   );
 }
 
@@ -192,6 +209,7 @@ export default function Options() {
 
   // Appearance settings state
   const [hideDot, setHideDot] = useState(false);
+  const [previewInCard, setPreviewInCard] = useState(true);
 
   // History & Toast status states
 
@@ -201,7 +219,8 @@ export default function Options() {
 
   // History tab: search, selection, dialog, virtualization
   const [historySearch, setHistorySearch] = useState("");
-  const [selectedHistoryItem, setSelectedHistoryItem] = useState<HistoryItem | null>(null);
+  const [selectedHistoryItem, setSelectedHistoryItem] =
+    useState<HistoryItem | null>(null);
   const [historyDialogOpen, setHistoryDialogOpen] = useState(false);
   const historyParentRef = useRef<HTMLDivElement>(null);
 
@@ -219,7 +238,7 @@ export default function Options() {
           item.model?.toLowerCase().includes(q)
         );
       }),
-    [history, historySearch]
+    [history, historySearch],
   );
 
   // eslint-disable-next-line react-hooks/incompatible-library
@@ -233,6 +252,10 @@ export default function Options() {
     message: string;
     type: "success" | "error";
   } | null>(null);
+  const [lastDeletedItem, setLastDeletedItem] = useState<HistoryItem | null>(
+    null,
+  );
+  const [clearAllDialogOpen, setClearAllDialogOpen] = useState(false);
   const [initialLoadComplete, setInitialLoadComplete] = useState(false);
 
   // Fetch initial settings from local storage
@@ -265,6 +288,7 @@ export default function Options() {
         "dropdownShortcutShift",
         "dropdownShortcutMeta",
         "hideDot",
+        "previewInCard",
         "history",
       ])
       .then((res: Record<string, unknown>) => {
@@ -315,8 +339,22 @@ export default function Options() {
         setDropdownShortcutMeta(!!res.dropdownShortcutMeta);
 
         setHideDot(!!res.hideDot);
+        setPreviewInCard(res.previewInCard !== undefined ? !!res.previewInCard : true);
 
-        if (res.history) setHistory(res.history as HistoryItem[]);
+        getHistory().then(async (existingDBHistory) => {
+          let finalHistory = existingDBHistory;
+          if (res.history && Array.isArray(res.history) && res.history.length > 0) {
+            for (const item of res.history) {
+              if (!existingDBHistory.some(existing => existing.id === item.id)) {
+                await addHistoryEntry(item);
+              }
+            }
+            finalHistory = await getHistory();
+            await chrome.storage.local.remove('history');
+          }
+          const sorted = [...finalHistory].sort((a, b) => b.timestamp - a.timestamp);
+          setHistory(sorted as HistoryItem[]);
+        }).catch((err) => console.error("Failed to load history from IndexedDB:", err));
       });
     loadCustomActions().then(setCustomActions);
     setInitialLoadComplete(true);
@@ -325,22 +363,24 @@ export default function Options() {
   // Auto-save provider settings on change
   useEffect(() => {
     if (!initialLoadComplete) return;
-    chrome.storage.local.set({
-      activeProvider,
-      openaiKey,
-      openaiModel,
-      openaiEndpoint,
-      anthropicKey,
-      anthropicModel,
-      geminiKey,
-      geminiModel,
-      openrouterKey,
-      openrouterModel,
-      openrouterPaidKey,
-      openrouterPaidModel,
-      googleAiStudioKey,
-      googleAiStudioModel,
-    }).catch(console.error);
+    chrome.storage.local
+      .set({
+        activeProvider,
+        openaiKey,
+        openaiModel,
+        openaiEndpoint,
+        anthropicKey,
+        anthropicModel,
+        geminiKey,
+        geminiModel,
+        openrouterKey,
+        openrouterModel,
+        openrouterPaidKey,
+        openrouterPaidModel,
+        googleAiStudioKey,
+        googleAiStudioModel,
+      })
+      .catch(console.error);
   }, [
     initialLoadComplete,
     activeProvider,
@@ -362,20 +402,23 @@ export default function Options() {
   // Auto-save shortcut & appearance settings on change
   useEffect(() => {
     if (!initialLoadComplete) return;
-    chrome.storage.local.set({
-      shortcutKey,
-      shortcutCtrl,
-      shortcutAlt,
-      shortcutShift,
-      shortcutMeta,
-      shortcutAction,
-      dropdownShortcutKey,
-      dropdownShortcutCtrl,
-      dropdownShortcutAlt,
-      dropdownShortcutShift,
-      dropdownShortcutMeta,
-      hideDot,
-    }).catch(console.error);
+    chrome.storage.local
+      .set({
+        shortcutKey,
+        shortcutCtrl,
+        shortcutAlt,
+        shortcutShift,
+        shortcutMeta,
+        shortcutAction,
+        dropdownShortcutKey,
+        dropdownShortcutCtrl,
+        dropdownShortcutAlt,
+        dropdownShortcutShift,
+        dropdownShortcutMeta,
+        hideDot,
+        previewInCard,
+      })
+      .catch(console.error);
   }, [
     initialLoadComplete,
     shortcutKey,
@@ -390,14 +433,17 @@ export default function Options() {
     dropdownShortcutShift,
     dropdownShortcutMeta,
     hideDot,
+    previewInCard,
   ]);
 
   // Show status toasts
   const triggerSaveStatus = (message: string, type: "success" | "error") => {
     setSaveStatus({ message, type });
-    setTimeout(() => setSaveStatus(null), 3000);
+    setTimeout(() => {
+      setSaveStatus(null);
+      setLastDeletedItem(null);
+    }, 3000);
   };
-
 
   // Handle shortcut recording keypresses
   useEffect(() => {
@@ -490,23 +536,33 @@ export default function Options() {
 
   // Clear single history entry
   const handleDeleteHistory = async (id: string) => {
-    const updatedHistory = history.filter((item) => item.id !== id);
+    const item = history.find((h) => h.id === id);
+    if (!item) return;
+    const updatedHistory = history.filter((h) => h.id !== id);
     setHistory(updatedHistory);
-    await chrome.storage.local.set({ history: updatedHistory });
+    await deleteHistoryEntry(id);
+    setLastDeletedItem(item);
     triggerSaveStatus("History item deleted.", "success");
+  };
+
+  const handleUndoDelete = async () => {
+    if (!lastDeletedItem) return;
+    const updatedHistory = [...history, lastDeletedItem].sort(
+      (a, b) => b.timestamp - a.timestamp,
+    );
+    setHistory(updatedHistory);
+    await addHistoryEntry(lastDeletedItem);
+    setLastDeletedItem(null);
+    setSaveStatus(null);
+    triggerSaveStatus("Delete undone.", "success");
   };
 
   // Clear all history logs
   const handleClearAllHistory = async () => {
-    if (
-      window.confirm(
-        "Are you sure you want to clear your entire transformation history? This cannot be undone.",
-      )
-    ) {
-      setHistory([]);
-      await chrome.storage.local.set({ history: [] });
-      triggerSaveStatus("All history cleared.", "success");
-    }
+    setHistory([]);
+    await clearHistory();
+    setClearAllDialogOpen(false);
+    triggerSaveStatus("All history cleared.", "success");
   };
 
   const getActionName = (actionCode: string) =>
@@ -526,117 +582,144 @@ export default function Options() {
 
   return (
     <SidebarProvider defaultOpen={true}>
-      <div className="flex w-full h-[100dvh] overflow-hidden bg-background">
-        {/* Sidebar */}
-        <Sidebar
-          collapsible="icon"
-          variant="sidebar"
-          className="hidden md:flex bg-background border-none"
-        >
-          <TooltipProvider>
-            <SidebarHeader>
-              <SidebarHeaderInner />
-            </SidebarHeader>
-            <SidebarContent>
-              <SidebarGroup className="p-2">
-                <SidebarGroupContent>
-                  <SidebarMenu className="gap-0.5">
-                    {NAV_ITEMS.map((item) => {
-                      const Icon = item.icon;
-                      return (
-                        <SidebarMenuItem key={item.value}>
-                          <div
-                            className={cn(
-                              "absolute left-0 top-1/2 -translate-y-1/2 -translate-x-[150%] w-0.5 bg-foreground rounded-full transition-[opacity,transform] duration-200 ease-out",
-                              activeTab === item.value
-                                ? "h-5 opacity-100 scale-y-100"
-                                : "h-5 opacity-0 scale-y-0",
-                              "group-data-[collapsible=icon]:hidden",
-                            )}
-                          />
-                          <SidebarMenuButton
-                            isActive={activeTab === item.value}
-                            onClick={() => setActiveTab(item.value)}
-                            tooltip={item.label}
-                            className="relative data-[active=true]:bg-muted/70 data-[active=true]:text-foreground data-[active=true]:font-semibold hover:bg-muted/40 transition-[background-color,color] duration-150 ease-out rounded-lg"
-                          >
-                            <Icon className="size-4 shrink-0" />
-                            <span className="text-sm group-data-[collapsible=icon]:hidden">
-                              {item.label}
-                            </span>
-                          </SidebarMenuButton>
-                        </SidebarMenuItem>
-                      );
-                    })}
-                  </SidebarMenu>
-                </SidebarGroupContent>
-              </SidebarGroup>
-              <SidebarWhitespaceTrigger />
-            </SidebarContent>
-            <SidebarFooter className="pb-2 pl-3">
-              <div className="text-[10px] text-muted-foreground/60 select-none whitespace-nowrap flex">
-                <span className="group-data-[collapsible=icon]:hidden">
-                  Hone{" "}
-                </span>
-                v{chrome.runtime.getManifest().version}
-              </div>
-            </SidebarFooter>
-          </TooltipProvider>
-        </Sidebar>
-
-        {/* Right section: Header + Content */}
-        <div className="flex flex-1 flex-col min-h-0 min-w-0 overflow-hidden bg-background">
-          {/* Header */}
-          <header className="flex items-center justify-center px-4 py-3 bg-background shrink-0 h-fit relative">
+      <div className="flex flex-col w-full h-[100dvh] overflow-hidden bg-background">
+        {/* Full-width Header */}
+        <header className="flex items-center h-12 px-4 bg-background shrink-0 relative z-20">
+          <div className="absolute left-2">
+            <SidebarToggleInHeader />
+          </div>
+          <div className="flex-1 flex items-center justify-center">
             <div className="flex items-center gap-2">
               <HoneLogo size={20} alt="" />
               <span className="font-semibold text-sm tracking-wide text-foreground">
-                Hone
+                Hone compose
               </span>
             </div>
-          </header>
+          </div>
+          <div className="w-8" />
+        </header>
+
+        {/* Body: Sidebar + Content */}
+        <div className="flex flex-1 min-h-0 min-w-0">
+          {/* Sidebar */}
+          <Sidebar
+            collapsible="icon"
+            variant="sidebar"
+            className="hidden md:flex bg-background border-border/15 !top-12 !h-[calc(100dvh-3rem)]"
+          >
+            <TooltipProvider>
+              <SidebarContent>
+                <SidebarGroup className="p-2">
+                  <SidebarGroupContent>
+                    <SidebarMenu className="gap-0.5">
+                      {NAV_ITEMS.map((item, index) => {
+                        const Icon = item.icon;
+                        return (
+                          <SidebarMenuItem key={item.value}>
+                            <div
+                              className={cn(
+                                "absolute left-0 top-1/2 -translate-y-1/2 -translate-x-[150%] w-0.5 bg-foreground rounded-full transition-all duration-200 ease-[cubic-bezier(0.16,1,0.3,1)]",
+                                activeTab === item.value
+                                  ? "h-5 opacity-100 scale-y-100"
+                                  : "h-5 opacity-0 scale-y-0",
+                                "group-data-[collapsible=icon]:hidden",
+                              )}
+                            />
+                            <SidebarMenuButton
+                              isActive={activeTab === item.value}
+                              onClick={() => setActiveTab(item.value)}
+                              tooltip={item.label}
+                              className="relative data-[active=true]:bg-muted/60 data-[active=true]:text-foreground data-[active=true]:font-semibold hover:bg-muted/30 active:scale-[0.98] transition-all duration-150 ease-[cubic-bezier(0.16,1,0.3,1)] rounded-lg animate-in fade-in slide-in-from-top-1 duration-300 fill-mode-backwards"
+                              style={{ animationDelay: `${index * 40}ms` }}
+                            >
+                              <Icon
+                                className={cn(
+                                  "size-4 shrink-0 transition-colors duration-150 ease-[cubic-bezier(0.16,1,0.3,1)]",
+                                  activeTab === item.value
+                                    ? "text-foreground"
+                                    : "text-muted-foreground/50",
+                                )}
+                              />
+                              <span className="text-sm group-data-[collapsible=icon]:hidden">
+                                {item.label}
+                              </span>
+                            </SidebarMenuButton>
+                          </SidebarMenuItem>
+                        );
+                      })}
+                    </SidebarMenu>
+                  </SidebarGroupContent>
+                </SidebarGroup>
+                <SidebarWhitespaceTrigger />
+              </SidebarContent>
+              <SidebarFooter className="pb-2 pl-3">
+                <div className="text-[10px] text-muted-foreground/60 select-none whitespace-nowrap flex items-center gap-1.5">
+                  <span className="group-data-[collapsible=icon]:hidden">
+                    Hone compose
+                  </span>
+                  <span className="opacity-50 group-data-[collapsible=icon]:hidden">
+                    /
+                  </span>
+                  <span>v{chrome.runtime.getManifest().version}</span>
+                </div>
+              </SidebarFooter>
+            </TooltipProvider>
+          </Sidebar>
 
           {/* Main content area */}
-          <main className="flex-1 min-h-0 flex flex-col">
-            <div className="flex-1 mb-2 mr-2 rounded-lg bg-card flex flex-col min-h-0 relative">
-              <div className="flex-1 min-h-0 overflow-y-auto p-6">
+          <main className="flex-1 min-h-0 min-w-0 flex flex-col">
+            <div className="flex-1 mb-2 mr-2 rounded-lg bg-card flex flex-col min-h-0 min-w-0 relative">
+              <div className="flex-1 min-h-0 overflow-y-auto p-6 overflow-x-hidden min-w-0">
                 {/* TAB 0: Dashboard */}
                 {activeTab === "dashboard" && (
-                  <div className="flex flex-col gap-6 animate-in fade-in duration-300 w-full">
-                    {/* Hero */}
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <h2 className="text-lg font-semibold text-foreground tracking-tight">
-                          Dashboard
-                        </h2>
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          Overview of your Hone setup and activity.
+                  <div className="flex flex-col gap-12 animate-in fade-in duration-500 w-full min-w-0 py-4">
+                    {/* Attention: Editorial Hero Section */}
+                    <div className="flex flex-col gap-4">
+                      <div className="space-y-3">
+                        <span className="inline-block text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
+                          System Status
+                        </span>
+                        <h1 className="text-3xl md:text-4xl font-light tracking-tight text-foreground leading-tight">
+                          Your Hone Control Panel
+                        </h1>
+                        <p className="text-sm text-muted-foreground/80 max-w-2xl leading-relaxed">
+                          Everything is configured and ready. Below is a
+                          snapshot of your transformation engine's current
+                          state.
                         </p>
                       </div>
                     </div>
 
-                    {/* Status Bar — inline compact indicators */}
-                    <div className="flex flex-wrap items-center gap-2">
+                    {/* Interest: Status Indicators (Minimal Pills) */}
+                    <div className="flex flex-wrap gap-2">
                       {(() => {
                         const hasKey =
-                          (activeProvider === "openrouter" && openrouterKey.trim()) ||
-                          (activeProvider === "openrouter_paid" && openrouterPaidKey.trim()) ||
+                          (activeProvider === "openrouter" &&
+                            openrouterKey.trim()) ||
+                          (activeProvider === "openrouter_paid" &&
+                            openrouterPaidKey.trim()) ||
                           (activeProvider === "openai" && openaiKey.trim()) ||
-                          (activeProvider === "anthropic" && anthropicKey.trim()) ||
+                          (activeProvider === "anthropic" &&
+                            anthropicKey.trim()) ||
                           (activeProvider === "gemini" && geminiKey.trim()) ||
-                          (activeProvider === "google_ai_studio" && googleAiStudioKey.trim());
+                          (activeProvider === "google_ai_studio" &&
+                            googleAiStudioKey.trim());
                         return (
                           <button
                             onClick={() => setActiveTab("api")}
                             className={cn(
-                              "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors cursor-pointer outline-none",
+                              "inline-flex items-center gap-1.5 px-3.5 py-2 rounded-md text-[10px] font-medium transition-all duration-200 cursor-pointer outline-none border",
                               hasKey
-                                ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/15"
-                                : "bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-amber-500/15"
+                                ? "border-border/60 bg-secondary/60 text-foreground hover:bg-secondary/80"
+                                : "border-amber-200/50 bg-amber-50/70 text-amber-900 hover:bg-amber-50/90 dark:bg-amber-900/30 dark:border-amber-800/50 dark:text-amber-200",
                             )}
                           >
-                            {hasKey ? <Check className="size-3 stroke-[2.5]" /> : <AlertCircle className="size-3" />}
-                            {hasKey ? "API Connected" : "API Key Missing"}
+                            {hasKey ? (
+                              <Check className="size-3.5 stroke-[2]" />
+                            ) : (
+                              <AlertCircle className="size-3.5" />
+                            )}
+                            {hasKey ? "API Configured" : "Setup Required"}
                           </button>
                         );
                       })()}
@@ -644,179 +727,254 @@ export default function Options() {
                       <button
                         onClick={() => setActiveTab("shortcut")}
                         className={cn(
-                          "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors cursor-pointer outline-none",
+                          "inline-flex items-center gap-1.5 px-3.5 py-2 rounded-md text-[10px] font-medium transition-all duration-200 cursor-pointer outline-none border",
                           dropdownShortcutKey
-                            ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/15"
-                            : "bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-amber-500/15"
+                            ? "border-border/60 bg-secondary/60 text-foreground hover:bg-secondary/80"
+                            : "border-amber-200/50 bg-amber-50/70 text-amber-900 hover:bg-amber-50/90 dark:bg-amber-900/30 dark:border-amber-800/50 dark:text-amber-200",
                         )}
                       >
-                        {dropdownShortcutKey ? <Check className="size-3 stroke-[2.5]" /> : <AlertCircle className="size-3" />}
-                        {dropdownShortcutKey ? `Shortcut: ${getDropdownShortcutDisplay()}` : "No Shortcut Set"}
+                        {dropdownShortcutKey ? (
+                          <Check className="size-3.5 stroke-[2]" />
+                        ) : (
+                          <AlertCircle className="size-3.5" />
+                        )}
+                        {dropdownShortcutKey
+                          ? `${getDropdownShortcutDisplay()}`
+                          : "No Shortcut"}
                       </button>
 
-                      <span className={cn(
-                        "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium",
-                        "bg-secondary/40 text-muted-foreground"
-                      )}>
-                        <Info className="size-3" />
-                        {hideDot ? "Trigger Dot Hidden" : "Trigger Dot Visible"}
+                      <span className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-md text-[10px] font-medium border border-border/60 bg-secondary/60 text-foreground">
+                        <Info className="size-3.5" />
+                        {hideDot ? "Dot: Hidden" : "Dot: Visible"}
                       </span>
                     </div>
 
-                    {/* Metric Cards */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {/* Active Engine Card */}
+                    {/* Desire: Asymmetric Bento Card Grid */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-5 auto-rows-fr">
+                      {/* Engine Card - Tall */}
                       <button
                         onClick={() => setActiveTab("api")}
-                        className="group flex items-start gap-3.5 p-4 rounded-xl border border-border/50 bg-card/50 hover:bg-card hover:border-border/80 transition-all duration-200 text-left cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+                        className="group md:col-span-1 md:row-span-2 relative flex flex-col justify-between p-6 rounded-lg border border-border/60 bg-card/40 hover:bg-card/70 transition-all duration-300 text-left cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring/20 overflow-hidden"
                       >
-                        <div className="p-2 rounded-lg bg-primary/8 text-primary shrink-0 mt-0.5">
-                          <Key className="size-4" />
+                        <div className="absolute inset-0 bg-gradient-to-br from-foreground/2 to-transparent pointer-events-none" />
+                        <div className="relative z-10 space-y-4 flex flex-col flex-1">
+                          <div className="p-3 rounded-lg bg-foreground/6 w-fit group-hover:bg-foreground/10 transition-colors duration-300">
+                            <Key className="size-5 text-foreground/60 group-hover:text-foreground/80 transition-colors" />
+                          </div>
+                          <div className="space-y-2 flex-1">
+                            <span className="text-[9px] font-semibold text-muted-foreground/70 uppercase tracking-wider block">
+                              Active Engine
+                            </span>
+                            <span className="text-lg font-light text-foreground leading-tight block">
+                              {activeProvider === "openai" && "OpenAI"}
+                              {activeProvider === "anthropic" && "Claude"}
+                              {activeProvider === "gemini" && "Gemini"}
+                              {activeProvider === "openrouter" &&
+                                "OpenRouter Free"}
+                              {activeProvider === "openrouter_paid" &&
+                                "OpenRouter Paid"}
+                              {activeProvider === "google_ai_studio" &&
+                                "AI Studio"}
+                            </span>
+                          </div>
+                          <div className="space-y-1 pt-3 border-t border-border/30">
+                            <span className="text-[8px] text-muted-foreground/50 uppercase tracking-wider block">
+                              Model
+                            </span>
+                            <span
+                              className="text-[10px] font-mono text-foreground/70 truncate block"
+                              title={
+                                activeProvider === "openai"
+                                  ? openaiModel
+                                  : activeProvider === "anthropic"
+                                    ? anthropicModel
+                                    : activeProvider === "gemini"
+                                      ? geminiModel
+                                      : activeProvider === "openrouter"
+                                        ? openrouterModel || "gemma-4"
+                                        : activeProvider === "openrouter_paid"
+                                          ? openrouterPaidModel
+                                          : googleAiStudioModel
+                              }
+                            >
+                              {activeProvider === "openai"
+                                ? openaiModel
+                                : activeProvider === "anthropic"
+                                  ? anthropicModel
+                                  : activeProvider === "gemini"
+                                    ? geminiModel
+                                    : activeProvider === "openrouter"
+                                      ? openrouterModel || "gemma-4"
+                                      : activeProvider === "openrouter_paid"
+                                        ? openrouterPaidModel
+                                        : googleAiStudioModel}
+                            </span>
+                          </div>
                         </div>
-                        <div className="flex flex-col min-w-0 flex-1">
-                          <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-                            AI Engine
-                          </span>
-                          <span className="text-sm font-semibold text-foreground mt-0.5 truncate">
-                            {activeProvider === "openai" && "OpenAI Capable"}
-                            {activeProvider === "anthropic" && "Anthropic Claude"}
-                            {activeProvider === "gemini" && "Google Gemini"}
-                            {activeProvider === "openrouter" && "OpenRouter Free"}
-                            {activeProvider === "openrouter_paid" && "OpenRouter Paid"}
-                            {activeProvider === "google_ai_studio" && "Google AI Studio"}
-                          </span>
-                          <span className="text-[10px] text-muted-foreground/70 font-mono mt-0.5 truncate" title={
-                            activeProvider === "openai" ? openaiModel :
-                            activeProvider === "anthropic" ? anthropicModel :
-                            activeProvider === "gemini" ? geminiModel :
-                            activeProvider === "openrouter" ? openrouterModel || "google/gemma-4-26b-a4b-it:free" :
-                            activeProvider === "openrouter_paid" ? openrouterPaidModel :
-                            googleAiStudioModel
-                          }>
-                            {
-                              activeProvider === "openai" ? openaiModel :
-                              activeProvider === "anthropic" ? anthropicModel :
-                              activeProvider === "gemini" ? geminiModel :
-                              activeProvider === "openrouter" ? openrouterModel || "google/gemma-4-26b-a4b-it:free" :
-                              activeProvider === "openrouter_paid" ? openrouterPaidModel :
-                              googleAiStudioModel
-                            }
-                          </span>
-                        </div>
-                        <ArrowRight className="size-3.5 text-muted-foreground/40 group-hover:text-muted-foreground group-hover:translate-x-0.5 transition-all duration-200 mt-1 shrink-0" />
+                        <ArrowRight className="absolute top-6 right-6 size-4 text-muted-foreground/20 group-hover:text-muted-foreground/40 group-hover:translate-x-1 transition-all duration-300" />
                       </button>
 
-                      {/* Shortcut Card */}
+                      {/* Shortcut + Visibility Cards - Stack */}
                       <button
                         onClick={() => setActiveTab("shortcut")}
-                        className="group flex items-start gap-3.5 p-4 rounded-xl border border-border/50 bg-card/50 hover:bg-card hover:border-border/80 transition-all duration-200 text-left cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+                        className="group relative flex flex-col justify-between p-6 rounded-lg border border-border/60 bg-card/40 hover:bg-card/70 transition-all duration-300 text-left cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring/20 overflow-hidden"
                       >
-                        <div className="p-2 rounded-lg bg-primary/8 text-primary shrink-0 mt-0.5">
-                          <Keyboard className="size-4" />
+                        <div className="absolute inset-0 bg-gradient-to-br from-foreground/2 to-transparent pointer-events-none" />
+                        <div className="relative z-10 space-y-3">
+                          <div className="p-2.5 rounded-lg bg-foreground/6 w-fit group-hover:bg-foreground/10 transition-colors duration-300">
+                            <Keyboard className="size-4 text-foreground/60 group-hover:text-foreground/80 transition-colors" />
+                          </div>
+                          <div>
+                            <span className="text-[9px] font-semibold text-muted-foreground/70 uppercase tracking-wider block mb-1">
+                              Trigger Shortcut
+                            </span>
+                            <span className="text-sm font-mono font-semibold text-foreground block">
+                              {getDropdownShortcutDisplay()}
+                            </span>
+                          </div>
                         </div>
-                        <div className="flex flex-col min-w-0 flex-1">
-                          <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-                            Actions Trigger
-                          </span>
-                          <span className="text-sm font-semibold text-foreground mt-0.5">
-                            {getDropdownShortcutDisplay()}
-                          </span>
-                          <span className="text-[10px] text-muted-foreground/70 mt-0.5">
-                            Opens the actions menu
-                          </span>
-                        </div>
-                        <ArrowRight className="size-3.5 text-muted-foreground/40 group-hover:text-muted-foreground group-hover:translate-x-0.5 transition-all duration-200 mt-1 shrink-0" />
+                        <ArrowRight className="absolute top-6 right-6 size-3.5 text-muted-foreground/20 group-hover:text-muted-foreground/40 transition-all duration-300" />
                       </button>
 
-                      {/* Transformations Card */}
+                      <button
+                        onClick={() => setActiveTab("shortcut")}
+                        className="group relative flex items-start justify-between p-6 rounded-lg border border-border/60 bg-card/40 hover:bg-card/70 transition-all duration-300 text-left cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring/20 overflow-hidden"
+                      >
+                        <div className="absolute inset-0 bg-gradient-to-br from-foreground/2 to-transparent pointer-events-none" />
+                        <div className="relative z-10 space-y-3">
+                          <div className="p-2.5 rounded-lg bg-foreground/6 w-fit group-hover:bg-foreground/10 transition-colors duration-300">
+                            <PanelLeftIcon className="size-4 text-foreground/60 group-hover:text-foreground/80 transition-colors" />
+                          </div>
+                          <div>
+                            <span className="text-[9px] font-semibold text-muted-foreground/70 uppercase tracking-wider block mb-1">
+                              Visual Indicator
+                            </span>
+                            <span className="text-sm font-light text-foreground">
+                              {hideDot ? "Hidden" : "Visible"}
+                            </span>
+                          </div>
+                        </div>
+                        <ArrowRight className="absolute top-6 right-6 size-3.5 text-muted-foreground/20 group-hover:text-muted-foreground/40 transition-all duration-300" />
+                      </button>
+
+                      {/* Rewrites Card */}
                       <button
                         onClick={() => setActiveTab("history")}
-                        className="group flex items-start gap-3.5 p-4 rounded-xl border border-border/50 bg-card/50 hover:bg-card hover:border-border/80 transition-all duration-200 text-left cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+                        className="group relative flex flex-col justify-between p-6 rounded-lg border border-border/60 bg-card/40 hover:bg-card/70 transition-all duration-300 text-left cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring/20 overflow-hidden"
                       >
-                        <div className="p-2 rounded-lg bg-primary/8 text-primary shrink-0 mt-0.5">
-                          <History className="size-4" />
+                        <div className="absolute inset-0 bg-gradient-to-br from-foreground/2 to-transparent pointer-events-none" />
+                        <div className="relative z-10 space-y-3">
+                          <div className="p-2.5 rounded-lg bg-foreground/6 w-fit group-hover:bg-foreground/10 transition-colors duration-300">
+                            <History className="size-4 text-foreground/60 group-hover:text-foreground/80 transition-colors" />
+                          </div>
+                          <div>
+                            <span className="text-[9px] font-semibold text-muted-foreground/70 uppercase tracking-wider block mb-1">
+                              Transformations
+                            </span>
+                            <span className="text-2xl font-light text-foreground block">
+                              {history.length}
+                            </span>
+                          </div>
                         </div>
-                        <div className="flex flex-col min-w-0 flex-1">
-                          <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-                            Rewrites
-                          </span>
-                          <span className="text-sm font-semibold text-foreground mt-0.5">
-                            {history.length}
-                          </span>
-                          <span className="text-[10px] text-muted-foreground/70 mt-0.5">
-                            Total transformations logged
-                          </span>
-                        </div>
-                        <ArrowRight className="size-3.5 text-muted-foreground/40 group-hover:text-muted-foreground group-hover:translate-x-0.5 transition-all duration-200 mt-1 shrink-0" />
+                        <ArrowRight className="absolute top-6 right-6 size-3.5 text-muted-foreground/20 group-hover:text-muted-foreground/40 transition-all duration-300" />
                       </button>
 
-                      {/* Actions Card */}
+                      {/* Actions Count Card */}
                       <button
                         onClick={() => setActiveTab("actions")}
-                        className="group flex items-start gap-3.5 p-4 rounded-xl border border-border/50 bg-card/50 hover:bg-card hover:border-border/80 transition-all duration-200 text-left cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+                        className="group relative flex flex-col justify-between p-6 rounded-lg border border-border/60 bg-card/40 hover:bg-card/70 transition-all duration-300 text-left cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring/20 overflow-hidden"
                       >
-                        <div className="p-2 rounded-lg bg-primary/8 text-primary shrink-0 mt-0.5">
-                          <Wand2 className="size-4" />
+                        <div className="absolute inset-0 bg-gradient-to-br from-foreground/2 to-transparent pointer-events-none" />
+                        <div className="relative z-10 space-y-3">
+                          <div className="p-2.5 rounded-lg bg-foreground/6 w-fit group-hover:bg-foreground/10 transition-colors duration-300">
+                            <Wand2 className="size-4 text-foreground/60 group-hover:text-foreground/80 transition-colors" />
+                          </div>
+                          <div>
+                            <span className="text-[9px] font-semibold text-muted-foreground/70 uppercase tracking-wider block mb-1">
+                              Total Actions
+                            </span>
+                            <span className="text-2xl font-light text-foreground block">
+                              {BUILTIN_SHORTCUT_ACTIONS.length +
+                                customActions.length}
+                            </span>
+                            <span className="text-[10px] text-muted-foreground/60 mt-2 block">
+                              {BUILTIN_SHORTCUT_ACTIONS.length} Built-in ·{" "}
+                              {customActions.length} Custom
+                            </span>
+                          </div>
                         </div>
-                        <div className="flex flex-col min-w-0 flex-1">
-                          <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-                            Actions
-                          </span>
-                          <span className="text-sm font-semibold text-foreground mt-0.5">
-                            {BUILTIN_SHORTCUT_ACTIONS.length + customActions.length}
-                          </span>
-                          <span className="text-[10px] text-muted-foreground/70 mt-0.5">
-                            {BUILTIN_SHORTCUT_ACTIONS.length} built-in · {customActions.length} custom
-                          </span>
-                        </div>
-                        <ArrowRight className="size-3.5 text-muted-foreground/40 group-hover:text-muted-foreground group-hover:translate-x-0.5 transition-all duration-200 mt-1 shrink-0" />
+                        <ArrowRight className="absolute top-6 right-6 size-3.5 text-muted-foreground/20 group-hover:text-muted-foreground/40 transition-all duration-300" />
                       </button>
                     </div>
 
-                    {/* Recent Activity */}
-                    <div className="flex flex-col gap-3">
+                    {/* Action: Recent Activity Section */}
+                    <div className="flex flex-col gap-4 pt-4 border-t border-border/30">
                       <div className="flex items-center justify-between">
-                        <h3 className="text-xs font-semibold text-foreground">
-                          Recent Activity
-                        </h3>
+                        <div>
+                          <h2 className="text-sm font-semibold text-foreground">
+                            Recent Transformations
+                          </h2>
+                          <p className="text-xs text-muted-foreground/70 mt-0.5">
+                            Your latest rewrites across webpages
+                          </p>
+                        </div>
                         {history.length > 0 && (
                           <button
                             onClick={() => setActiveTab("history")}
-                            className="text-[10px] text-primary hover:text-primary/80 font-medium cursor-pointer outline-none transition-colors"
+                            className="text-xs text-foreground/60 hover:text-foreground font-medium cursor-pointer outline-none transition-colors"
                           >
-                            View all →
+                            View all
                           </button>
                         )}
                       </div>
 
                       {history.length === 0 ? (
-                        <div className="py-10 flex flex-col items-center justify-center rounded-xl border border-dashed border-border/40 bg-secondary/5">
-                          <History className="size-7 text-muted-foreground/30 mb-2 stroke-[1.5]" />
-                          <span className="text-xs text-muted-foreground/70">No rewrites yet</span>
-                          <span className="text-[10px] text-muted-foreground/50 mt-0.5">
-                            Select text on any page and run an action to get started.
+                        <div className="py-12 flex flex-col items-center justify-center rounded-lg border border-dashed border-border/40 bg-secondary/5">
+                          <History className="size-6 text-muted-foreground/20 mb-2 stroke-[1]" />
+                          <span className="text-xs text-muted-foreground/60 font-medium">
+                            No transformations yet
+                          </span>
+                          <span className="text-[10px] text-muted-foreground/40 mt-1">
+                            Start using Hone to build your history
                           </span>
                         </div>
                       ) : (
-                        <div className="flex flex-col rounded-xl border border-border/40 overflow-hidden divide-y divide-border/30">
-                          {history.slice(0, 4).map((item) => (
-                            <div key={item.id} className="flex items-center gap-3 px-4 py-3 hover:bg-secondary/5 transition-colors min-w-0">
-                              <div className="flex flex-col flex-1 min-w-0">
-                                <div className="flex items-center gap-2 min-w-0">
-                                  <span className="text-xs font-medium text-foreground truncate">
-                                    {getActionName(item.action)}
-                                  </span>
-                                  <span className="text-[9px] text-muted-foreground/60 font-mono shrink-0">
-                                    {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                  </span>
-                                </div>
-                                <p className="font-noto text-[10px] text-muted-foreground/70 truncate leading-normal mt-0.5">
+                        <div className="flex flex-col divide-y divide-border/20 w-full min-w-0">
+                          {history.slice(0, 5).map((item) => (
+                            <div
+                              key={item.id}
+                              className="flex items-start gap-4 px-2 py-4 group/activity hover:bg-foreground/[0.02] transition-colors duration-200 min-w-0"
+                            >
+                              <div className="flex-shrink-0 pt-1">
+                                <Badge
+                                  variant="secondary"
+                                  className="text-[8px] font-semibold uppercase tracking-wider border-border/40"
+                                >
+                                  {getActionName(item.action).slice(0, 8)}
+                                </Badge>
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-xs text-foreground/80 leading-snug truncate" title={item.originalText}>
                                   {item.originalText}
                                 </p>
+                                <div className="flex items-center gap-3 mt-2 text-[9px] text-muted-foreground/50">
+                                  <span className="font-mono">
+                                    {new Date(
+                                      item.timestamp,
+                                    ).toLocaleTimeString([], {
+                                      hour: "2-digit",
+                                      minute: "2-digit",
+                                    })}
+                                  </span>
+                                  <span className="truncate hidden sm:block">
+                                    {
+                                      item.url
+                                        .replace(/https?:\/\/(www\.)?/, "")
+                                        .split("/")[0]
+                                    }
+                                  </span>
+                                </div>
                               </div>
-                              <span className="text-[9px] text-muted-foreground/50 font-mono shrink-0 hidden sm:block">
-                                {item.url.replace(/https?:\/\/(www\.)?/, "").split("/")[0]}
-                              </span>
                             </div>
                           ))}
                         </div>
@@ -827,29 +985,35 @@ export default function Options() {
 
                 {/* TAB 1: API Setup */}
                 {activeTab === "api" && (
-                  <div className="flex flex-col gap-6 animate-in fade-in duration-200">
-                    <div className="pb-4">
-                      <h2 className="text-base font-semibold text-foreground">
+                  <div className="flex flex-col gap-10 animate-in fade-in duration-500 w-full py-4">
+                    {/* Editorial Hero */}
+                    <div className="space-y-3">
+                      <span className="inline-block text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
+                        Configuration
+                      </span>
+                      <h1 className="text-3xl md:text-4xl font-light tracking-tight text-foreground leading-tight">
                         API Providers
-                      </h2>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Select and configure the default AI engine to handle all of your web input transformations.
+                      </h1>
+                      <p className="text-sm text-muted-foreground/80 max-w-2xl leading-relaxed">
+                        Select and configure the AI engine that powers your text
+                        transformations across the web.
                       </p>
                     </div>
 
                     <div className="flex flex-col">
                       {/* Active Provider Selector Row */}
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 py-5 border-b border-border/40">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 py-6 border-b border-border/30">
                         <div className="pr-4">
                           <Label className="text-xs font-semibold text-foreground">
                             Active Provider
                           </Label>
-                          <p className="text-[11px] text-muted-foreground mt-1">
-                            Choose the service provider to run your transformations.
+                          <p className="text-[10px] text-muted-foreground/70 mt-1 leading-normal">
+                            Choose the service provider to run your
+                            transformations.
                           </p>
                         </div>
                         <div className="md:col-span-2">
-                          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
                             {[
                               {
                                 id: "openrouter",
@@ -881,122 +1045,84 @@ export default function Options() {
                                 label: "Google AI Studio",
                                 desc: "Gemma via GenAI SDK",
                               },
-                            ].map((prov) => (
-                              <button
-                                key={prov.id}
-                                type="button"
-                                onClick={() => setActiveProvider(prov.id)}
-                                className={`flex items-center gap-3 p-3 rounded-lg border text-left transition-all duration-200 cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-foreground/20
-                            ${
-                              activeProvider === prov.id
-                                ? "bg-secondary/40 border-primary/40 text-foreground"
-                                : "bg-transparent border-border/40 text-muted-foreground hover:bg-secondary/10 hover:text-foreground"
-                            }`}
-                              >
-                                <div
-                                  className={`size-3 rounded-full border flex items-center justify-center transition-colors shrink-0 ${
-                                    activeProvider === prov.id
-                                      ? "border-primary bg-primary/20 text-primary"
-                                      : "border-muted-foreground/30"
-                                  }`}
-                                >
-                                  {activeProvider === prov.id && (
-                                    <div className="size-1.5 rounded-full bg-primary" />
+                            ].map((prov) => {
+                              const isActive = activeProvider === prov.id;
+                              return (
+                                <button
+                                  key={prov.id}
+                                  type="button"
+                                  onClick={() => setActiveProvider(prov.id)}
+                                  className={cn(
+                                    "relative flex items-center gap-3 p-3.5 rounded-lg border text-left transition-all duration-300 cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring/20 overflow-hidden group",
+                                    isActive
+                                      ? "bg-foreground/[0.04] border-foreground/30 text-foreground"
+                                      : "bg-transparent border-border/50 text-muted-foreground hover:bg-foreground/[0.02] hover:border-border/70 hover:text-foreground",
                                   )}
-                                </div>
-                                <div className="flex flex-col">
-                                  <span
-                                    className={`text-[11px] font-semibold transition-colors ${
-                                      activeProvider === prov.id
-                                        ? "text-foreground"
-                                        : "text-muted-foreground"
-                                    }`}
+                                >
+                                  <div className="absolute inset-0 bg-gradient-to-br from-foreground/2 to-transparent pointer-events-none" />
+                                  <div
+                                    className={cn(
+                                      "size-3.5 rounded-full border-2 flex items-center justify-center transition-all duration-200 shrink-0 relative z-10",
+                                      isActive
+                                        ? "border-foreground"
+                                        : "border-muted-foreground/30 group-hover:border-muted-foreground/50",
+                                    )}
                                   >
-                                    {prov.label}
-                                  </span>
-                                  <span className="text-[9px] text-muted-foreground mt-0.5 leading-normal">
-                                    {prov.desc}
-                                  </span>
-                                </div>
-                              </button>
-                            ))}
+                                    {isActive && (
+                                      <div className="size-2 rounded-full bg-foreground" />
+                                    )}
+                                  </div>
+                                  <div className="flex flex-col gap-0.5 relative z-10">
+                                    <span
+                                      className={cn(
+                                        "text-xs font-semibold transition-colors",
+                                        isActive
+                                          ? "text-foreground"
+                                          : "text-muted-foreground group-hover:text-foreground",
+                                      )}
+                                    >
+                                      {prov.label}
+                                    </span>
+                                    <span className="text-[10px] text-muted-foreground/60 leading-normal">
+                                      {prov.desc}
+                                    </span>
+                                  </div>
+                                </button>
+                              );
+                            })}
                           </div>
                         </div>
                       </div>
 
-                      {/* Info Notice Block */}
-                      {activeProvider === "openrouter" && (
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 py-5 border-b border-border/40">
-                          <div className="md:col-span-3">
-                            <div className="bg-secondary/10 border border-border/40 rounded-lg p-4 flex gap-3 text-xs text-muted-foreground leading-relaxed animate-in fade-in duration-200">
-                              <Info className="w-4 h-4 shrink-0 text-primary mt-0.5" />
-                              <div>
-                                A free OpenRouter API key is required (create
-                                one at <strong>openrouter.ai</strong>). Select
-                                your <strong>preferred starting model</strong>;
-                                if it fails, the extension tries all other free
-                                models — cycling through the full list up to{" "}
-                                <strong>3 times</strong> before giving up.
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-
-                      {activeProvider === "openrouter_paid" && (
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 py-5 border-b border-border/40">
-                          <div className="md:col-span-3">
-                            <div className="bg-secondary/10 border border-border/40 rounded-lg p-4 flex gap-3 text-xs text-muted-foreground leading-relaxed animate-in fade-in duration-200">
-                              <Info className="w-4 h-4 shrink-0 text-primary mt-0.5" />
-                              <div>
-                                Enter any model identifier available on{" "}
-                                <strong>openrouter.ai</strong> — paid or
-                                otherwise. Your API key must have sufficient
-                                credits for the chosen model.
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-
-                      {activeProvider === "google_ai_studio" && (
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 py-5 border-b border-border/40">
-                          <div className="md:col-span-3">
-                            <div className="bg-secondary/10 border border-border/40 rounded-lg p-4 flex gap-3 text-xs text-muted-foreground leading-relaxed animate-in fade-in duration-200">
-                              <Info className="w-4 h-4 shrink-0 text-primary mt-0.5" />
-                              <div>
-                                Uses <strong>@google/genai</strong> SDK with
-                                thinking config (MINIMAL). Get a free API key
-                                from <strong>aistudio.google.com</strong> —
-                                generous free tier. Supports Gemma models like{" "}
-                                <span className="font-mono">
-                                  gemma-4-26b-a4b-it
-                                </span>
-                                .
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-
                       {/* API Key Row */}
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 py-5 border-b border-border/40">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 py-6 border-b border-border/30">
                         <div className="pr-4">
                           <Label className="text-xs font-semibold text-foreground">
-                            {activeProvider === "openrouter" && "OpenRouter API Key"}
-                            {activeProvider === "openrouter_paid" && "OpenRouter API Key"}
-                            {activeProvider === "openai" && "OpenAI Capable API Key"}
-                            {activeProvider === "anthropic" && "Anthropic API Key"}
+                            {activeProvider === "openrouter" &&
+                              "OpenRouter API Key"}
+                            {activeProvider === "openrouter_paid" &&
+                              "OpenRouter API Key"}
+                            {activeProvider === "openai" &&
+                              "OpenAI Capable API Key"}
+                            {activeProvider === "anthropic" &&
+                              "Anthropic API Key"}
                             {activeProvider === "gemini" && "Gemini API Key"}
-                            {activeProvider === "google_ai_studio" && "Google AI Studio API Key"}
+                            {activeProvider === "google_ai_studio" &&
+                              "Google AI Studio API Key"}
                           </Label>
-                          <p className="text-[11px] text-muted-foreground mt-1">
-                            {activeProvider === "openrouter" && "Credentials for openrouter.ai free tier access."}
-                            {activeProvider === "openrouter_paid" && "Credentials for openrouter.ai paid tier access."}
-                            {activeProvider === "openai" && "Authentication key for OpenAI or any compatible custom gateway."}
-                            {activeProvider === "anthropic" && "Key generated in Anthropic Developer Console."}
-                            {activeProvider === "gemini" && "API Key generated in Google AI Studio."}
-                            {activeProvider === "google_ai_studio" && "API key from aistudio.google.com."}
+                          <p className="text-[10px] text-muted-foreground/70 mt-1 leading-normal">
+                            {activeProvider === "openrouter" &&
+                              "Credentials for openrouter.ai free tier access."}
+                            {activeProvider === "openrouter_paid" &&
+                              "Credentials for openrouter.ai paid tier access."}
+                            {activeProvider === "openai" &&
+                              "Authentication key for OpenAI or any compatible custom gateway."}
+                            {activeProvider === "anthropic" &&
+                              "Key generated in Anthropic Developer Console."}
+                            {activeProvider === "gemini" &&
+                              "API Key generated in Google AI Studio."}
+                            {activeProvider === "google_ai_studio" &&
+                              "API key from aistudio.google.com."}
                           </p>
                         </div>
                         <div className="md:col-span-2">
@@ -1026,32 +1152,45 @@ export default function Options() {
                             }
                             onChange={(e) => {
                               const val = e.target.value;
-                              if (activeProvider === "openrouter") setOpenrouterKey(val);
-                              else if (activeProvider === "openrouter_paid") setOpenrouterPaidKey(val);
-                              else if (activeProvider === "openai") setOpenaiKey(val);
-                              else if (activeProvider === "anthropic") setAnthropicKey(val);
-                              else if (activeProvider === "gemini") setGeminiKey(val);
+                              if (activeProvider === "openrouter")
+                                setOpenrouterKey(val);
+                              else if (activeProvider === "openrouter_paid")
+                                setOpenrouterPaidKey(val);
+                              else if (activeProvider === "openai")
+                                setOpenaiKey(val);
+                              else if (activeProvider === "anthropic")
+                                setAnthropicKey(val);
+                              else if (activeProvider === "gemini")
+                                setGeminiKey(val);
                               else setGoogleAiStudioKey(val);
                             }}
                             required={activeProvider === "openrouter"}
-                            className="w-full bg-background border border-border/80 rounded-lg text-xs placeholder:text-muted-foreground/50 h-9"
+                            className="w-full bg-background border border-border/60 rounded-lg text-xs placeholder:text-muted-foreground/40 h-9 font-mono"
                           />
                         </div>
                       </div>
 
                       {/* Model Engine Row */}
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 py-5 border-b border-border/40">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 py-6 border-b border-border/30">
                         <div className="pr-4">
                           <Label className="text-xs font-semibold text-foreground">
-                            {activeProvider === "openrouter" ? "Preferred Starting Model" : "Model Engine"}
+                            {activeProvider === "openrouter"
+                              ? "Preferred Starting Model"
+                              : "Model Engine"}
                           </Label>
-                          <p className="text-[11px] text-muted-foreground mt-1">
-                            {activeProvider === "openrouter" && "First fallback target. Error cycles others automatically."}
-                            {activeProvider === "openrouter_paid" && "Model slug available on openrouter.ai/models."}
-                            {activeProvider === "openai" && "Model identifier target (e.g. gpt-4o-mini)."}
-                            {activeProvider === "anthropic" && "Model name identifier (e.g. claude-3-5-sonnet-latest)."}
-                            {activeProvider === "gemini" && "Target Gemini model engine version."}
-                            {activeProvider === "google_ai_studio" && "Gemini or Gemma model engine string."}
+                          <p className="text-[10px] text-muted-foreground/70 mt-1 leading-normal">
+                            {activeProvider === "openrouter" &&
+                              "First fallback target. Error cycles others automatically."}
+                            {activeProvider === "openrouter_paid" &&
+                              "Model slug available on openrouter.ai/models."}
+                            {activeProvider === "openai" &&
+                              "Model identifier target (e.g. gpt-4o-mini)."}
+                            {activeProvider === "anthropic" &&
+                              "Model name identifier (e.g. claude-sonnet-4-20250514)."}
+                            {activeProvider === "gemini" &&
+                              "Target Gemini model engine version."}
+                            {activeProvider === "google_ai_studio" &&
+                              "Gemini or Gemma model engine string."}
                           </p>
                         </div>
                         <div className="md:col-span-2 flex flex-col gap-2">
@@ -1060,10 +1199,10 @@ export default function Options() {
                               value={openrouterModel}
                               onValueChange={(val) => setOpenrouterModel(val)}
                             >
-                              <SelectTrigger className="bg-background border border-border/80 rounded-lg text-xs h-9 justify-between w-full">
+                              <SelectTrigger className="bg-background border border-border/60 rounded-lg text-xs h-9 justify-between w-full">
                                 <SelectValue placeholder="Select starting model..." />
                               </SelectTrigger>
-                              <SelectContent className="bg-card border border-border rounded-lg shadow-md">
+                              <SelectContent className="bg-card border border-border rounded-lg shadow-sm">
                                 {OPENROUTER_FREE_MODELS.map((m) => (
                                   <SelectItem
                                     key={m.id}
@@ -1085,10 +1224,10 @@ export default function Options() {
                               value={geminiModel}
                               onValueChange={(val) => setGeminiModel(val)}
                             >
-                              <SelectTrigger className="bg-background border border-border/80 rounded-lg text-xs h-9 justify-between w-full">
+                              <SelectTrigger className="bg-background border border-border/60 rounded-lg text-xs h-9 justify-between w-full">
                                 <SelectValue placeholder="Select model..." />
                               </SelectTrigger>
-                              <SelectContent className="bg-card border border-border rounded-lg shadow-md">
+                              <SelectContent className="bg-card border border-border rounded-lg shadow-sm">
                                 <SelectItem
                                   value="gemini-1.5-flash"
                                   className="text-xs"
@@ -1123,9 +1262,12 @@ export default function Options() {
                               }
                               onChange={(e) => {
                                 const val = e.target.value;
-                                if (activeProvider === "openrouter_paid") setOpenrouterPaidModel(val);
-                                else if (activeProvider === "openai") setOpenaiModel(val);
-                                else if (activeProvider === "anthropic") setAnthropicModel(val);
+                                if (activeProvider === "openrouter_paid")
+                                  setOpenrouterPaidModel(val);
+                                else if (activeProvider === "openai")
+                                  setOpenaiModel(val);
+                                else if (activeProvider === "anthropic")
+                                  setAnthropicModel(val);
                                 else setGoogleAiStudioModel(val);
                               }}
                               placeholder={
@@ -1137,7 +1279,7 @@ export default function Options() {
                                       ? "claude-sonnet-4-20250514"
                                       : "gemma-4-26b-a4b-it"
                               }
-                              className="bg-background border border-border/80 rounded-lg text-xs h-9 font-mono w-full"
+                              className="bg-background border border-border/60 rounded-lg text-xs h-9 font-mono w-full"
                             />
                           )}
 
@@ -1149,12 +1291,22 @@ export default function Options() {
                           )}
                           {activeProvider === "openrouter_paid" && (
                             <p className="text-[10px] text-muted-foreground/60 leading-normal">
-                              Use any model slug from openrouter.ai/models — e.g. <span className="font-mono">openai/gpt-4o</span>.
+                              Use any model slug from openrouter.ai/models —
+                              e.g.{" "}
+                              <span className="font-mono text-foreground/80">
+                                openai/gpt-4o
+                              </span>
+                              .
                             </p>
                           )}
                           {activeProvider === "google_ai_studio" && (
                             <p className="text-[10px] text-muted-foreground/60 leading-normal">
-                              Supports any model accessible via the Gemini API — e.g. <span className="font-mono">gemma-4-26b-a4b-it</span>.
+                              Supports any model accessible via the Gemini API —
+                              e.g.{" "}
+                              <span className="font-mono text-foreground/80">
+                                gemma-4-26b-a4b-it
+                              </span>
+                              .
                             </p>
                           )}
                         </div>
@@ -1162,57 +1314,134 @@ export default function Options() {
 
                       {/* Custom API Endpoint (Only for OpenAI) */}
                       {activeProvider === "openai" && (
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 py-5 border-b border-border/40">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 py-6">
                           <div className="pr-4">
                             <Label className="text-xs font-semibold text-foreground">
                               Custom API Endpoint
                             </Label>
-                            <p className="text-[11px] text-muted-foreground mt-1">
-                              Custom base target URL for OpenAI-compatible proxy, gateway, or local instance.
+                            <p className="text-[10px] text-muted-foreground/70 mt-1 leading-normal">
+                              Custom base target URL for OpenAI-compatible
+                              proxy, gateway, or local instance.
                             </p>
                           </div>
                           <div className="md:col-span-2">
                             <Input
                               type="text"
                               value={openaiEndpoint}
-                              onChange={(e) => setOpenaiEndpoint(e.target.value)}
+                              onChange={(e) =>
+                                setOpenaiEndpoint(e.target.value)
+                              }
                               placeholder="https://api.openai.com/v1"
-                              className="bg-background border border-border/80 rounded-lg text-xs h-9 w-full"
+                              className="w-full bg-background border border-border/60 rounded-lg text-xs h-9 font-mono"
                             />
                           </div>
                         </div>
                       )}
 
+                      {/* Bottom Info Notice */}
+                      {(activeProvider === "openrouter" ||
+                        activeProvider === "openrouter_paid" ||
+                        activeProvider === "google_ai_studio") && (
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-5">
+                          <div className="md:col-span-3">
+                            {activeProvider === "openrouter" && (
+                              <div className="flex gap-3 text-xs text-muted-foreground leading-relaxed px-4 py-3 rounded-lg bg-foreground/[0.02] border border-border/30 animate-in fade-in duration-200">
+                                <Info className="w-4 h-4 shrink-0 text-foreground/40 mt-0.5" />
+                                <div>
+                                  A free OpenRouter API key is required (create
+                                  one at{" "}
+                                  <strong className="text-foreground/80">
+                                    openrouter.ai
+                                  </strong>
+                                  ). Select your{" "}
+                                  <strong className="text-foreground/80">
+                                    preferred starting model
+                                  </strong>
+                                  ; if it fails, the extension tries all other
+                                  free models — cycling through the full list up
+                                  to{" "}
+                                  <strong className="text-foreground/80">
+                                    3 times
+                                  </strong>{" "}
+                                  before giving up.
+                                </div>
+                              </div>
+                            )}
+                            {activeProvider === "openrouter_paid" && (
+                              <div className="flex gap-3 text-xs text-muted-foreground leading-relaxed px-4 py-3 rounded-lg bg-foreground/[0.02] border border-border/30 animate-in fade-in duration-200">
+                                <Info className="w-4 h-4 shrink-0 text-foreground/40 mt-0.5" />
+                                <div>
+                                  Enter any model identifier available on{" "}
+                                  <strong className="text-foreground/80">
+                                    openrouter.ai
+                                  </strong>{" "}
+                                  — paid or otherwise. Your API key must have
+                                  sufficient credits for the chosen model.
+                                </div>
+                              </div>
+                            )}
+                            {activeProvider === "google_ai_studio" && (
+                              <div className="flex gap-3 text-xs text-muted-foreground leading-relaxed px-4 py-3 rounded-lg bg-foreground/[0.02] border border-border/30 animate-in fade-in duration-200">
+                                <Info className="w-4 h-4 shrink-0 text-foreground/40 mt-0.5" />
+                                <div>
+                                  Uses{" "}
+                                  <strong className="text-foreground/80">
+                                    @google/genai
+                                  </strong>{" "}
+                                  SDK with thinking config (MINIMAL). Get a free
+                                  API key from{" "}
+                                  <strong className="text-foreground/80">
+                                    aistudio.google.com
+                                  </strong>{" "}
+                                  — generous free tier. Supports Gemma models
+                                  like{" "}
+                                  <span className="font-mono text-foreground/80">
+                                    gemma-4-26b-a4b-it
+                                  </span>
+                                  .
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
 
                 {/* TAB 2: Keyboard Shortcuts */}
                 {activeTab === "shortcut" && (
-                  <div className="flex flex-col gap-6 animate-in fade-in duration-200">
-                    <div className="pb-4">
-                      <h2 className="text-base font-semibold text-foreground">
+                  <div className="flex flex-col gap-10 animate-in fade-in duration-500 w-full py-4">
+                    {/* Editorial Hero */}
+                    <div className="space-y-3">
+                      <span className="inline-block text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
                         Key Bindings
-                      </h2>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Configure fast global and contextual keyboard shortcuts to trigger your text transformations on any webpage.
+                      </span>
+                      <h1 className="text-3xl md:text-4xl font-light tracking-tight text-foreground leading-tight">
+                        Key Bindings
+                      </h1>
+                      <p className="text-sm text-muted-foreground/80 max-w-2xl leading-relaxed">
+                        Configure fast global and contextual keyboard shortcuts
+                        to trigger your text transformations on any webpage.
                       </p>
                     </div>
 
                     <div className="flex flex-col">
                       {/* Active Key Combination Row */}
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 py-5 border-b border-border/40">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 py-6 border-b border-border/30">
                         <div className="pr-4">
                           <Label className="text-xs font-semibold text-foreground">
                             Text Transformation Shortcut
                           </Label>
-                          <p className="text-[11px] text-muted-foreground mt-1">
-                            Combination to execute the chosen transformation action instantly on your focused or highlighted text.
+                          <p className="text-[10px] text-muted-foreground/70 mt-1 leading-normal">
+                            Combination to execute the chosen transformation
+                            action instantly on your focused or highlighted
+                            text.
                           </p>
                         </div>
                         <div className="md:col-span-2">
                           <div className="flex gap-3 items-center">
-                            <div className="bg-background border border-border/80 rounded-lg px-4 py-3.5 text-xs text-center flex-1 font-mono font-bold text-foreground flex items-center justify-center gap-2 select-none min-h-[50px]">
+                            <div className="bg-background border border-border/60 rounded-lg px-4 py-3.5 text-xs text-center flex-1 font-mono font-semibold text-foreground flex items-center justify-center gap-2 select-none min-h-[50px]">
                               {isRecordingKey ? (
                                 <span className="animate-pulse text-foreground flex items-center gap-2">
                                   <span className="w-2 h-2 bg-foreground rounded-full animate-ping" />
@@ -1237,20 +1466,22 @@ export default function Options() {
                                 setIsRecordingKey(true);
                               }}
                             >
-                              Record Combination
+                              <Keyboard className="w-3.5 h-3.5" />
+                              Record
                             </MaterialDesign3Button>
                           </div>
                         </div>
                       </div>
 
                       {/* Shortcut Action Trigger Row */}
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 py-5 border-b border-border/40">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 py-6 border-b border-border/30">
                         <div className="pr-4">
                           <Label className="text-xs font-semibold text-foreground">
                             Shortcut Trigger Action
                           </Label>
-                          <p className="text-[11px] text-muted-foreground mt-1">
-                            Action that will run when the text transformation key combination is pressed.
+                          <p className="text-[10px] text-muted-foreground/70 mt-1 leading-normal">
+                            Action that will run when the text transformation
+                            key combination is pressed.
                           </p>
                         </div>
                         <div className="md:col-span-2">
@@ -1258,10 +1489,10 @@ export default function Options() {
                             value={shortcutAction}
                             onValueChange={(val) => setShortcutAction(val)}
                           >
-                            <SelectTrigger className="bg-background border border-border/80 rounded-lg text-xs h-9 justify-between w-full">
+                            <SelectTrigger className="bg-background border border-border/60 rounded-lg text-xs h-9 justify-between w-full">
                               <SelectValue placeholder="Select shortcut action..." />
                             </SelectTrigger>
-                            <SelectContent className="bg-card border border-border rounded-lg shadow-md max-h-72">
+                            <SelectContent className="bg-card border border-border rounded-lg shadow-sm max-h-72">
                               <SelectGroup>
                                 <SelectLabel className="text-[10px] uppercase tracking-wider text-muted-foreground px-2 py-1">
                                   Built-in actions
@@ -1307,32 +1538,36 @@ export default function Options() {
                             </SelectContent>
                           </Select>
 
-                          <div className="bg-secondary/15 border border-border/40 rounded-lg p-4 flex gap-3 text-xs text-muted-foreground leading-normal mt-4 animate-in fade-in duration-200">
-                            <ShieldAlert className="w-4 h-4 shrink-0 text-primary mt-0.5" />
+                          <div className="flex gap-3 text-xs text-muted-foreground leading-relaxed px-4 py-3 rounded-lg bg-foreground/[0.02] border border-border/30 mt-4 animate-in fade-in duration-200">
+                            <ShieldAlert className="w-4 h-4 shrink-0 text-foreground/40 mt-0.5" />
                             <div>
-                              <strong>Pro Tip:</strong> Pressing this combination
-                              while focusing on any input or textarea on any
-                              webpage will extract the selected text (or all text
-                              if nothing is selected) and replace it with the
-                              corrected version from your active AI provider.
+                              <strong className="text-foreground/80">
+                                Pro Tip:
+                              </strong>{" "}
+                              Pressing this combination while focusing on any
+                              input or textarea on any webpage will extract the
+                              selected text (or all text if nothing is selected)
+                              and replace it with the corrected version from
+                              your active AI provider.
                             </div>
                           </div>
                         </div>
                       </div>
 
                       {/* Dropdown Menu Toggle Shortcut Row */}
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 py-5 border-b border-border/40">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 py-6 border-b border-border/30">
                         <div className="pr-4">
                           <Label className="text-xs font-semibold text-foreground">
                             Menu Toggle Shortcut
                           </Label>
-                          <p className="text-[11px] text-muted-foreground mt-1">
-                            Key combination to trigger the contextual dropdown helper menu on active inputs.
+                          <p className="text-[10px] text-muted-foreground/70 mt-1 leading-normal">
+                            Key combination to trigger the contextual dropdown
+                            helper menu on active inputs.
                           </p>
                         </div>
                         <div className="md:col-span-2">
                           <div className="flex gap-3 items-center">
-                            <div className="bg-background border border-border/80 rounded-lg px-4 py-3.5 text-xs text-center flex-1 font-mono font-bold text-foreground flex items-center justify-center gap-2 select-none min-h-[50px]">
+                            <div className="bg-background border border-border/60 rounded-lg px-4 py-3.5 text-xs text-center flex-1 font-mono font-semibold text-foreground flex items-center justify-center gap-2 select-none min-h-[50px]">
                               {isRecordingDropdownKey ? (
                                 <span className="animate-pulse text-foreground flex items-center gap-2">
                                   <span className="w-2 h-2 bg-foreground rounded-full animate-ping" />
@@ -1357,70 +1592,106 @@ export default function Options() {
                                 setIsRecordingDropdownKey(true);
                               }}
                             >
-                              Record Combination
+                              <Keyboard className="w-3.5 h-3.5" />
+                              Record
                             </MaterialDesign3Button>
                           </div>
                         </div>
                       </div>
 
                       {/* Overlay Settings Row */}
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 py-5 border-b border-border/40">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 py-6">
                         <div className="pr-4">
                           <Label className="text-xs font-semibold text-foreground">
                             Overlay Visuals
                           </Label>
-                          <p className="text-[11px] text-muted-foreground mt-1">
-                            Configure how Hone visual elements present themselves in inputs.
+                          <p className="text-[10px] text-muted-foreground/70 mt-1 leading-normal">
+                            Configure how Hone visual elements present
+                            themselves in inputs.
                           </p>
                         </div>
                         <div className="md:col-span-2">
-                          <div className="flex items-center justify-between border border-border/40 bg-secondary/10 rounded-xl p-4">
-                            <div className="flex flex-col gap-1 pr-4">
-                              <Label className="text-xs font-semibold text-foreground">
-                                Hide Sparkle Trigger Dot
-                              </Label>
-                              <span className="text-[11px] text-muted-foreground leading-normal">
-                                Completely hide the purple sparkle float button
-                                from webpage inputs. You will still be able to
-                                open the dropdown menu anytime by focusing an
-                                input and pressing your dropdown shortcut.
-                              </span>
-                            </div>
-                            <MaterialDesign3Switch
-                              variant="primary"
-                              size="default"
-                              checked={hideDot}
-                              onCheckedChange={(checked) => setHideDot(checked)}
-                              haptic="none"
-                            />
+                          <div className="flex flex-col gap-0.5 rounded-xl border border-border/20 bg-foreground/[0.01] p-0.5">
+                            <button
+                              type="button"
+                              onClick={() => setHideDot(!hideDot)}
+                              className="flex items-center justify-between w-full rounded-t-[calc(0.75rem-2px)] bg-foreground/[0.02] hover:bg-foreground/[0.04] p-4 cursor-pointer transition-colors duration-200 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring/20"
+                            >
+                              <div className="flex flex-col gap-1 pr-4">
+                                <Label className="text-xs font-semibold text-foreground cursor-pointer">
+                                  Hide Trigger Dot
+                                </Label>
+                                <span className="text-[10px] text-muted-foreground/70 leading-normal">
+                                  Completely hide the white arrow-up trigger dot
+                                  from webpage inputs. You will still be able to
+                                  open the dropdown menu anytime by focusing an
+                                  input and pressing your dropdown shortcut.
+                                </span>
+                              </div>
+                              <MaterialDesign3Switch
+                                variant="primary"
+                                size="default"
+                                checked={hideDot}
+                                onCheckedChange={(checked) =>
+                                  setHideDot(checked)
+                                }
+                                haptic="none"
+                              />
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => setPreviewInCard(!previewInCard)}
+                              className="flex items-center justify-between w-full rounded-b-[calc(0.75rem-2px)] bg-foreground/[0.02] hover:bg-foreground/[0.04] p-4 cursor-pointer transition-colors duration-200 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring/20 border-t border-border/10"
+                            >
+                              <div className="flex flex-col gap-1 pr-4">
+                                <Label className="text-xs font-semibold text-foreground cursor-pointer">
+                                  Preview AI results in card
+                                </Label>
+                                <span className="text-[10px] text-muted-foreground/70 leading-normal">
+                                  When enabled, selecting an action generates the response inside the right-hand preview card, keeping the menu open. You can then review and apply it manually. When disabled, the menu closes immediately and applies the result directly.
+                                </span>
+                              </div>
+                              <MaterialDesign3Switch
+                                variant="primary"
+                                size="default"
+                                checked={previewInCard}
+                                onCheckedChange={(checked) =>
+                                  setPreviewInCard(checked)
+                                }
+                                haptic="none"
+                              />
+                            </button>
                           </div>
                         </div>
                       </div>
-
                     </div>
                   </div>
                 )}
 
-                {/* TAB 3: History Viewer — absolutely positioned to escape the scroll wrapper */}
+                {/* TAB 3: History Viewer */}
                 {activeTab === "history" && (
-                  <div className="absolute inset-0 flex flex-col animate-in fade-in duration-200 bg-card rounded-lg z-10">
+                  <div className="absolute inset-0 flex flex-col animate-in fade-in duration-500 bg-card rounded-lg z-10">
                     {/* Fixed Floating Topbar */}
-                    <div className="shrink-0 px-5 py-3.5 border-b border-border/40 flex items-center gap-3 bg-card rounded-t-lg">
+                    <div className="shrink-0 px-6 py-4 border-b border-border/30 flex items-center gap-3 bg-card rounded-t-lg">
                       <div className="flex-1 min-w-0">
-                        <h2 className="text-base font-semibold text-foreground">Rewrite History</h2>
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          Review past Hone transformations, text replacements, and copies.
+                        <h2 className="text-base font-light text-foreground">
+                          Rewrite History
+                        </h2>
+                        <p className="text-xs text-muted-foreground/70 mt-0.5">
+                          Review past Hone transformations, text replacements,
+                          and copies.
                         </p>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
                         <div className="relative">
-                          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground/60 pointer-events-none" />
+                          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground/40 pointer-events-none" />
                           <Input
                             type="text"
-                            placeholder="Search history..."
+                            placeholder="Search..."
                             value={historySearch}
                             onChange={(e) => setHistorySearch(e.target.value)}
-                            className="pl-8 pr-7 h-8 text-xs bg-background border border-border/60 rounded-lg w-52"
+                            className="pl-8 pr-7 h-8 text-xs bg-background border border-border/60 rounded-lg w-48 font-mono"
                           />
                           {historySearch && (
                             <button
@@ -1436,7 +1707,7 @@ export default function Options() {
                             variant="destructive"
                             size="sm"
                             shape="round"
-                            onClick={handleClearAllHistory}
+                            onClick={() => setClearAllDialogOpen(true)}
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                             Clear All
@@ -1446,14 +1717,19 @@ export default function Options() {
                     </div>
 
                     {/* Virtualized List */}
-                    <div ref={historyParentRef} className="flex-1 min-h-0 overflow-y-auto">
+                    <div
+                      ref={historyParentRef}
+                      className="flex-1 min-h-0 overflow-y-auto"
+                    >
                       {filteredHistory.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center h-full gap-2.5">
-                          <History className="w-8 h-8 text-muted-foreground/60" />
+                        <div className="flex flex-col items-center justify-center h-full gap-3">
+                          <History className="w-7 h-7 text-muted-foreground/30 stroke-[1]" />
                           <p className="text-muted-foreground text-xs font-medium">
-                            {historySearch ? "No results found." : "No transformations recorded yet."}
+                            {historySearch
+                              ? "No results found."
+                              : "No transformations recorded yet."}
                           </p>
-                          <p className="text-muted-foreground/60 text-[10px]">
+                          <p className="text-muted-foreground/50 text-[10px]">
                             {historySearch
                               ? "Try a different search term."
                               : "Start using Hone in webpage text boxes to build history."}
@@ -1467,89 +1743,102 @@ export default function Options() {
                             position: "relative",
                           }}
                         >
-                          {historyVirtualizer.getVirtualItems().map((virtualItem) => {
-                            const item = filteredHistory[virtualItem.index];
-                            return (
-                              <div
-                                key={virtualItem.key}
-                                style={{
-                                  position: "absolute",
-                                  top: 0,
-                                  left: 0,
-                                  width: "100%",
-                                  height: `${virtualItem.size}px`,
-                                  transform: `translateY(${virtualItem.start}px)`,
-                                }}
-                              >
-                                <button
-                                  onClick={() => {
-                                    setSelectedHistoryItem(item);
-                                    setHistoryDialogOpen(true);
+                          {historyVirtualizer
+                            .getVirtualItems()
+                            .map((virtualItem) => {
+                              const item = filteredHistory[virtualItem.index];
+                              return (
+                                <div
+                                  key={virtualItem.key}
+                                  style={{
+                                    position: "absolute",
+                                    top: 0,
+                                    left: 0,
+                                    width: "100%",
+                                    height: `${virtualItem.size}px`,
+                                    transform: `translateY(${virtualItem.start}px)`,
                                   }}
-                                  className="w-full h-full flex items-center gap-4 px-5 border-b border-border/20 hover:bg-secondary/10 transition-colors text-left group"
                                 >
-                                  <div className="flex items-center gap-3 flex-1 min-w-0 py-2.5">
-                                    <Badge
-                                      variant="secondary"
-                                      className="text-[9px] font-mono border-border shrink-0 py-0"
-                                    >
-                                      {getActionName(item.action)}
-                                    </Badge>
-                                    <span className="font-noto text-xs text-foreground/80 truncate leading-normal flex-1">
-                                      {item.rewrittenText}
-                                    </span>
-                                  </div>
-                                  <div className="flex flex-col items-end shrink-0">
-                                    <span className="text-[10px] text-muted-foreground/50 whitespace-nowrap">
-                                      {new Date(item.timestamp).toLocaleString()}
-                                    </span>
-                                    <span className="text-[10px] text-muted-foreground/30 group-hover:text-muted-foreground/60 transition-colors">
-                                      View details →
-                                    </span>
-                                  </div>
-                                </button>
-                              </div>
-                            );
-                          })}
+                                  <button
+                                    onClick={() => {
+                                      setSelectedHistoryItem(item);
+                                      setHistoryDialogOpen(true);
+                                    }}
+                                    className="w-full h-full flex items-center gap-4 px-6 border-b border-border/20 hover:bg-foreground/[0.02] transition-colors text-left group"
+                                  >
+                                    <div className="flex items-center gap-3 flex-1 min-w-0 py-2.5">
+                                      <Badge
+                                        variant="secondary"
+                                        className="text-[9px] font-mono border-border/40 shrink-0 py-0 font-semibold"
+                                      >
+                                        {getActionName(item.action)}
+                                      </Badge>
+                                      <span className="text-xs text-foreground/70 truncate leading-normal flex-1">
+                                        {item.rewrittenText}
+                                      </span>
+                                    </div>
+                                    <div className="flex flex-col items-end shrink-0">
+                                      <span className="text-[10px] text-muted-foreground/50 whitespace-nowrap font-mono">
+                                        {new Date(
+                                          item.timestamp,
+                                        ).toLocaleString()}
+                                      </span>
+                                      <span className="text-[10px] text-muted-foreground/30 group-hover:text-muted-foreground/60 transition-colors">
+                                        View details
+                                      </span>
+                                    </div>
+                                  </button>
+                                </div>
+                              );
+                            })}
                         </div>
                       )}
                     </div>
 
                     {/* History Item Detail Dialog */}
-                    <Dialog open={historyDialogOpen} onOpenChange={setHistoryDialogOpen}>
+                    <Dialog
+                      open={historyDialogOpen}
+                      onOpenChange={setHistoryDialogOpen}
+                    >
                       <DialogContent className="max-w-2xl w-full">
                         {selectedHistoryItem && (
                           <>
-                            {/* Title bar */}
                             <DialogTitle>
                               <div className="flex items-center justify-between gap-2">
                                 <div className="flex items-center gap-2">
-                                  <Badge variant="secondary" className="text-[10px] font-mono border-border">
+                                  <Badge
+                                    variant="secondary"
+                                    className="text-[10px] font-mono border-border/40"
+                                  >
                                     {getActionName(selectedHistoryItem.action)}
                                   </Badge>
-                                  <span className="text-sm font-semibold">Transformation Details</span>
+                                  <span className="text-sm font-light">
+                                    Details
+                                  </span>
                                 </div>
                                 <button
                                   onClick={() => {
                                     setHistoryDialogOpen(false);
                                     setSelectedHistoryItem(null);
                                   }}
-                                  className="text-muted-foreground/50 hover:text-foreground transition-colors rounded-lg p-1 hover:bg-secondary/20"
+                                  className="text-muted-foreground/50 hover:text-foreground transition-colors rounded-lg p-1 hover:bg-foreground/[0.04]"
                                 >
                                   <X className="w-4 h-4" />
                                 </button>
                               </div>
                             </DialogTitle>
 
-                            {/* Body */}
                             <div className="flex flex-col gap-5 px-6 pt-5 pb-6">
                               {/* Metadata */}
                               <div className="flex flex-wrap gap-2 text-[11px]">
-                                <span className="px-2.5 py-1 rounded-lg border border-border/60 text-muted-foreground font-mono bg-secondary/10">
-                                  {selectedHistoryItem.provider} · {selectedHistoryItem.model}
+                                <span className="px-2.5 py-1 rounded-lg border border-border/60 text-muted-foreground font-mono bg-foreground/[0.02]">
+                                  {selectedHistoryItem.provider} ·{" "}
+                                  {selectedHistoryItem.model}
                                 </span>
-                                <span className="px-2.5 py-1 rounded-lg border border-border/60 text-muted-foreground bg-secondary/10">
-                                  {new Date(selectedHistoryItem.timestamp).toLocaleString()}
+                                <span className="px-2.5 py-1 rounded-lg border border-border/60 text-muted-foreground bg-foreground/[0.02]">
+                                  {new Date(
+                                    selectedHistoryItem.timestamp,
+                                  ).toLocaleString()}
                                 </span>
                               </div>
 
@@ -1570,26 +1859,26 @@ export default function Options() {
 
                               {/* Text Comparison */}
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                <div className="flex flex-col gap-1.5 bg-secondary/10 border border-border/40 p-4 rounded-xl">
+                                <div className="flex flex-col gap-1.5 bg-foreground/[0.02] border border-border/40 p-4 rounded-lg">
                                   <span className="text-[9px] text-muted-foreground uppercase font-semibold tracking-wide">
                                     Original
                                   </span>
-                                  <div className="font-noto text-xs text-muted-foreground whitespace-pre-wrap leading-relaxed max-h-44 overflow-y-auto pr-1">
+                                  <div className="text-xs text-muted-foreground whitespace-pre-wrap leading-relaxed max-h-44 overflow-y-auto pr-1 font-mono">
                                     {selectedHistoryItem.originalText}
                                   </div>
                                 </div>
-                                <div className="flex flex-col gap-1.5 bg-secondary/10 border border-border/40 p-4 rounded-xl">
-                                  <span className="text-[9px] text-foreground uppercase font-semibold tracking-wide">
+                                <div className="flex flex-col gap-1.5 bg-foreground/[0.02] border border-border/40 p-4 rounded-lg">
+                                  <span className="text-[9px] text-foreground/80 uppercase font-semibold tracking-wide">
                                     Rewritten
                                   </span>
-                                  <div className="font-noto text-xs text-foreground whitespace-pre-wrap leading-relaxed max-h-44 overflow-y-auto pr-1">
+                                  <div className="text-xs text-foreground/80 whitespace-pre-wrap leading-relaxed max-h-44 overflow-y-auto pr-1 font-mono">
                                     {selectedHistoryItem.rewrittenText}
                                   </div>
                                 </div>
                               </div>
 
                               {/* Actions */}
-                              <div className="flex gap-2 justify-end pt-3 border-t border-border/40">
+                              <div className="flex gap-2 justify-end pt-3 border-t border-border/30">
                                 <MaterialDesign3Button
                                   variant="destructive"
                                   size="sm"
@@ -1601,7 +1890,7 @@ export default function Options() {
                                   }}
                                 >
                                   <Trash2 className="w-3.5 h-3.5" />
-                                  Delete Entry
+                                  Delete
                                 </MaterialDesign3Button>
                                 <MaterialDesign3Button
                                   variant="default"
@@ -1615,11 +1904,13 @@ export default function Options() {
                                   }
                                 >
                                   {copiedId === selectedHistoryItem.id ? (
-                                    <Check className="w-3.5 h-3.5 text-green-400" />
+                                    <Check className="w-3.5 h-3.5" />
                                   ) : (
                                     <Copy className="w-3.5 h-3.5" />
                                   )}
-                                  Copy Rewritten
+                                  {copiedId === selectedHistoryItem.id
+                                    ? "Copied"
+                                    : "Copy"}
                                 </MaterialDesign3Button>
                               </div>
                             </div>
@@ -1627,17 +1918,63 @@ export default function Options() {
                         )}
                       </DialogContent>
                     </Dialog>
+
+                    {/* Clear All Confirmation Dialog */}
+                    <Dialog
+                      open={clearAllDialogOpen}
+                      onOpenChange={setClearAllDialogOpen}
+                    >
+                      <DialogContent className="max-w-sm w-full">
+                        <DialogTitle>
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-light text-foreground">
+                              Clear All History
+                            </span>
+                          </div>
+                        </DialogTitle>
+                        <div className="px-6 pb-5 pt-4 flex flex-col gap-5">
+                          <p className="text-xs text-muted-foreground/70 leading-normal">
+                            Are you sure you want to clear your entire
+                            transformation history? This cannot be undone.
+                          </p>
+                          <div className="flex gap-2 justify-end">
+                            <MaterialDesign3Button
+                              variant="ghost"
+                              size="sm"
+                              shape="round"
+                              onClick={() => setClearAllDialogOpen(false)}
+                            >
+                              Cancel
+                            </MaterialDesign3Button>
+                            <MaterialDesign3Button
+                              variant="destructive"
+                              size="sm"
+                              shape="round"
+                              onClick={handleClearAllHistory}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              Clear All
+                            </MaterialDesign3Button>
+                          </div>
+                        </div>
+                      </DialogContent>
+                    </Dialog>
                   </div>
                 )}
 
                 {/* TAB 4: Actions Studio */}
                 {activeTab === "actions" && (
-                  <div className="absolute inset-0 flex overflow-hidden animate-in fade-in duration-200 rounded-lg z-10">
+                  <div className="absolute inset-0 flex overflow-hidden animate-in fade-in duration-500 rounded-lg z-10">
                     {/* Left: action list sidebar */}
-                    <div className="w-72 shrink-0 flex flex-col gap-4 border-r border-border/40 p-6 pr-6 overflow-y-auto">
-                      <div className="flex flex-col gap-1.5 shrink-0">
-                        <h2 className="text-base font-semibold text-foreground">Actions Studio</h2>
-                        <p className="text-xs text-muted-foreground">
+                    <div className="w-72 shrink-0 flex flex-col gap-4 border-r border-border/30 p-6 pr-6 overflow-y-auto bg-card">
+                      <div className="flex flex-col gap-2 shrink-0">
+                        <span className="text-[9px] font-mono text-muted-foreground/50 uppercase tracking-[0.15em] font-semibold">
+                          Editor
+                        </span>
+                        <h2 className="text-base font-light text-foreground">
+                          Actions Studio
+                        </h2>
+                        <p className="text-xs text-muted-foreground/70">
                           Create custom AI text transformation actions.
                         </p>
                       </div>
@@ -1670,7 +2007,7 @@ export default function Options() {
 
                       {/* Scrollable list of custom actions */}
                       <div className="flex-1 overflow-y-auto pr-1 flex flex-col gap-2 min-h-0">
-                        {customActions.map((ca) => {
+                        {customActions.map((ca, idx) => {
                           const isSelected = editingAction?.id === ca.id;
                           const actionColor = ca.color || "#8B5CF6";
                           return (
@@ -1681,24 +2018,25 @@ export default function Options() {
                                 setEditingAction(ca);
                                 setIsNewAction(false);
                               }}
+                              style={{ animationDelay: `${idx * 40}ms` }}
                               className={cn(
-                                "w-full flex items-center gap-3.5 px-3 py-2.5 rounded-xl border text-left transition-all duration-200 group relative",
+                                "w-full flex items-center gap-3.5 px-3 py-2.5 rounded-xl border text-left transition-[transform,background,border,box-shadow] duration-[250ms] ease-[cubic-bezier(0.16,1,0.3,1)] group relative animate-in fade-in slide-in-from-left-2 fill-mode-backwards",
                                 isSelected
-                                  ? "bg-secondary/15 border-foreground/30 shadow-sm"
-                                  : "bg-transparent border-transparent hover:bg-secondary/10 hover:border-border/30"
+                                  ? "bg-foreground/[0.02] border-border/60"
+                                  : "bg-transparent border-transparent hover:bg-foreground/[0.02] hover:border-border/30 active:scale-[0.98]",
                               )}
                             >
                               {/* Active indicator bar */}
                               {isSelected && (
-                                <div className="absolute left-0 top-3 bottom-3 w-1 rounded-r-md bg-foreground" />
+                                <div className="absolute left-0 top-3 bottom-3 w-[2px] rounded-r-sm bg-foreground/60" />
                               )}
 
                               {/* Icon container with translucent background */}
                               <div
                                 className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 transition-all duration-200"
                                 style={{
-                                  backgroundColor: `${actionColor}1A`, // 10% opacity
-                                  border: `1px solid ${actionColor}33`, // 20% opacity border
+                                  backgroundColor: `${actionColor}1A`,
+                                  border: `1px solid ${actionColor}33`,
                                 }}
                               >
                                 {renderActionIcon(ca.icon, {
@@ -1709,14 +2047,20 @@ export default function Options() {
 
                               {/* Title and prompt template preview */}
                               <div className="flex-1 min-w-0 flex flex-col gap-0.5">
-                                <span className={cn(
-                                  "text-xs font-semibold truncate transition-colors",
-                                  isSelected ? "text-foreground" : "text-muted-foreground group-hover:text-foreground"
-                                )}>
+                                <span
+                                  className={cn(
+                                    "text-xs font-semibold truncate transition-colors duration-200",
+                                    isSelected
+                                      ? "text-foreground"
+                                      : "text-muted-foreground group-hover:text-foreground",
+                                  )}
+                                >
                                   {ca.name || "Untitled Action"}
                                 </span>
-                                <span className="text-[10px] text-muted-foreground/60 truncate leading-normal">
-                                  {ca.description || ca.promptTemplate || "No description"}
+                                <span className="text-[10px] text-muted-foreground/50 truncate leading-normal">
+                                  {ca.description ||
+                                    ca.promptTemplate ||
+                                    "No description"}
                                 </span>
                               </div>
                             </button>
@@ -1724,8 +2068,9 @@ export default function Options() {
                         })}
 
                         {customActions.length === 0 && (
-                          <div className="text-center py-10 flex flex-col items-center justify-center gap-2">
-                            <p className="text-[11px] text-muted-foreground/60 leading-normal">
+                          <div className="text-center py-10 flex flex-col items-center justify-center gap-2 animate-in fade-in duration-500">
+                            <Wand2 className="w-5 h-5 text-muted-foreground/20 stroke-[1]" />
+                            <p className="text-[11px] text-muted-foreground/50 leading-normal">
                               No custom actions created yet.
                             </p>
                           </div>
@@ -1733,16 +2078,20 @@ export default function Options() {
                       </div>
                     </div>
 
-                    {/* Right: action editor panel */}
-                    <div className="flex-1 min-w-0 h-full flex flex-col p-6 overflow-hidden">
+                    {/* Right: action editor panel — flat on surface, no card wrapper */}
+                    <div className="flex-1 min-w-0 h-full flex flex-col overflow-hidden">
                       {!editingAction ? (
-                        <div className="h-full flex flex-col items-center justify-center text-center py-20 px-6 border border-dashed border-border/60 rounded-2xl bg-secondary/5 animate-in fade-in duration-200">
-                          <div className="w-12 h-12 rounded-2xl bg-secondary/10 flex items-center justify-center mb-3">
-                            <Wand2 className="w-6 h-6 text-muted-foreground/80 animate-pulse" />
+                        <div className="h-full flex flex-col items-center justify-center text-center py-20 px-6 animate-in fade-in duration-500">
+                          <div className="w-14 h-14 rounded-2xl flex items-center justify-center mb-4">
+                            <Wand2 className="w-6 h-6 text-muted-foreground/30 stroke-[1]" />
                           </div>
-                          <h3 className="text-sm font-semibold text-foreground">Select or Create an Action</h3>
-                          <p className="text-xs text-muted-foreground/75 mt-1.5 max-w-xs leading-normal">
-                            Choose an action from the list on the left to edit its template, or click "Create New Action" to build your own custom text transformation.
+                          <h3 className="text-sm font-light text-foreground">
+                            Select or Create an Action
+                          </h3>
+                          <p className="text-xs text-muted-foreground/60 mt-1.5 max-w-xs leading-normal">
+                            Choose an action from the list on the left to edit
+                            its template, or click Create New Action to build
+                            your own custom text transformation.
                           </p>
                         </div>
                       ) : (
@@ -1752,9 +2101,7 @@ export default function Options() {
                             if (!editingAction) return;
                             await saveCustomAction({
                               ...editingAction,
-                              icon: normalizeActionIconName(
-                                editingAction.icon,
-                              ),
+                              icon: normalizeActionIconName(editingAction.icon),
                               color: editingAction.color || "#8B5CF6",
                             });
                             const updated = await loadCustomActions();
@@ -1765,38 +2112,41 @@ export default function Options() {
                               "success",
                             );
                           }}
-                          className="flex-1 flex flex-col min-h-0 bg-card rounded-2xl border border-border/40 overflow-hidden shadow-sm animate-in fade-in duration-200"
+                          className="flex-1 flex flex-col min-h-0 animate-in fade-in slide-in-from-right-3 duration-500 ease-[cubic-bezier(0.16,1,0.3,1)]"
                         >
-                          {/* Sticky Sub-Header Action Bar */}
-                          <div className="sticky top-0 z-20 px-6 py-4 bg-card border-b border-border/40 flex items-center justify-between gap-4">
+                          {/* Sticky Sub-Header Action Bar — flat on surface */}
+                          <div className="sticky top-0 z-20 px-6 py-2.5 flex items-center justify-between gap-4 border-b border-border/30 min-h-12">
                             <div className="flex items-center gap-3 min-w-0">
                               <div
-                                className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+                                className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 transition-transform duration-200 active:scale-[0.95]"
                                 style={{
                                   backgroundColor: `${editingAction.color || "#8B5CF6"}1A`,
                                   border: `1px solid ${editingAction.color || "#8B5CF6"}33`,
                                 }}
                               >
                                 {renderActionIcon(editingAction.icon, {
-                                  size: 14,
+                                  size: 12,
                                   color: editingAction.color || "#8B5CF6",
                                 })}
                               </div>
                               <div className="min-w-0 flex flex-col">
-                                <h3 className="text-sm font-semibold text-foreground truncate">
+                                <h3 className="text-xs font-semibold text-foreground truncate">
                                   {editingAction.name || "New Action"}
                                 </h3>
                                 <p className="text-[10px] text-muted-foreground/60 truncate">
-                                  {isNewAction ? "Creating custom transformation" : "Editing action parameters"}
+                                  {isNewAction ? "Creating" : "Editing"}
                                 </p>
                               </div>
                             </div>
 
-                            {/* Header actions (Enabled status, Delete, Save) */}
-                            <div className="flex items-center gap-3.5 shrink-0">
-                              {/* Enabled status switch */}
-                              <div className="flex items-center gap-2 border border-border/40 bg-secondary/10 rounded-lg px-3 py-1">
-                                <span className="text-[10px] font-semibold text-muted-foreground">Enabled</span>
+                            {/* Header actions (Delete, Save) */}
+                            <div className="flex items-center gap-3 shrink-0">
+                              <div className="flex items-center gap-2">
+                                <span className="text-[10px] font-medium text-muted-foreground/60 min-w-[3.5rem] text-right select-none">
+                                  {editingAction.enabled !== false
+                                    ? "Enabled"
+                                    : "Disabled"}
+                                </span>
                                 <MaterialDesign3Switch
                                   variant="primary"
                                   size="default"
@@ -1824,9 +2174,7 @@ export default function Options() {
                                       )
                                     )
                                       return;
-                                    await deleteCustomAction(
-                                      editingAction.id,
-                                    );
+                                    await deleteCustomAction(editingAction.id);
                                     const updated = await loadCustomActions();
                                     setCustomActions(updated);
                                     setEditingAction(null);
@@ -1853,16 +2201,17 @@ export default function Options() {
                             </div>
                           </div>
 
-                          {/* Scrollable Form Fields */}
-                          <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                          {/* Scrollable Form Fields — flush below topbar */}
+                          <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
                             {/* Group 1: Identity & Visuals */}
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pb-5 border-b border-border/40">
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pb-5 border-b border-border/30">
                               <div className="pr-4">
                                 <Label className="text-xs font-semibold text-foreground">
                                   Identity & Visuals
                                 </Label>
-                                <p className="text-[11px] text-muted-foreground mt-1 leading-normal">
-                                  Define the name, description, and visual representation of your action.
+                                <p className="text-[10px] text-muted-foreground/70 mt-1 leading-normal">
+                                  Define the name, description, and visual
+                                  representation of your action.
                                 </p>
                               </div>
 
@@ -1874,7 +2223,9 @@ export default function Options() {
                                   </Label>
                                   <Input
                                     type="text"
-                                    placeholder={CUSTOM_ACTION_PLACEHOLDERS.name}
+                                    placeholder={
+                                      CUSTOM_ACTION_PLACEHOLDERS.name
+                                    }
                                     value={editingAction.name}
                                     onChange={(e) =>
                                       setEditingAction({
@@ -1882,7 +2233,7 @@ export default function Options() {
                                         name: e.target.value,
                                       })
                                     }
-                                    className="bg-background border border-border/80 rounded-lg text-xs h-9"
+                                    className="bg-background border border-border/60 rounded-lg text-xs h-9 transition-[border-color,box-shadow] duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] focus:border-foreground/40 focus:shadow-[0_0_0_2px_rgba(255,255,255,0.03)]"
                                     required
                                   />
                                 </div>
@@ -1890,11 +2241,16 @@ export default function Options() {
                                 {/* Description Input */}
                                 <div className="flex flex-col gap-1.5">
                                   <Label className="text-[10px] font-semibold text-muted-foreground">
-                                    Description <span className="text-muted-foreground/50">(Optional)</span>
+                                    Description{" "}
+                                    <span className="text-muted-foreground/50">
+                                      (Optional)
+                                    </span>
                                   </Label>
                                   <Input
                                     type="text"
-                                    placeholder={CUSTOM_ACTION_PLACEHOLDERS.description}
+                                    placeholder={
+                                      CUSTOM_ACTION_PLACEHOLDERS.description
+                                    }
                                     value={editingAction.description || ""}
                                     onChange={(e) =>
                                       setEditingAction({
@@ -1902,7 +2258,7 @@ export default function Options() {
                                         description: e.target.value,
                                       })
                                     }
-                                    className="bg-background border border-border/80 rounded-lg text-xs h-9"
+                                    className="bg-background border border-border/60 rounded-lg text-xs h-9 transition-[border-color,box-shadow] duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] focus:border-foreground/40 focus:shadow-[0_0_0_2px_rgba(255,255,255,0.03)]"
                                   />
                                 </div>
 
@@ -1914,7 +2270,9 @@ export default function Options() {
                                     </Label>
                                     <ActionIconSelect
                                       value={editingAction.icon}
-                                      accentColor={editingAction.color || "#8B5CF6"}
+                                      accentColor={
+                                        editingAction.color || "#8B5CF6"
+                                      }
                                       onValueChange={(icon) =>
                                         setEditingAction({
                                           ...editingAction,
@@ -1949,10 +2307,10 @@ export default function Options() {
                                             })
                                           }
                                           className={cn(
-                                            "h-6 w-6 rounded-full border p-0 transition-transform hover:scale-105 shrink-0",
+                                            "h-6 w-6 rounded-full border p-0 transition-all duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] hover:scale-105 active:scale-[0.95] shrink-0",
                                             editingAction.color === c
                                               ? "border-foreground scale-110 ring-2 ring-foreground/25"
-                                              : "border-transparent"
+                                              : "border-transparent",
                                           )}
                                           style={{ background: c }}
                                           aria-label={`Color ${c}`}
@@ -1965,13 +2323,14 @@ export default function Options() {
                             </div>
 
                             {/* Group 2: AI Settings */}
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pb-5 border-b border-border/40">
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pb-5 border-b border-border/30">
                               <div className="pr-4">
                                 <Label className="text-xs font-semibold text-foreground">
                                   AI Parameters
                                 </Label>
-                                <p className="text-[11px] text-muted-foreground mt-1 leading-normal">
-                                  Configure the AI brain, parameter constraints, and inline behaviour.
+                                <p className="text-[10px] text-muted-foreground/70 mt-1 leading-normal">
+                                  Configure the model, parameters, and inline
+                                  behavior.
                                 </p>
                               </div>
 
@@ -1983,15 +2342,20 @@ export default function Options() {
                                       API Provider
                                     </Label>
                                     <Select
-                                      value={editingAction.provider || "__default__"}
+                                      value={
+                                        editingAction.provider || "__default__"
+                                      }
                                       onValueChange={(val) =>
                                         setEditingAction({
                                           ...editingAction,
-                                          provider: val === "__default__" ? undefined : val,
+                                          provider:
+                                            val === "__default__"
+                                              ? undefined
+                                              : val,
                                         })
                                       }
                                     >
-                                      <SelectTrigger className="h-9 w-full justify-between rounded-lg border-border/80 bg-background text-xs">
+                                      <SelectTrigger className="h-9 w-full justify-between rounded-lg border-border/60 bg-background text-xs transition-[border-color,box-shadow] duration-200 ease-[cubic-bezier(0.16,1,0.3,1)]">
                                         <SelectValue placeholder="Use global default" />
                                       </SelectTrigger>
                                       <SelectContent className="rounded-lg border border-border bg-card shadow-md">
@@ -2023,7 +2387,7 @@ export default function Options() {
                                           model: e.target.value || undefined,
                                         })
                                       }
-                                      className="bg-background border border-border/80 rounded-lg text-xs h-9"
+                                      className="bg-background border border-border/60 rounded-lg text-xs h-9 transition-[border-color,box-shadow] duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] focus:border-foreground/40 focus:shadow-[0_0_0_2px_rgba(255,255,255,0.03)]"
                                     />
                                   </div>
 
@@ -2047,45 +2411,68 @@ export default function Options() {
                                             : undefined,
                                         })
                                       }
-                                      className="bg-background border border-border/80 rounded-lg text-xs h-9"
+                                      className="bg-background border border-border/60 rounded-lg text-xs h-9 transition-[border-color,box-shadow] duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] focus:border-foreground/40 focus:shadow-[0_0_0_2px_rgba(255,255,255,0.03)]"
                                     />
                                   </div>
                                 </div>
 
-                                {/* Replace Mode Switch */}
-                                <div className="flex items-center justify-between border border-border/40 bg-secondary/10 rounded-xl p-4">
-                                  <div className="flex flex-col gap-0.5 pr-4">
-                                    <Label className="text-xs font-semibold text-foreground">
-                                      Preview before replacing
-                                    </Label>
-                                    <span className="text-[10px] text-muted-foreground leading-normal">
-                                      Show the transformation in a preview panel instead of replacing text immediately inline.
-                                    </span>
-                                  </div>
-                                  <MaterialDesign3Switch
-                                    variant="primary"
-                                    size="default"
-                                    checked={editingAction.replaceMode === "preview"}
-                                    onCheckedChange={(checked) =>
+                                {/* Replace Mode Switch — double-bezel nested card, fully clickable */}
+                                <div className="rounded-xl border border-border/20 bg-foreground/[0.01] p-0.5">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
                                       setEditingAction({
                                         ...editingAction,
-                                        replaceMode: checked ? "preview" : "replace",
+                                        replaceMode:
+                                          editingAction.replaceMode ===
+                                          "preview"
+                                            ? "replace"
+                                            : "preview",
                                       })
                                     }
-                                    haptic="none"
-                                  />
+                                    className="flex items-center justify-between w-full rounded-[calc(0.75rem-2px)] bg-foreground/[0.02] hover:bg-foreground/[0.04] p-4 cursor-pointer transition-colors duration-200 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring/20"
+                                  >
+                                    <div className="flex flex-col gap-0.5 pr-4">
+                                      <Label className="text-xs font-semibold text-foreground cursor-pointer">
+                                        Preview before replacing
+                                      </Label>
+                                      <span className="text-[10px] text-muted-foreground/70 leading-normal">
+                                        Show the transformation in a preview
+                                        panel instead of replacing text
+                                        immediately inline.
+                                      </span>
+                                    </div>
+                                    <MaterialDesign3Switch
+                                      variant="primary"
+                                      size="default"
+                                      checked={
+                                        editingAction.replaceMode === "preview"
+                                      }
+                                      onCheckedChange={(checked) =>
+                                        setEditingAction({
+                                          ...editingAction,
+                                          replaceMode: checked
+                                            ? "preview"
+                                            : "replace",
+                                        })
+                                      }
+                                      haptic="none"
+                                    />
+                                  </button>
                                 </div>
                               </div>
                             </div>
 
                             {/* Group 3: Prompt Templates */}
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pb-5 border-b border-border/40">
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pb-5 border-b border-border/30">
                               <div className="pr-4">
                                 <Label className="text-xs font-semibold text-foreground">
                                   Instructions & Prompts
                                 </Label>
-                                <p className="text-[11px] text-muted-foreground mt-1 leading-normal">
-                                  Draft system context and prompt templates. Predefined variables will be populated dynamically.
+                                <p className="text-[10px] text-muted-foreground/70 mt-1 leading-normal">
+                                  Draft system context and prompt templates.
+                                  Predefined variables will be populated
+                                  dynamically.
                                 </p>
                               </div>
 
@@ -2093,10 +2480,15 @@ export default function Options() {
                                 {/* System Prompt Textarea */}
                                 <div className="flex flex-col gap-1.5">
                                   <Label className="text-[10px] font-semibold text-muted-foreground">
-                                    System Prompt <span className="text-muted-foreground/50">(Optional)</span>
+                                    System Prompt{" "}
+                                    <span className="text-muted-foreground/50">
+                                      (Optional)
+                                    </span>
                                   </Label>
                                   <Textarea
-                                    placeholder={CUSTOM_ACTION_PLACEHOLDERS.systemPrompt}
+                                    placeholder={
+                                      CUSTOM_ACTION_PLACEHOLDERS.systemPrompt
+                                    }
                                     value={editingAction.systemPrompt || ""}
                                     onChange={(e) =>
                                       setEditingAction({
@@ -2104,7 +2496,7 @@ export default function Options() {
                                         systemPrompt: e.target.value,
                                       })
                                     }
-                                    className="min-h-[70px] resize-y font-mono text-xs leading-normal"
+                                    className="min-h-[70px] resize-y font-mono text-xs leading-normal border-border/60 transition-[border-color,box-shadow] duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] focus:border-foreground/40 focus:shadow-[0_0_0_2px_rgba(255,255,255,0.03)]"
                                   />
                                 </div>
 
@@ -2114,7 +2506,9 @@ export default function Options() {
                                     Prompt Template
                                   </Label>
                                   <Textarea
-                                    placeholder={CUSTOM_ACTION_PLACEHOLDERS.promptTemplate}
+                                    placeholder={
+                                      CUSTOM_ACTION_PLACEHOLDERS.promptTemplate
+                                    }
                                     value={editingAction.promptTemplate}
                                     onChange={(e) =>
                                       setEditingAction({
@@ -2122,12 +2516,17 @@ export default function Options() {
                                         promptTemplate: e.target.value,
                                       })
                                     }
-                                    className="min-h-[130px] resize-y font-mono text-xs leading-normal"
+                                    className="min-h-[130px] resize-y font-mono text-xs leading-normal border-border/60 transition-[border-color,box-shadow] duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] focus:border-foreground/40 focus:shadow-[0_0_0_2px_rgba(255,255,255,0.03)]"
                                     required
                                   />
-                                  <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground/80 mt-0.5">
-                                    <span className="font-semibold bg-secondary/15 px-1.5 py-0.5 rounded text-foreground font-mono">{"{{input}}"}</span>
-                                    <span>represents the selected text target undergoing rewriting.</span>
+                                  <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground/70 mt-0.5">
+                                    <span className="font-semibold bg-foreground/[0.04] px-1.5 py-0.5 rounded text-foreground font-mono">
+                                      {"{{input}}"}
+                                    </span>
+                                    <span>
+                                      represents the selected text target
+                                      undergoing rewriting.
+                                    </span>
                                   </div>
                                 </div>
                               </div>
@@ -2140,20 +2539,23 @@ export default function Options() {
                                   <Label className="text-xs font-semibold text-foreground">
                                     Test Playground
                                   </Label>
-                                  <p className="text-[11px] text-muted-foreground mt-1 leading-normal">
-                                    Test transformations instantly with sample text inputs.
+                                  <p className="text-[10px] text-muted-foreground/70 mt-1 leading-normal">
+                                    Test transformations instantly with sample
+                                    text inputs.
                                   </p>
                                 </div>
 
                                 <div className="md:col-span-2 space-y-4">
                                   <div className="flex flex-col gap-2.5">
                                     <Textarea
-                                      placeholder={CUSTOM_ACTION_PLACEHOLDERS.testInput}
+                                      placeholder={
+                                        CUSTOM_ACTION_PLACEHOLDERS.testInput
+                                      }
                                       value={testInput}
                                       onChange={(e) =>
                                         setTestInput(e.target.value)
                                       }
-                                      className="min-h-[70px] resize-y font-mono text-xs"
+                                      className="min-h-[70px] resize-y font-mono text-xs border-border/60 transition-[border-color,box-shadow] duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] focus:border-foreground/40 focus:shadow-[0_0_0_2px_rgba(255,255,255,0.03)]"
                                     />
 
                                     <div>
@@ -2162,7 +2564,9 @@ export default function Options() {
                                         size="sm"
                                         shape="round"
                                         type="button"
-                                        disabled={!testInput.trim() || testLoading}
+                                        disabled={
+                                          !testInput.trim() || testLoading
+                                        }
                                         onClick={async () => {
                                           setTestLoading(true);
                                           setTestResult("");
@@ -2173,7 +2577,10 @@ export default function Options() {
                                                 action: editingAction.id,
                                                 text: testInput,
                                               });
-                                            if (response?.success && response.text) {
+                                            if (
+                                              response?.success &&
+                                              response.text
+                                            ) {
                                               setTestResult(response.text);
                                             } else {
                                               setTestResult(
@@ -2181,7 +2588,9 @@ export default function Options() {
                                               );
                                             }
                                           } catch (err: unknown) {
-                                            setTestResult(`Error: ${(err as Error).message}`);
+                                            setTestResult(
+                                              `Error: ${(err as Error).message}`,
+                                            );
                                           }
                                           setTestLoading(false);
                                         }}
@@ -2194,7 +2603,7 @@ export default function Options() {
                                         ) : (
                                           <>
                                             <Play className="w-3 h-3" />
-                                            Run Test pad
+                                            Run Test
                                           </>
                                         )}
                                       </MaterialDesign3Button>
@@ -2202,8 +2611,8 @@ export default function Options() {
                                   </div>
 
                                   {testResult && (
-                                    <div className="bg-secondary/5 border border-border/40 p-4 rounded-xl space-y-1.5">
-                                      <span className="text-[9px] uppercase font-bold text-muted-foreground tracking-wide">
+                                    <div className="bg-foreground/[0.02] border border-border/30 p-4 rounded-xl space-y-1.5 animate-in fade-in slide-in-from-bottom-2 duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]">
+                                      <span className="text-[9px] uppercase font-semibold text-muted-foreground tracking-wide">
                                         Transformation Output
                                       </span>
                                       <Textarea
@@ -2216,6 +2625,24 @@ export default function Options() {
                                 </div>
                               </div>
                             )}
+
+                            {/* Info — subtle micro-notice at bottom of form */}
+                            <div className="flex items-start gap-2.5 px-4 py-3 rounded-xl bg-foreground/[0.02] border border-border/20">
+                              <Info className="w-3.5 h-3.5 text-muted-foreground/40 shrink-0 mt-0.5 stroke-[1.5]" />
+                              <p className="text-[10px] text-muted-foreground/60 leading-relaxed">
+                                Variables like{" "}
+                                <span className="font-mono text-foreground/60">
+                                  {"{{input}}"}
+                                </span>{" "}
+                                and{" "}
+                                <span className="font-mono text-foreground/60">
+                                  {"{{selection}}"}
+                                </span>{" "}
+                                are replaced dynamically when the action runs.
+                                Use the test playground above to verify your
+                                template before saving.
+                              </p>
+                            </div>
                           </div>
                         </form>
                       )}
@@ -2240,6 +2667,14 @@ export default function Options() {
                     <AlertCircle className="w-4 h-4 text-red-500" />
                   )}
                   <span className="font-medium">{saveStatus.message}</span>
+                  {saveStatus.type === "success" && lastDeletedItem && (
+                    <button
+                      onClick={handleUndoDelete}
+                      className="ml-1 text-[10px] font-semibold text-foreground/50 hover:text-foreground underline underline-offset-2 transition-colors whitespace-nowrap"
+                    >
+                      Undo
+                    </button>
+                  )}
                 </div>
               )}
             </div>

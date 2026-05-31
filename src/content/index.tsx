@@ -1,6 +1,7 @@
 import { createRoot } from 'react-dom/client';
 import App from './app';
 import cssText from './content.css?inline';
+import { getLinter } from './grammar-worker';
 
 // Inject Main World bridge for React/Slate access
 try {
@@ -79,3 +80,22 @@ if (document.body) {
 } else {
   document.addEventListener('DOMContentLoaded', mount);
 }
+
+// ── Proactive WASM warmup: compile Harper on first text field interaction ──
+let warmedUp = false;
+function handleFirstInteraction() {
+  if (warmedUp) return;
+  const target = document.activeElement;
+  if (
+    target &&
+    (target.tagName === "INPUT" ||
+      target.tagName === "TEXTAREA" ||
+      (target as HTMLElement).isContentEditable)
+  ) {
+    warmedUp = true;
+    document.removeEventListener("focusin", handleFirstInteraction, true);
+    getLinter().catch(() => {});
+  }
+}
+
+document.addEventListener("focusin", handleFirstInteraction, true);

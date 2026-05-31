@@ -1,10 +1,13 @@
 {
   "manifest_version": 3,
-  "name": "Hone",
+  "name": "Hone compose",
   "version": "0.1.0",
   "description": "Hone every field you type in. AI writing tools for inputs and textareas across the web.",
   "permissions": ["storage"],
   "host_permissions": ["<all_urls>"],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self';"
+  },
   "background": {
     "service_worker": "background.js",
     "type": "module"

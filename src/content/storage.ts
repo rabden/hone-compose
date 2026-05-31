@@ -46,6 +46,7 @@ export interface Config {
 
   // UI
   hideDot?: boolean;
+  previewInCard?: boolean;
 
   // API
   googleAiStudioKey?: string;
@@ -68,6 +69,7 @@ const CONFIG_KEYS: (keyof Config)[] = [
   'dropdownShortcutShift',
   'dropdownShortcutMeta',
   'hideDot',
+  'previewInCard',
   'googleAiStudioKey',
   'googleAiStudioModel',
   'provider',
@@ -171,12 +173,14 @@ const HISTORY_STORE = 'history';
 const DB_VERSION = 1;
 
 export interface HistoryEntry {
-  id?: number;
+  id?: string;
   action: string;
   originalText: string;
-  resultText: string;
+  rewrittenText: string;
   timestamp: number;
   url: string;
+  provider: string;
+  model: string;
 }
 
 /**
@@ -192,7 +196,7 @@ async function openDB(): Promise<IDBDatabase> {
     request.onupgradeneeded = (event) => {
       const db = (event.target as IDBOpenDBRequest).result;
       if (!db.objectStoreNames.contains(HISTORY_STORE)) {
-        const store = db.createObjectStore(HISTORY_STORE, { keyPath: 'id', autoIncrement: true });
+        const store = db.createObjectStore(HISTORY_STORE, { keyPath: 'id' });
         store.createIndex('timestamp', 'timestamp', { unique: false });
         store.createIndex('url', 'url', { unique: false });
       }
@@ -203,15 +207,20 @@ async function openDB(): Promise<IDBDatabase> {
 /**
  * Add history entry to IndexedDB
  */
-export async function addHistoryEntry(entry: Omit<HistoryEntry, 'id'>): Promise<number> {
+export async function addHistoryEntry(entry: Omit<HistoryEntry, 'id' | 'timestamp'> & { id?: string; timestamp?: number }): Promise<string> {
   const db = await openDB();
   return new Promise((resolve, reject) => {
     const transaction = db.transaction([HISTORY_STORE], 'readwrite');
     const store = transaction.objectStore(HISTORY_STORE);
-    const request = store.add(entry);
+    const finalEntry: HistoryEntry = {
+      ...entry,
+      id: entry.id || crypto.randomUUID(),
+      timestamp: entry.timestamp || Date.now()
+    };
+    const request = store.put(finalEntry);
 
     request.onerror = () => reject(request.error);
-    request.onsuccess = () => resolve(request.result as number);
+    request.onsuccess = () => resolve(finalEntry.id!);
   });
 }
 
@@ -247,13 +256,31 @@ export async function getHistory(
         results = results.filter((entry) => entry.timestamp >= options.startTime!);
       }
 
-      // Limit results
+      // Sort newest first by default
+      results.sort((a, b) => b.timestamp - a.timestamp);
+
+      // Limit results (allowing much larger limits, e.g. 5000+)
       if (options?.limit) {
-        results = results.slice(-options.limit);
+        results = results.slice(0, options.limit);
       }
 
       resolve(results);
     };
+  });
+}
+
+/**
+ * Delete a single history entry from IndexedDB
+ */
+export async function deleteHistoryEntry(id: string): Promise<void> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction([HISTORY_STORE], 'readwrite');
+    const store = transaction.objectStore(HISTORY_STORE);
+    const request = store.delete(id);
+
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => resolve();
   });
 }
 
@@ -271,3 +298,4 @@ export async function clearHistory(): Promise<void> {
     request.onsuccess = () => resolve();
   });
 }
+

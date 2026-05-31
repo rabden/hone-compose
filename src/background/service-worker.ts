@@ -2,6 +2,8 @@ import { GoogleGenAI, ThinkingLevel } from '@google/genai';
 import { ActionRegistry } from '../content/actions';
 import type { PromptPayload } from '../content/actions';
 
+import { addHistoryEntry } from '../content/storage';
+
 interface HistoryItem {
   id: string;
   timestamp: number;
@@ -22,16 +24,10 @@ function cleanAiResponse(text: string): string {
 
 async function saveToHistory(item: Omit<HistoryItem, 'id' | 'timestamp'>) {
   try {
-    const data = await chrome.storage.local.get('history') as { history?: HistoryItem[] };
-    const history = data.history || [];
-    const newItem: HistoryItem = {
+    await addHistoryEntry({
       ...item,
       rewrittenText: cleanAiResponse(item.rewrittenText),
-      id: crypto.randomUUID(),
-      timestamp: Date.now()
-    };
-    const updatedHistory = [newItem, ...history].slice(0, 100);
-    await chrome.storage.local.set({ history: updatedHistory });
+    });
   } catch (err) {
     console.error('Failed to save history:', err);
   }
@@ -135,9 +131,243 @@ async function callAIProvider(
   text: string,
   url: string,
   signal?: AbortSignal,
-): Promise<string> {
+): Promise<{ text: string; fallbackUsed?: string }> {
   const result = await callAIProviderRaw(actionId, text, url, signal);
-  return cleanAiResponse(result);
+  return {
+    text: cleanAiResponse(result.text),
+    fallbackUsed: result.fallbackUsed,
+  };
+}
+
+async function tryOpenAI(
+  settings: Record<string, string | undefined>,
+  prompt: string,
+  system?: string,
+  signal?: AbortSignal
+): Promise<{ text: string; model: string }> {
+  const apiKey = settings.openaiKey;
+  const model = settings.openaiModel || 'gpt-4o-mini';
+  const endpoint = settings.openaiEndpoint || 'https://api.openai.com/v1/chat/completions';
+
+  if (!apiKey) throw new Error('OpenAI API Key is missing.');
+
+  const res = await fetchWithTimeout(endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`
+    },
+    body: JSON.stringify({
+      model,
+      messages: chatMessages(system, prompt),
+      temperature: 0.7
+    })
+  }, 15000, signal);
+
+  if (!res.ok) {
+    const errorJson = await res.json().catch(() => ({}));
+    throw new Error(errorJson?.error?.message || `OpenAI request failed: ${res.statusText}`);
+  }
+
+  const data = await res.json();
+  const resultText = data.choices?.[0]?.message?.content?.trim();
+  if (!resultText) throw new Error('Empty response received from OpenAI.');
+  return { text: resultText, model };
+}
+
+async function tryAnthropic(
+  settings: Record<string, string | undefined>,
+  prompt: string,
+  system?: string,
+  signal?: AbortSignal
+): Promise<{ text: string; model: string }> {
+  const apiKey = settings.anthropicKey;
+  const model = settings.anthropicModel || 'claude-3-5-sonnet-20241022';
+
+  if (!apiKey) throw new Error('Anthropic API Key is missing.');
+
+  const body: Record<string, unknown> = {
+    model,
+    max_tokens: 1024,
+    messages: [{ role: 'user', content: prompt }],
+    temperature: 0.7
+  };
+  if (system) {
+    body.system = [{ text: system }];
+  }
+
+  const res = await fetchWithTimeout('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'dangerously-allow-browser': 'true'
+    },
+    body: JSON.stringify(body)
+  }, 20000, signal);
+
+  if (!res.ok) {
+    const errorJson = await res.json().catch(() => ({}));
+    throw new Error(errorJson?.error?.message || `Anthropic request failed: ${res.statusText}`);
+  }
+
+  const data = await res.json();
+  const resultText = data.content?.[0]?.text?.trim();
+  if (!resultText) throw new Error('Empty response received from Anthropic.');
+  return { text: resultText, model };
+}
+
+async function tryGemini(
+  settings: Record<string, string | undefined>,
+  prompt: string,
+  system?: string,
+  signal?: AbortSignal
+): Promise<{ text: string; model: string }> {
+  const apiKey = settings.geminiKey;
+  const model = settings.geminiModel || 'gemini-1.5-flash';
+
+  if (!apiKey) throw new Error('Gemini API Key is missing.');
+
+  const body: Record<string, unknown> = {
+    contents: [{
+      parts: [{ text: prompt }]
+    }]
+  };
+  if (system) {
+    body.systemInstruction = { parts: [{ text: system }] };
+  }
+
+  const res = await fetchWithTimeout(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(body)
+  }, 15000, signal);
+
+  if (!res.ok) {
+    const errorJson = await res.json().catch(() => ({}));
+    throw new Error(errorJson?.error?.message || `Gemini request failed: ${res.statusText}`);
+  }
+
+  const data = await res.json();
+  const resultText = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+  if (!resultText) throw new Error('Empty response received from Gemini.');
+  return { text: resultText, model };
+}
+
+async function tryOpenRouterPaid(
+  settings: Record<string, string | undefined>,
+  prompt: string,
+  system?: string,
+  signal?: AbortSignal
+): Promise<{ text: string; model: string }> {
+  const apiKey = settings.openrouterPaidKey;
+  const model = settings.openrouterPaidModel;
+
+  if (!apiKey) throw new Error('OpenRouter Paid API Key is missing.');
+  if (!model) throw new Error('OpenRouter Paid Model Name is missing.');
+
+  const resultText = await fetchOpenRouter(apiKey, model, prompt, system, signal);
+  return { text: resultText, model };
+}
+
+async function tryGoogleAISudio(
+  settings: Record<string, string | undefined>,
+  prompt: string,
+  system?: string,
+  signal?: AbortSignal
+): Promise<{ text: string; model: string }> {
+  const apiKey = settings.googleAiStudioKey;
+  const model = settings.googleAiStudioModel || 'gemma-4-26b-a4b-it';
+
+  if (!apiKey) throw new Error('Google AI Studio API Key is missing.');
+
+  const config: Record<string, unknown> = {
+    thinkingConfig: {
+      thinkingLevel: ThinkingLevel.MINIMAL,
+    },
+  };
+  if (system) {
+    config.systemInstruction = { parts: [{ text: system }] };
+  }
+
+  const ai = new GoogleGenAI({ apiKey });
+
+  const response = await ai.models.generateContentStream({
+    model,
+    config,
+    contents: [
+      {
+        role: 'user',
+        parts: [{ text: prompt }]
+      }
+    ]
+  });
+
+  let resultText = '';
+  for await (const chunk of response) {
+    if (signal?.aborted) {
+      throw new DOMException('Aborted', 'AbortError');
+    }
+    if (chunk.text) {
+      resultText += chunk.text;
+    }
+  }
+
+  if (!resultText.trim()) throw new Error('Empty response received from Google AI Studio.');
+  return { text: resultText, model };
+}
+
+async function tryOpenRouterFree(
+  settings: Record<string, string | undefined>,
+  prompt: string,
+  system?: string,
+  signal?: AbortSignal
+): Promise<{ text: string; model: string }> {
+  const FREE_MODELS = [
+    "google/gemma-4-31b-it:free",
+    "openai/gpt-oss-120b:free",
+    "z-ai/glm-4.5-air:free",
+    "meta-llama/llama-3.3-70b-instruct:free",
+    "moonshotai/kimi-k2.6:free",
+    "minimax/minimax-m2.5:free",
+    "google/gemma-4-26b-a4b-it:free",
+    "poolside/laguna-xs.2:free",
+    "openai/gpt-oss-20b:free",
+    "nvidia/nemotron-3-nano-30b-a3b:free",
+    "meta-llama/llama-3.2-3b-instruct:free",
+  ];
+
+  const apiKey = settings.openrouterKey?.trim() || '';
+  if (!apiKey) {
+    throw new Error('OpenRouter API Key is missing.');
+  }
+
+  const selectedBase = settings.openrouterModel || 'google/gemma-4-26b-a4b-it:free';
+  const baseModel = FREE_MODELS.includes(selectedBase) ? selectedBase : FREE_MODELS[0];
+  const otherModels = FREE_MODELS.filter(m => m !== baseModel);
+  const modelCycle = [baseModel, ...otherModels];
+
+  let lastError: Error | null = null;
+  for (let idx = 0; idx < modelCycle.length; idx++) {
+    const currentModel = modelCycle[idx];
+    try {
+      console.log(`OpenRouter Free: Attempt ${idx + 1} using model ${currentModel}`);
+      const resultText = await fetchOpenRouter(apiKey, currentModel, prompt, system, signal);
+      return { text: resultText, model: currentModel };
+    } catch (err: unknown) {
+      if (signal?.aborted) {
+        throw err;
+      }
+      const error = err as Error;
+      console.warn(`OpenRouter Free: Attempt ${idx + 1} (${currentModel}) failed:`, error.message);
+      lastError = error;
+    }
+  }
+
+  throw new Error(`OpenRouter Free failed. Last error: ${lastError ? lastError.message : 'Unknown'}`);
 }
 
 async function callAIProviderRaw(
@@ -145,7 +375,7 @@ async function callAIProviderRaw(
   text: string,
   url: string,
   signal?: AbortSignal,
-): Promise<string> {
+): Promise<{ text: string; provider: string; model: string; fallbackUsed?: string }> {
   const rawSettings = await chrome.storage.local.get([
     'activeProvider',
     'openaiKey',
@@ -165,215 +395,77 @@ async function callAIProviderRaw(
   const settings = rawSettings as Record<string, string | undefined>;
   const registry = await getRegistry();
 
-  const provider = settings.activeProvider || 'openrouter';
+  const primaryProvider = settings.activeProvider || 'openrouter';
   const { system, user: prompt } = buildSystemPrompt(registry.buildPrompt(actionId, text));
 
-  if (provider === 'openai') {
-    const apiKey = settings.openaiKey;
-    const model = settings.openaiModel || 'gpt-4o-mini';
-    const endpoint = settings.openaiEndpoint || 'https://api.openai.com/v1/chat/completions';
-
-    if (!apiKey) throw new Error('OpenAI API Key is missing. Please add it in the extension options.');
-
-    const res = await fetchWithTimeout(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
-        model,
-        messages: chatMessages(system, prompt),
-        temperature: 0.7
-      })
-    }, 15000, signal);
-
-    if (!res.ok) {
-      const errorJson = await res.json().catch(() => ({}));
-      throw new Error(errorJson?.error?.message || `OpenAI request failed: ${res.statusText}`);
+  const runProvider = async (p: string): Promise<{ text: string; model: string }> => {
+    switch (p) {
+      case 'openai':
+        return tryOpenAI(settings, prompt, system, signal);
+      case 'anthropic':
+        return tryAnthropic(settings, prompt, system, signal);
+      case 'gemini':
+        return tryGemini(settings, prompt, system, signal);
+      case 'google_ai_studio':
+        return tryGoogleAISudio(settings, prompt, system, signal);
+      case 'openrouter_paid':
+        return tryOpenRouterPaid(settings, prompt, system, signal);
+      case 'openrouter':
+        return tryOpenRouterFree(settings, prompt, system, signal);
+      default:
+        throw new Error(`Unknown provider: ${p}`);
     }
+  };
 
-    const data = await res.json();
-    const resultText = data.choices?.[0]?.message?.content?.trim();
-    if (!resultText) throw new Error('Empty response received from OpenAI.');
-
-    await saveToHistory({ originalText: text, rewrittenText: resultText, action: actionId, url, provider, model });
-    return resultText;
-
-  } else if (provider === 'anthropic') {
-    const apiKey = settings.anthropicKey;
-    const model = settings.anthropicModel || 'claude-3-5-sonnet-20241022';
-
-    if (!apiKey) throw new Error('Anthropic API Key is missing. Please add it in the extension options.');
-
-    const body: Record<string, unknown> = {
-      model,
-      max_tokens: 1024,
-      messages: [{ role: 'user', content: prompt }],
-      temperature: 0.7
-    };
-    if (system) {
-      body.system = [{ text: system }];
+  // 1. Try the primary provider
+  try {
+    const res = await runProvider(primaryProvider);
+    await saveToHistory({ originalText: text, rewrittenText: res.text, action: actionId, url, provider: primaryProvider, model: res.model });
+    return { text: res.text, provider: primaryProvider, model: res.model };
+  } catch (primaryErr: any) {
+    if (signal?.aborted) {
+      throw primaryErr;
     }
+    console.warn(`Primary provider ${primaryProvider} failed:`, primaryErr.message);
 
-    const res = await fetchWithTimeout('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-        'dangerously-allow-browser': 'true'
-      },
-      body: JSON.stringify(body)
-    }, 20000, signal);
-
-    if (!res.ok) {
-      const errorJson = await res.json().catch(() => ({}));
-      throw new Error(errorJson?.error?.message || `Anthropic request failed: ${res.statusText}`);
-    }
-
-    const data = await res.json();
-    const resultText = data.content?.[0]?.text?.trim();
-    if (!resultText) throw new Error('Empty response received from Anthropic.');
-
-    await saveToHistory({ originalText: text, rewrittenText: resultText, action: actionId, url, provider, model });
-    return resultText;
-
-  } else if (provider === 'gemini') {
-    const apiKey = settings.geminiKey;
-    const model = settings.geminiModel || 'gemini-1.5-flash';
-
-    if (!apiKey) throw new Error('Gemini API Key is missing. Please add it in the extension options.');
-
-    const body: Record<string, unknown> = {
-      contents: [{
-        parts: [{ text: prompt }]
-      }]
-    };
-    if (system) {
-      body.systemInstruction = { parts: [{ text: system }] };
-    }
-
-    const res = await fetchWithTimeout(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(body)
-    }, 15000, signal);
-
-    if (!res.ok) {
-      const errorJson = await res.json().catch(() => ({}));
-      throw new Error(errorJson?.error?.message || `Gemini request failed: ${res.statusText}`);
-    }
-
-    const data = await res.json();
-    const resultText = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-    if (!resultText) throw new Error('Empty response received from Gemini.');
-
-    await saveToHistory({ originalText: text, rewrittenText: resultText, action: actionId, url, provider, model });
-    return resultText;
-
-  } else if (provider === 'openrouter_paid') {
-    const apiKey = settings.openrouterPaidKey;
-    const model = settings.openrouterPaidModel;
-
-    if (!apiKey) throw new Error('OpenRouter Paid API Key is missing. Please add it in the extension options.');
-    if (!model) throw new Error('OpenRouter Paid Model Name is missing. Please add it in the extension options.');
-
-    const resultText = await fetchOpenRouter(apiKey, model, prompt, system, signal);
-    await saveToHistory({ originalText: text, rewrittenText: resultText, action: actionId, url, provider: 'openrouter_paid', model });
-    return resultText;
-
-  } else if (provider === 'google_ai_studio') {
-    const apiKey = settings.googleAiStudioKey;
-    const model = settings.googleAiStudioModel || 'gemma-4-26b-a4b-it';
-
-    if (!apiKey) throw new Error('Google AI Studio API Key is missing. Please add it in the extension options.');
-
-    const config: Record<string, unknown> = {
-      thinkingConfig: {
-        thinkingLevel: ThinkingLevel.MINIMAL,
-      },
-    };
-    if (system) {
-      config.systemInstruction = { parts: [{ text: system }] };
-    }
-
-    const ai = new GoogleGenAI({ apiKey });
-
-    const response = await ai.models.generateContentStream({
-      model,
-      config,
-      contents: [
-        {
-          role: 'user',
-          parts: [{ text: prompt }]
-        }
-      ]
+    // 2. Identify all alternative configured providers
+    const providersList = ['google_ai_studio', 'openai', 'anthropic', 'gemini', 'openrouter_paid', 'openrouter'];
+    const altProviders = providersList.filter(p => p !== primaryProvider).filter(p => {
+      if (p === 'openai' && settings.openaiKey) return true;
+      if (p === 'anthropic' && settings.anthropicKey) return true;
+      if (p === 'gemini' && settings.geminiKey) return true;
+      if (p === 'google_ai_studio' && settings.googleAiStudioKey) return true;
+      if (p === 'openrouter_paid' && settings.openrouterPaidKey && settings.openrouterPaidModel) return true;
+      if (p === 'openrouter' && settings.openrouterKey) return true;
+      return false;
     });
 
-    let resultText = '';
-    for await (const chunk of response) {
-      if (signal?.aborted) {
-        throw new DOMException('Aborted', 'AbortError');
-      }
-      if (chunk.text) {
-        resultText += chunk.text;
-      }
+    if (altProviders.length === 0) {
+      throw primaryErr;
     }
 
-    if (!resultText.trim()) throw new Error('Empty response received from Google AI Studio.');
+    console.log(`Smart Fallback: Trying alternative configured providers in order:`, altProviders);
 
-    await saveToHistory({ originalText: text, rewrittenText: resultText, action: actionId, url, provider, model });
-    return resultText;
-
-  } else {
-    // OpenRouter Free
-    const FREE_MODELS = [
-      "google/gemma-4-26b-a4b-it:free",
-      "poolside/laguna-xs.2:free",
-      "openai/gpt-oss-20b:free",
-      "nvidia/nemotron-3-nano-30b-a3b:free",
-      "meta-llama/llama-3.2-3b-instruct:free",
-    ];
-
-    const apiKey = settings.openrouterKey?.trim() || '';
-    if (!apiKey) {
-      throw new Error('OpenRouter API Key is missing. Please add it in the extension options.');
-    }
-
-    const selectedBase = settings.openrouterModel || 'google/gemma-4-26b-a4b-it:free';
-    
-    // Clean base model selection
-    const baseModel = FREE_MODELS.includes(selectedBase) ? selectedBase : FREE_MODELS[0];
-    const otherModels = FREE_MODELS.filter(m => m !== baseModel);
-    const modelCycle = [baseModel, ...otherModels];
-
-    // Limit to one cycle of models (max 5 attempts) to stay within MV3 lifecycle limits
-    const attempts = modelCycle;
-
-    let lastError: Error | null = null;
-    for (let idx = 0; idx < attempts.length; idx++) {
-      const currentModel = attempts[idx];
+    // 3. Cycle through alternative providers
+    let lastError = primaryErr;
+    for (const altProvider of altProviders) {
       try {
-        console.log(`OpenRouter Free: Attempt ${idx + 1} using model ${currentModel}`);
-        const resultText = await fetchOpenRouter(apiKey, currentModel, prompt, system, signal);
+        console.log(`Smart Fallback: Attempting alternate provider: ${altProvider}`);
+        const res = await runProvider(altProvider);
+        console.log(`Smart Fallback: Successfully fell back to provider: ${altProvider}`);
         
-        // Save using OpenRouter Free provider but with the specific model that succeeded!
-        await saveToHistory({ originalText: text, rewrittenText: resultText, action: actionId, url, provider: 'openrouter', model: currentModel });
-        return resultText;
-      } catch (err: unknown) {
+        await saveToHistory({ originalText: text, rewrittenText: res.text, action: actionId, url, provider: altProvider, model: res.model });
+        return { text: res.text, provider: altProvider, model: res.model, fallbackUsed: altProvider };
+      } catch (altErr: any) {
         if (signal?.aborted) {
-          throw err;
+          throw altErr;
         }
-        const error = err as Error;
-        console.warn(`OpenRouter Free: Attempt ${idx + 1} (${currentModel}) failed:`, error.message);
-        lastError = error;
+        console.warn(`Fallback provider ${altProvider} failed:`, altErr.message);
+        lastError = altErr;
       }
     }
 
-    throw new Error(`OpenRouter Free failed after ${attempts.length} attempts. Last error: ${lastError ? lastError.message : 'Unknown'}`);
+    throw new Error(`Primary provider (${primaryProvider}) failed: ${primaryErr.message}. Also all alternative configured providers failed. Last error: ${lastError.message}`);
   }
 }
 
@@ -424,8 +516,8 @@ chrome.runtime.onMessage.addListener((message: Record<string, unknown>, sender: 
     activeAIAbort = controller;
 
     callAIProvider(action as string, text as string, url, controller.signal)
-      .then((rewrittenText) => {
-        sendResponse({ success: true, text: rewrittenText, requestId });
+      .then((res) => {
+        sendResponse({ success: true, text: res.text, fallbackUsed: res.fallbackUsed, requestId });
       })
       .catch((error: unknown) => {
         const err = error instanceof Error ? error : new Error(String(error));

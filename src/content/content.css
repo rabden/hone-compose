@@ -305,3 +305,28 @@
 .font-noto {
     font-family: "Noto Sans Variable", "Noto Sans", sans-serif;
 }
+
+/* ── Custom scrollbar (scoped to shadow root) ── */
+.ai-assistant-shadow-root::-webkit-scrollbar,
+.ai-assistant-shadow-root *::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+.ai-assistant-shadow-root::-webkit-scrollbar-track,
+.ai-assistant-shadow-root *::-webkit-scrollbar-track {
+    background: transparent;
+    background-clip: content-box;
+}
+.ai-assistant-shadow-root::-webkit-scrollbar-thumb,
+.ai-assistant-shadow-root *::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--border) 60%, transparent);
+    border-radius: 9999px;
+    border: 3px solid transparent;
+    background-clip: content-box;
+    transition: border-width 150ms ease;
+}
+.ai-assistant-shadow-root::-webkit-scrollbar-thumb:hover,
+.ai-assistant-shadow-root *::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in srgb, var(--border) 90%, transparent);
+    border-width: 1px;
+}

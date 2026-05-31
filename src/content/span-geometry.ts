@@ -148,7 +148,7 @@ export function getAdaptiveHighlightColors(element: HTMLElement): {
   }
 
   return {
-    idle: "rgba(253, 224, 71, 0.78)",
+    idle: "rgba(180, 140, 40, 0.78)",
     onDarkField: false,
   };
 }

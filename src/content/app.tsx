@@ -12,17 +12,16 @@ import {
 import { copyForManualPaste } from "./rich-editor-replace";
 import { autoPositionElement, type VirtualElement } from "./positioning";
 import { ActionRegistry, type ActionHandler } from "./actions";
-import { PreviewPanel } from "./preview-panel";
-import type { PendingPreview } from "./preview-types";
 import { FloatingActionMenu } from "./floating-action-menu";
 import { OverlayToast, TriggerDot } from "./overlay-chrome";
 import { TargetHighlight } from "./target-highlight";
-import { ConfirmDialog } from "./confirm-dialog";
 import {
   consumeKeyboardEvent,
   isActivationKey,
   shouldSuppressActivationKey,
 } from "./keyboard-guard";
+import { wordDiff } from "./word-diff";
+import { checkGrammarAndSpelling } from "./grammar-worker";
 
 interface Toast {
   message: string;
@@ -65,12 +64,8 @@ export default function App({
     "selection" | "sentence" | "paragraph" | "field" | null
   >(null);
   const [menuPos, setMenuPos] = useState({ top: 0, left: 0 });
-  const [previewPos, setPreviewPos] = useState({ top: 0, left: 0 });
   const [focusedActionIdx, setFocusedActionIdx] = useState(0);
   const [customActions, setCustomActions] = useState<ActionHandler[]>([]);
-  const [pendingPreview, setPendingPreview] = useState<PendingPreview | null>(
-    null,
-  );
   const [isAiProcessing, setIsAiProcessing] = useState(false);
   const [processingSpan, setProcessingSpan] = useState<{
     start: number;
@@ -82,18 +77,25 @@ export default function App({
     actionLabel: string;
     override?: InferredSelection;
   } | null>(null);
-  const [confirmPos, setConfirmPos] = useState({ top: 0, left: 0 });
+
+  // New Generalized Card & Settings states
+  const [previewInCard, setPreviewInCard] = useState<boolean>(true);
+  const [cardResultText, setCardResultText] = useState<string>("");
+  const [cardDiff, setCardDiff] = useState<any[] | null>(null);
+  const [isHarperLoading, setIsHarperLoading] = useState<boolean>(false);
+  const [loadingActionId, setLoadingActionId] = useState<string | null>(null);
+  const [localResultText, setLocalResultText] = useState<string>("");
+  const [localDiff, setLocalDiff] = useState<any[] | null>(null);
+  const [revealMenuOverride, setRevealMenuOverride] = useState<boolean>(false);
+  const [harperHasErrors, setHarperHasErrors] = useState<boolean>(false);
 
   const menuRef = useRef<HTMLDivElement>(null);
-  const previewRef = useRef<HTMLDivElement>(null);
-  const confirmRef = useRef<HTMLDivElement>(null);
   const registryRef = useRef<ActionRegistry | null>(null);
   const focusedActionIdxRef = useRef(0);
   const suppressKeysUntilRef = useRef(0);
   const dotRef = useRef<HTMLButtonElement>(null);
   const isInsideShadow = useRef(false);
   const isMenuOpenRef = useRef(false);
-  const pendingPreviewRef = useRef(false);
   const actionConfirmRef = useRef(false);
   const isAiProcessingRef = useRef(false);
   const aiRequestIdRef = useRef(0);
@@ -104,7 +106,25 @@ export default function App({
   const processingSpanRef = useRef<{ start: number; end: number } | null>(null);
   const anchorRectRef = useRef<DOMRect | null>(null);
   const rafRef = useRef(0);
+
+  // New refs for card state management
+  const loadingActionIdRef = useRef<string | null>(null);
+  const cardActionIdRef = useRef<string | null>(null);
+  const cardApplyTextRef = useRef("");
+  const cardOverrideInferenceRef = useRef<InferredSelection | undefined>(undefined);
   const blurTimeoutRef = useRef(0);
+  const heldResponseRef = useRef<{
+    response: {
+      success: boolean;
+      text?: string;
+      error?: string;
+      aborted?: boolean;
+    };
+    action: string;
+    adapter: EditableAdapter;
+    span: { start: number; end: number; text: string; level: string };
+    fieldSnapshot: string;
+  } | null>(null);
 
   // Sync refs synchronously
   useEffect(() => {
@@ -171,76 +191,58 @@ export default function App({
     }
   }, []);
 
-  const applyPendingPreview = useCallback(() => {
-    const preview = pendingPreview;
-    if (!preview) return;
 
-    let ctx = activeContextRef.current;
-    if (!ctx?.adapter) {
-      const resolved = resolveActiveContext();
-      if (resolved?.adapter) {
-        ctx = resolved;
-        activeContextRef.current = resolved;
-        setActiveContext(resolved);
-      }
-    }
 
-    if (!ctx?.adapter) {
-      showToast("Cannot apply — focus the field again first.", "error");
-      setPendingPreview(null);
+  const activeLevelText = useMemo(() => {
+    if (!inferenceOptions || !selectedInferenceLevel) return "";
+    const opt = inferenceOptions[selectedInferenceLevel] as { text?: string } | undefined;
+    return opt?.text ?? "";
+  }, [inferenceOptions, selectedInferenceLevel]);
+
+  useEffect(() => {
+    if (!isMenuOpen || !activeLevelText) {
+      setCardResultText("");
+      setCardDiff(null);
+      setIsHarperLoading(false);
       return;
     }
 
-    const applyResult = async () => {
-      const tx = await ctx.adapter!.replaceRange(
-        preview.span.start,
-        preview.span.end,
-        preview.resultText,
-        {
-          expectedText: preview.span.text,
-          fieldSnapshot: preview.fieldSnapshot,
-        },
-      );
-
-      const committed = typeof tx === "boolean" ? tx : tx.committed;
-      const suggestClipboard =
-        typeof tx === "object" && tx.suggestClipboardPaste;
-
-      if (!committed) {
-        if (suggestClipboard) {
-          const copied = await copyForManualPaste(preview.resultText);
-          showToast(
-            copied
-              ? "Copied to clipboard — press Ctrl+V in the field to apply."
-              : "Could not apply automatically. Copy the result and paste manually.",
-            copied ? "success" : "error",
-          );
-        } else {
-          showToast(
-            "Could not apply — the field changed while you were reviewing.",
-            "error",
-          );
+    let active = true;
+    const runHarper = async () => {
+      setIsHarperLoading(true);
+      try {
+        const corrected = await checkGrammarAndSpelling(activeLevelText);
+        if (!active) return;
+        if (loadingActionIdRef.current) {
+          setIsHarperLoading(false);
+          return;
         }
-        setPendingPreview(null);
-        return;
-      }
 
-      setPendingPreview(null);
-      // Clear saved focus after applying to prevent focus stealing
-      editorElementRef.current = null;
-      savedSelectionRef.current = null;
-      suppressKeysUntilRef.current = performance.now() + 250;
-      showToast(`Applied (${preview.span.level})`, "success");
+        const diff = wordDiff(activeLevelText, corrected);
+        const hasErrors = diff.some(t => t.type !== "equal");
+        setHarperHasErrors(hasErrors);
+        setCardResultText(corrected);
+        cardApplyTextRef.current = corrected;
+        setCardDiff(diff);
+        setLocalResultText(corrected);
+        setLocalDiff(diff);
+        cardActionIdRef.current = "fix_spelling_local";
+        cardOverrideInferenceRef.current = undefined;
+        setIsHarperLoading(false);
+      } catch (err) {
+        console.error("Failed to run Harper.js local check:", err);
+        if (active) {
+          setIsHarperLoading(false);
+        }
+      }
     };
 
-    void applyResult();
-  }, [pendingPreview, showToast]);
+    void runHarper();
 
-  const discardPendingPreview = useCallback(() => {
-    setPendingPreview(null);
-    setIsAiProcessing(false);
-    setProcessingSpan(null);
-  }, []);
+    return () => {
+      active = false;
+    };
+  }, [isMenuOpen, activeLevelText]);
 
   // Load config from storage
   useEffect(() => {
@@ -258,6 +260,7 @@ export default function App({
         "dropdownShortcutShift",
         "dropdownShortcutMeta",
         "hideDot",
+        "previewInCard",
       ])) as Record<string, unknown>;
 
       if (res.shortcutKey) {
@@ -287,6 +290,7 @@ export default function App({
       });
 
       setHideDot(!!res.hideDot);
+      setPreviewInCard(res.previewInCard !== undefined ? !!res.previewInCard : true);
     };
     loadConfig();
 
@@ -305,7 +309,8 @@ export default function App({
         changes.dropdownShortcutAlt ||
         changes.dropdownShortcutShift ||
         changes.dropdownShortcutMeta ||
-        changes.hideDot
+        changes.hideDot ||
+        changes.previewInCard
       ) {
         loadConfig();
       }
@@ -313,6 +318,137 @@ export default function App({
     chrome.storage.onChanged.addListener(onChange);
     return () => chrome.storage.onChanged.removeListener(onChange);
   }, []);
+
+  // ── AI response processor ──
+  const processAIResponse = useCallback(
+    async (
+      response: {
+        success: boolean;
+        text?: string;
+        error?: string;
+        aborted?: boolean;
+        fallbackUsed?: string;
+      },
+      _action: string,
+      adapter: EditableAdapter,
+      span: { start: number; end: number; text: string; level: string },
+      fieldSnapshot: string,
+    ) => {
+      setIsAiProcessing(false);
+      setProcessingSpan(null);
+      processingAdapterRef.current = null;
+      setProcessingAdapter(null);
+      processingSpanRef.current = null;
+
+      if (chrome.runtime.lastError) {
+        showToast(
+          "Could not reach Hone. Is the extension service worker running?",
+          "error",
+        );
+        return;
+      }
+
+      if (response?.aborted) return;
+
+      if (response?.success && response.text) {
+
+
+        const tx = await adapter.replaceRange(
+          span.start,
+          span.end,
+          response.text,
+          { expectedText: span.text, fieldSnapshot },
+        );
+
+        const committed =
+          typeof tx === "boolean" ? tx : tx.committed;
+        const suggestClipboard =
+          typeof tx === "object" && tx.suggestClipboardPaste;
+
+        if (!committed) {
+          if (suggestClipboard) {
+            const copied = await copyForManualPaste(response.text);
+            showToast(
+              copied
+                ? "Copied to clipboard — press Ctrl+V in the field to apply."
+                : "Could not apply automatically. Copy the result and paste manually.",
+              copied ? "success" : "error",
+            );
+          } else {
+            showToast(
+              "Could not apply edit — the field changed while waiting for AI.",
+              "error",
+            );
+          }
+          return;
+        }
+
+        // Clear saved focus after applying to prevent focus stealing
+        editorElementRef.current = null;
+        savedSelectionRef.current = null;
+
+        if (response.fallbackUsed) {
+          const providerNames: Record<string, string> = {
+            openai: "OpenAI",
+            anthropic: "Anthropic",
+            gemini: "Gemini",
+            google_ai_studio: "AI Studio",
+            openrouter_paid: "OpenRouter",
+            openrouter: "OpenRouter Free"
+          };
+          const name = providerNames[response.fallbackUsed] || response.fallbackUsed;
+          showToast(`Done! (Fell back to ${name})`, "success");
+        } else {
+          showToast(`Done! (${span.level})`, "success");
+        }
+      } else {
+        showToast(response?.error || "AI request failed.", "error");
+      }
+    },
+    [showToast],
+  );
+
+  // ── Apply suggestion card contents to editor ──
+  const handleApplyCard = useCallback(async () => {
+    const applyText = cardApplyTextRef.current || cardResultText;
+    if (!applyText) return;
+    const ctx = activeContextRef.current;
+    const adapter = ctx?.adapter;
+    if (!adapter) return;
+
+    const span = resolveReplacementSpan(adapter, cardOverrideInferenceRef.current);
+    const fieldSnapshot = adapter.getText();
+
+    setIsMenuOpen(false);
+    setActionConfirm(null);
+    setIsAiProcessing(false);
+
+    await processAIResponse(
+      { success: true, text: applyText },
+      cardActionIdRef.current || "fix_spelling_local",
+      adapter,
+      span,
+      fieldSnapshot
+    );
+  }, [cardResultText, processAIResponse]);
+
+  const handleCancelCard = useCallback(() => {
+    if (loadingActionIdRef.current) {
+      setActionConfirm({
+        action: "cancel_generation",
+        actionLabel: "cancel generation",
+        override: undefined,
+      });
+    } else {
+      setCardResultText(localResultText);
+      cardApplyTextRef.current = localResultText;
+      setCardDiff(localDiff);
+      cardActionIdRef.current = "fix_spelling_local";
+      cardOverrideInferenceRef.current = undefined;
+      setLoadingActionId(null);
+      loadingActionIdRef.current = null;
+    }
+  }, [localResultText, localDiff]);
 
   // ── AI action dispatcher ──
   const executeAIAction = useCallback(
@@ -331,122 +467,143 @@ export default function App({
         return;
       }
 
-      setIsMenuOpen(false);
       setActionConfirm(null);
+      setRevealMenuOverride(false);
       suppressKeysUntilRef.current = performance.now() + 250;
 
-      const fieldSnapshot = adapter.getText();
-      setProcessingSpan({ start: span.start, end: span.end });
-      setIsAiProcessing(true);
-      processingAdapterRef.current = adapter;
-      setProcessingAdapter(adapter);
-      processingSpanRef.current = { start: span.start, end: span.end };
+      const handler = registryRef.current?.get(action);
+      const isCustomPreview = handler?.type === "custom" && handler.replaceMode === "preview";
+      const shouldPreviewInCard = previewInCard || isCustomPreview;
 
-      const requestId = ++aiRequestIdRef.current;
+      if (!shouldPreviewInCard) {
+        setIsMenuOpen(false);
+        const fieldSnapshot = adapter.getText();
+        setProcessingSpan({ start: span.start, end: span.end });
+        setIsAiProcessing(true);
+        processingAdapterRef.current = adapter;
+        setProcessingAdapter(adapter);
+        processingSpanRef.current = { start: span.start, end: span.end };
 
-      chrome.runtime.sendMessage(
-        { type: "PROCESS_TEXT", action, text: span.text, requestId },
-        async (response: {
-          success: boolean;
-          text?: string;
-          error?: string;
-          aborted?: boolean;
-          requestId?: number;
-        }) => {
-          if (requestId !== aiRequestIdRef.current) return;
-
-          setIsAiProcessing(false);
-          setProcessingSpan(null);
-          processingAdapterRef.current = null;
-          setProcessingAdapter(null);
-          processingSpanRef.current = null;
-
-          if (chrome.runtime.lastError) {
-            showToast(
-              "Could not reach Hone. Is the extension service worker running?",
-              "error",
+        if (handler?.isLocal) {
+          const runLocal = async () => {
+            let corrected = cardResultText;
+            if (!corrected || span.text !== activeLevelText) {
+              corrected = await checkGrammarAndSpelling(span.text);
+            }
+            await processAIResponse(
+              { success: true, text: corrected },
+              action,
+              adapter,
+              span,
+              fieldSnapshot
             );
-            return;
-          }
+          };
+          void runLocal();
+          return;
+        }
 
-          if (response?.aborted) return;
+        const requestId = ++aiRequestIdRef.current;
 
-          if (response?.success && response.text) {
-            const handler = registryRef.current?.get(action);
-            const usePreview =
-              handler?.type === "custom" && handler.replaceMode === "preview";
+        chrome.runtime.sendMessage(
+          { type: "PROCESS_TEXT", action, text: span.text, requestId },
+          async (response: {
+            success: boolean;
+            text?: string;
+            error?: string;
+            aborted?: boolean;
+            requestId?: number;
+            fallbackUsed?: string;
+          }) => {
+            if (requestId !== aiRequestIdRef.current) return;
 
-            if (usePreview) {
-              setPendingPreview({
-                actionName: handler.name,
-                icon: handler.icon,
-                color: handler.color,
-                originalText: span.text,
-                resultText: response.text,
+            if (actionConfirmRef.current) {
+              heldResponseRef.current = {
+                response,
+                action,
+                adapter,
+                span,
                 fieldSnapshot,
-                span: {
-                  start: span.start,
-                  end: span.end,
-                  text: span.text,
-                  level: span.level,
-                },
-              });
+              };
               return;
             }
 
-            const tx = await adapter.replaceRange(
-              span.start,
-              span.end,
-              response.text,
-              { expectedText: span.text, fieldSnapshot },
-            );
+            await processAIResponse(response, action, adapter, span, fieldSnapshot);
+          },
+        );
+      } else {
+        // previewInCard is true: load response inside card
+        setLoadingActionId(action);
+        loadingActionIdRef.current = action;
+        cardActionIdRef.current = action;
+        cardOverrideInferenceRef.current = overrideInference;
 
-            const committed =
-              typeof tx === "boolean" ? tx : tx.committed;
-            const suggestClipboard =
-              typeof tx === "object" && tx.suggestClipboardPaste;
+        setCardResultText("");
+        cardApplyTextRef.current = "";
+        setCardDiff(null);
 
-            if (!committed) {
-              if (suggestClipboard) {
-                const copied = await copyForManualPaste(response.text);
-                showToast(
-                  copied
-                    ? "Copied to clipboard — press Ctrl+V in the field to apply."
-                    : "Could not apply automatically. Copy the result and paste manually.",
-                  copied ? "success" : "error",
-                );
+        if (handler?.isLocal) {
+          const runLocal = async () => {
+            const corrected = await checkGrammarAndSpelling(span.text);
+            if (loadingActionIdRef.current !== action) return;
+            setLoadingActionId(null);
+            loadingActionIdRef.current = null;
+            const diff = wordDiff(span.text, corrected);
+            setCardResultText(corrected);
+            cardApplyTextRef.current = corrected;
+            setCardDiff(diff);
+          };
+          void runLocal();
+          return;
+        }
+
+        const requestId = ++aiRequestIdRef.current;
+        chrome.runtime.sendMessage(
+          { type: "PROCESS_TEXT", action, text: span.text, requestId },
+          (response: {
+            success: boolean;
+            text?: string;
+            error?: string;
+            requestId?: number;
+          }) => {
+            if (requestId !== aiRequestIdRef.current) return;
+            if (loadingActionIdRef.current !== action) return;
+
+            setLoadingActionId(null);
+            loadingActionIdRef.current = null;
+
+            if (response && response.success && response.text !== undefined) {
+              setCardResultText(response.text);
+              cardApplyTextRef.current = response.text;
+              if (action === "fix_spelling") {
+                const diff = wordDiff(span.text, response.text);
+                setCardDiff(diff);
               } else {
-                showToast(
-                  "Could not apply edit — the field changed while waiting for AI.",
-                  "error",
-                );
+                setCardDiff(null);
               }
-              return;
+            } else {
+              showToast(response?.error || "AI request failed.", "error");
+              setCardResultText(span.text);
+              cardApplyTextRef.current = span.text;
+              setCardDiff(null);
             }
-
-            // Clear saved focus after applying to prevent focus stealing
-            editorElementRef.current = null;
-            savedSelectionRef.current = null;
-            showToast(`Done! (${span.level})`, "success");
-          } else {
-            showToast(response?.error || "AI request failed.", "error");
           }
-        },
-      );
+        );
+      }
     },
-    [showToast],
+    [showToast, processAIResponse, cardResultText, activeLevelText, previewInCard],
   );
 
   const triggerAIAction = useCallback(
     (action: string, overrideInference?: InferredSelection) => {
-      if (isAiProcessingRef.current) {
+      if (isAiProcessingRef.current || loadingActionIdRef.current) {
         const handler = registryRef.current?.get(action);
-        setIsMenuOpen(false);
+        setIsMenuOpen(true);
         setActionConfirm({
           action,
           actionLabel: handler?.name ?? action,
           override: overrideInference,
         });
+        setRevealMenuOverride(false);
         return;
       }
       executeAIAction(action, overrideInference);
@@ -458,16 +615,21 @@ export default function App({
     const pending = actionConfirm;
     if (!pending) return;
 
+    heldResponseRef.current = null;
     setActionConfirm(null);
+    setRevealMenuOverride(false);
     aiRequestIdRef.current += 1;
     chrome.runtime.sendMessage({ type: "ABORT_PROCESS_TEXT" }, () => {
       setIsAiProcessing(false);
       setProcessingSpan(null);
+      setLoadingActionId(null);
+      loadingActionIdRef.current = null;
       executeAIAction(pending.action, pending.override);
     });
   }, [actionConfirm, executeAIAction]);
 
   const confirmCancelGeneration = useCallback(() => {
+    heldResponseRef.current = null;
     setActionConfirm(null);
     aiRequestIdRef.current += 1;
     chrome.runtime.sendMessage({ type: "ABORT_PROCESS_TEXT" }, () => {
@@ -476,12 +638,29 @@ export default function App({
       processingAdapterRef.current = null;
       setProcessingAdapter(null);
       processingSpanRef.current = null;
+      setLoadingActionId(null);
+      loadingActionIdRef.current = null;
+      cardActionIdRef.current = "fix_spelling_local";
+      setCardResultText(localResultText);
+      cardApplyTextRef.current = localResultText;
+      setCardDiff(localDiff);
     });
-  }, []);
+  }, [localResultText, localDiff]);
 
   const cancelActionConfirm = useCallback(() => {
     setActionConfirm(null);
-  }, []);
+    const held = heldResponseRef.current;
+    if (held) {
+      heldResponseRef.current = null;
+      processAIResponse(
+        held.response,
+        held.action,
+        held.adapter,
+        held.span,
+        held.fieldSnapshot,
+      );
+    }
+  }, [processAIResponse]);
 
   // ── Unified entry point: resolve context and open the assistant ──
   const openAssistant = useCallback(
@@ -575,15 +754,37 @@ export default function App({
         }
       }
 
-      // 3. Escape key to close menu
+      // 3. Escape key handler when menu is open
       if (e.key === "Escape" && isMenuOpen) {
-        setIsMenuOpen(false);
-        const el = activeContextRef.current?.adapter?.getElement();
-        if (el) el.focus();
+        e.preventDefault();
+        if (actionConfirm) {
+          cancelActionConfirm();
+        } else if (loadingActionIdRef.current) {
+          setActionConfirm({
+            action: "cancel_generation",
+            actionLabel: "cancel generation",
+            override: undefined,
+          });
+        } else if (cardActionIdRef.current && cardActionIdRef.current !== "fix_spelling_local") {
+          handleCancelCard();
+        } else {
+          setIsMenuOpen(false);
+          const el = activeContextRef.current?.adapter?.getElement();
+          if (el) el.focus();
+        }
+        return;
       }
 
-      // 4. Left/Right arrow keys to change inference level when menu is open
-      if (isMenuOpen && inferenceOptions) {
+      const hasActivePreviewCardOnlyState =
+        !revealMenuOverride &&
+        (!!actionConfirm ||
+          !!loadingActionIdRef.current ||
+          (!!cardActionIdRef.current &&
+            cardActionIdRef.current !== "fix_spelling_local"));
+
+      // 4. Left/Right arrow keys change inference level only when the menu
+      // column is actually available, not while a card-only preview owns the UI.
+      if (isMenuOpen && inferenceOptions && !hasActivePreviewCardOnlyState) {
         if (e.key === "ArrowLeft") {
           e.preventDefault();
           cycleInferenceLevel(-1);
@@ -593,9 +794,10 @@ export default function App({
         }
       }
 
-      // 5. Escape key to cancel AI generation
-      if (e.key === "Escape" && isAiProcessing && !actionConfirm) {
+      // 5. Escape key to cancel background AI generation when menu is closed
+      if (e.key === "Escape" && isAiProcessing && !actionConfirm && !isMenuOpen) {
         e.preventDefault();
+        setIsMenuOpen(true);
         setActionConfirm({
           action: "cancel_generation",
           actionLabel: "cancel generation",
@@ -606,7 +808,7 @@ export default function App({
 
     window.addEventListener("keydown", handleKeyDown, true);
     return () => window.removeEventListener("keydown", handleKeyDown, true);
-  }, [shortcut, dropdownShortcut, isMenuOpen, openAssistant, actionConfirm, cycleInferenceLevel, inferenceOptions, isAiProcessing]);
+  }, [shortcut, dropdownShortcut, isMenuOpen, openAssistant, actionConfirm, cycleInferenceLevel, inferenceOptions, isAiProcessing, revealMenuOverride]);
 
   // ── Chrome command shortcuts (manifest commands) ──
   useEffect(() => {
@@ -676,10 +878,15 @@ export default function App({
 
     const onFocusOut = (e: FocusEvent) => {
       if (isInsideShadow.current) return;
+      // Don't close if there's an active operation (loading, confirmation, or AI result to apply)
+      // Allow closing for Harper.js local spellcheck results
+      const hasActiveOperation =
+        !!loadingActionIdRef.current ||
+        !!actionConfirmRef.current ||
+        (cardActionIdRef.current && cardActionIdRef.current !== "fix_spelling_local");
       if (
         isMenuOpenRef.current ||
-        pendingPreviewRef.current ||
-        actionConfirmRef.current
+        hasActiveOperation
       ) {
         return;
       }
@@ -689,10 +896,14 @@ export default function App({
 
       blurTimeoutRef.current = window.setTimeout(() => {
         if (isInsideShadow.current) return;
+        // Re-check active operation in timeout
+        const hasActiveOperationNow =
+          !!loadingActionIdRef.current ||
+          !!actionConfirmRef.current ||
+          (cardActionIdRef.current && cardActionIdRef.current !== "fix_spelling_local");
         if (
           isMenuOpenRef.current ||
-          pendingPreviewRef.current ||
-          actionConfirmRef.current
+          hasActiveOperationNow
         ) {
           return;
         }
@@ -714,33 +925,35 @@ export default function App({
     };
   }, []);
 
-  // ── Throttled rect updater (input type only) ──
+  // ── Throttled rect updater ──
   const updateRect = useCallback(() => {
     if (rafRef.current) return;
     rafRef.current = requestAnimationFrame(() => {
       rafRef.current = 0;
       const ctx = activeContextRef.current;
-      if (ctx?.type === "input" && ctx.adapter) {
+      if (!ctx) return;
+
+      if (ctx.type === "input" && ctx.adapter) {
         const newRect = ctx.adapter.getCaretRect();
         anchorRectRef.current = newRect;
         setAnchorRect(newRect);
+      } else if (ctx.type === "selection") {
+        const sel = window.getSelection();
+        if (sel && sel.rangeCount > 0) {
+          const range = sel.getRangeAt(0);
+          const newRect = range.getBoundingClientRect() || range.getClientRects()?.[0];
+          if (newRect && (newRect.width > 0 || newRect.height > 0)) {
+            anchorRectRef.current = newRect;
+            setAnchorRect(newRect);
+          }
+        }
       }
     });
   }, []);
 
-  // Re-attach scroll/input listeners when the input element changes
-  const trackedElRef = useRef<HTMLElement | null>(null);
-
+  // Re-attach scroll/input listeners when the active context changes
   useEffect(() => {
-    const el =
-      activeContext?.type === "input" && activeContext.adapter
-        ? activeContext.adapter.getElement()
-        : null;
-
-    if (el === trackedElRef.current) return;
-    trackedElRef.current = el;
-
-    if (!el) return;
+    if (!activeContext) return;
 
     updateRect();
 
@@ -749,37 +962,51 @@ export default function App({
       capture: true,
     });
     window.addEventListener("resize", updateRect, { passive: true });
-    el.addEventListener("input", updateRect);
+
+    const el = activeContext.adapter?.getElement();
+    if (el) {
+      el.addEventListener("input", updateRect);
+    }
 
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       rafRef.current = 0;
       window.removeEventListener("scroll", updateRect, true);
       window.removeEventListener("resize", updateRect);
-      el.removeEventListener("input", updateRect);
+      if (el) {
+        el.removeEventListener("input", updateRect);
+      }
     };
   }, [activeContext, updateRect]);
 
   // ── Floating-ui auto-positioning ──
   useEffect(() => {
-    if (!isMenuOpen || !menuRef.current || !anchorRectRef.current) return;
+    if (!isMenuOpen || !menuRef.current || !anchorRect) return;
 
     const virtualEl: VirtualElement = {
-      getBoundingClientRect: () => anchorRectRef.current || new DOMRect(0, 0, 0, 0),
+      getBoundingClientRect: () => anchorRect,
     };
 
     return autoPositionElement(virtualEl, menuRef.current, setMenuPos, {
       placement: "top",
       gap: 6,
     });
-  }, [isMenuOpen]);
+  }, [isMenuOpen, anchorRect]);
 
   // ── Click outside to close ──
   useEffect(() => {
     if (!isMenuOpen) return;
     const handleClick = () => {
       if (!isInsideShadow.current) {
-        setIsMenuOpen(false);
+        // Don't close if there's an active operation (loading, confirmation, or AI result to apply)
+        // Allow closing for Harper.js local spellcheck results
+        const hasActiveOperation =
+          !!loadingActionIdRef.current ||
+          !!actionConfirmRef.current ||
+          (cardActionIdRef.current && cardActionIdRef.current !== "fix_spelling_local");
+        if (!hasActiveOperation) {
+          setIsMenuOpen(false);
+        }
       }
     };
     document.addEventListener("mousedown", handleClick, true);
@@ -825,10 +1052,6 @@ export default function App({
   }, [isMenuOpen]);
 
   useEffect(() => {
-    pendingPreviewRef.current = !!pendingPreview;
-  }, [pendingPreview]);
-
-  useEffect(() => {
     actionConfirmRef.current = !!actionConfirm;
   }, [actionConfirm]);
 
@@ -837,9 +1060,22 @@ export default function App({
   }, [isAiProcessing]);
 
   useEffect(() => {
-    if (!pendingPreview) return;
-    saveEditorFocus();
-  }, [pendingPreview, saveEditorFocus]);
+    loadingActionIdRef.current = loadingActionId;
+  }, [loadingActionId]);
+
+  useEffect(() => {
+    if (!isMenuOpen) {
+      setCardResultText("");
+      setCardDiff(null);
+      setHarperHasErrors(false);
+      cardApplyTextRef.current = "";
+      cardActionIdRef.current = "fix_spelling_local";
+      setLoadingActionId(null);
+      loadingActionIdRef.current = null;
+      setActionConfirm(null);
+      setRevealMenuOverride(false);
+    }
+  }, [isMenuOpen]);
 
   // ── Keep editor focused while menu is open ──
   useEffect(() => {
@@ -901,7 +1137,6 @@ export default function App({
           TONE_ACTION_COUNT;
         return lengths[lenIdx] ?? null;
       })();
-
       if (actionId) {
         suppressKeysUntilRef.current = performance.now() + 250;
         triggerAIAction(actionId, override);
@@ -915,41 +1150,30 @@ export default function App({
     ],
   );
 
-  // ── Preview floating position ──
-  useEffect(() => {
-    if (!pendingPreview || !previewRef.current || !anchorRectRef.current) {
-      return;
-    }
+  const hasNonLocalCardResult =
+    !!cardResultText && !!cardActionIdRef.current && cardActionIdRef.current !== "fix_spelling_local";
 
-    const virtualEl: VirtualElement = {
-      getBoundingClientRect: () => anchorRectRef.current || new DOMRect(0, 0, 0, 0),
-    };
+  const isCardOnly =
+    !revealMenuOverride &&
+    (!!actionConfirm || hasNonLocalCardResult || !!loadingActionId);
 
-    return autoPositionElement(virtualEl, previewRef.current, setPreviewPos, {
-      placement: "top",
-      gap: 6,
-    });
-  }, [pendingPreview]);
+  const canApplyCard =
+    !!cardResultText &&
+    !isHarperLoading &&
+    !loadingActionId &&
+    (!cardDiff || cardDiff.some((token) => token.type !== "equal"));
 
-  // ── Confirm dialog floating position ──
-  useEffect(() => {
-    if (!actionConfirm || !confirmRef.current || !anchorRectRef.current) {
-      return;
-    }
-
-    const virtualEl: VirtualElement = {
-      getBoundingClientRect: () => anchorRectRef.current || new DOMRect(0, 0, 0, 0),
-    };
-
-    return autoPositionElement(virtualEl, confirmRef.current, setConfirmPos, {
-      placement: "top",
-      gap: 6,
-    });
-  }, [actionConfirm]);
+  // Harper runs quietly in the background. Only reveal the card automatically
+  // when it found local corrections, or when an explicit AI action needs it.
+  const showCard =
+    harperHasErrors ||
+    !!loadingActionId ||
+    !!actionConfirm ||
+    (!!cardActionIdRef.current && cardActionIdRef.current !== "fix_spelling_local");
 
   // ── Capture keyboard so Enter/Space never reach the field behind ──
   useEffect(() => {
-    if (!isMenuOpen && !pendingPreview && !actionConfirm) return;
+    if (!isMenuOpen && !actionConfirm) return;
 
     const armSuppression = () => {
       suppressKeysUntilRef.current = performance.now() + 250;
@@ -964,7 +1188,11 @@ export default function App({
       if (actionConfirm) {
         if (isActivationKey(e.key)) {
           consumeKeyboardEvent(e);
-          confirmAbortAndRun();
+          if (actionConfirm.action === "cancel_generation") {
+            confirmCancelGeneration();
+          } else {
+            confirmAbortAndRun();
+          }
           armSuppression();
           return;
         }
@@ -979,25 +1207,73 @@ export default function App({
         }
       }
 
-      if (pendingPreview) {
-        if (isActivationKey(e.key)) {
+      if (!isMenuOpen) return;
+
+      // ── Keydown handling in Card-Only mode ──
+      if (isCardOnly) {
+        // Left/Right arrow key reveals the menu
+        if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
           consumeKeyboardEvent(e);
-          applyPendingPreview();
-          armSuppression();
+          setRevealMenuOverride(true);
           return;
         }
+
+        // Enter key applies the card content (if not loading and has result)
+        if (e.key === "Enter" && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+          if (canApplyCard) {
+            consumeKeyboardEvent(e);
+            handleApplyCard();
+            return;
+          }
+        }
+
+        // Escape key cancels/discards
         if (e.key === "Escape") {
           consumeKeyboardEvent(e);
-          discardPendingPreview();
+          if (loadingActionIdRef.current) {
+            setActionConfirm({
+              action: "cancel_generation",
+              actionLabel: "cancel generation",
+              override: undefined,
+            });
+          } else {
+            handleCancelCard();
+          }
           return;
         }
+
+        // Prevent navigation to menu items while the card owns the UI.
+        if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+          consumeKeyboardEvent(e);
+          return;
+        }
+
+        // Suppress typing in field
         if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
           consumeKeyboardEvent(e);
+          return;
         }
+
         return;
       }
 
-      if (!isMenuOpen || actionItemCount === 0) return;
+      // ── Normal Menu Keydown handling (isCardOnly is false) ──
+      if (e.ctrlKey && e.key === "Enter" && canApplyCard) {
+        consumeKeyboardEvent(e);
+        handleApplyCard();
+        return;
+      }
+
+      // If we are showing AI result in card (but menu is revealed) and user presses Escape, discard the AI result
+      if (e.key === "Escape") {
+        if (cardActionIdRef.current && cardActionIdRef.current !== "fix_spelling_local") {
+          consumeKeyboardEvent(e);
+          handleCancelCard();
+          return;
+        }
+      }
+
+      if (actionItemCount === 0) return;
 
       switch (e.key) {
         case "ArrowDown":
@@ -1030,8 +1306,7 @@ export default function App({
     const onKeyUp = (e: KeyboardEvent) => {
       if (
         shouldSuppressActivationKey(e, suppressKeysUntilRef.current) ||
-        (isMenuOpen && isActivationKey(e.key)) ||
-        (pendingPreview && isActivationKey(e.key))
+        (isMenuOpen && isActivationKey(e.key))
       ) {
         consumeKeyboardEvent(e);
       }
@@ -1045,14 +1320,18 @@ export default function App({
     };
   }, [
     isMenuOpen,
-    pendingPreview,
     actionConfirm,
     actionItemCount,
     activateMenuActionAtIndex,
-    applyPendingPreview,
-    discardPendingPreview,
     confirmAbortAndRun,
+    confirmCancelGeneration,
     cancelActionConfirm,
+    handleApplyCard,
+    handleCancelCard,
+    isCardOnly,
+    canApplyCard,
+    isHarperLoading,
+    loadingActionId,
   ]);
 
   const handleShadowEnter = () => {
@@ -1072,13 +1351,6 @@ export default function App({
       return null;
     }
 
-    if (pendingPreview) {
-      return {
-        start: pendingPreview.span.start,
-        end: pendingPreview.span.end,
-      };
-    }
-
     if (isAiProcessing && processingSpan) {
       return processingSpan;
     }
@@ -1096,7 +1368,6 @@ export default function App({
     return null;
   }, [
     activeContext?.adapter,
-    pendingPreview,
     isAiProcessing,
     processingSpan,
     isMenuOpen,
@@ -1111,7 +1382,6 @@ export default function App({
 
   // ── Render ──
   if (
-    !pendingPreview &&
     !isAiProcessing &&
     !actionConfirm &&
     !isMenuOpen &&
@@ -1125,7 +1395,6 @@ export default function App({
     !!activeContext && !!rect && rect.height >= 5;
 
   const menuWidth = 264;
-  const previewWidth = 300;
 
   const showDot =
     showFieldChrome && !hideDot && activeContext!.type === "input";
@@ -1154,49 +1423,6 @@ export default function App({
         active={highlightActive}
         onRestoreSelection={restoreEditorFocus}
       />
-
-      {/* ── Preview dialog (custom actions with preview replace mode) ── */}
-      {actionConfirm && (
-        <ConfirmDialog
-          panelRef={confirmRef}
-          message={
-            actionConfirm.action === "cancel_generation"
-              ? "Are you sure you want to cancel the AI generation?"
-              : `An action is already running. Abort it and run “${actionConfirm.actionLabel}”?`
-          }
-          top={confirmPos.top}
-          left={confirmPos.left}
-          width={previewWidth}
-          onConfirm={() => {
-            suppressKeysUntilRef.current = performance.now() + 250;
-            if (actionConfirm.action === "cancel_generation") {
-              confirmCancelGeneration();
-            } else {
-              confirmAbortAndRun();
-            }
-          }}
-          onCancel={cancelActionConfirm}
-          onPointerEnter={handleShadowEnter}
-          onPointerLeave={handleShadowLeave}
-        />
-      )}
-
-      {pendingPreview && (
-        <PreviewPanel
-          panelRef={previewRef}
-          preview={pendingPreview}
-          top={previewPos.top}
-          left={previewPos.left}
-          width={previewWidth}
-          onApply={() => {
-            suppressKeysUntilRef.current = performance.now() + 250;
-            applyPendingPreview();
-          }}
-          onDiscard={discardPendingPreview}
-          onPointerEnter={handleShadowEnter}
-          onPointerLeave={handleShadowLeave}
-        />
-      )}
 
       {showDot && (() => {
         const el = activeContext!.adapter?.getElement();
@@ -1259,6 +1485,18 @@ export default function App({
           toneActionStartIdx={toneActionStartIdx}
           lengthActionStartIdx={lengthActionStartIdx}
           getInferenceOverride={getInferenceOverride}
+          cardResultText={cardResultText}
+          cardDiff={cardDiff}
+          isCardLoading={isHarperLoading || !!loadingActionId}
+          loadingActionId={loadingActionId}
+          cardActionId={cardActionIdRef.current}
+          onApplyCard={handleApplyCard}
+          onCancelCard={handleCancelCard}
+          isCardOnly={isCardOnly}
+          showCard={showCard}
+          confirmState={actionConfirm}
+          onConfirmAction={actionConfirm?.action === "cancel_generation" ? confirmCancelGeneration : confirmAbortAndRun}
+          onCancelConfirm={cancelActionConfirm}
           onMouseDownCapture={(e) => {
             e.preventDefault();
             isInsideShadow.current = true;

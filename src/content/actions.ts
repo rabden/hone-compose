@@ -21,6 +21,7 @@ export interface ActionItem {
   shortcut?: { key: string; ctrl: boolean; alt: boolean; shift: boolean };
   replaceMode?: "replace" | "preview";
   enabled: boolean;
+  isLocal?: boolean;
 }
 
 export interface ActionHandler extends ActionItem {
@@ -48,6 +49,7 @@ export class ActionRegistry {
       icon: string,
       category: string,
       buildPrompt: (input: string) => string,
+      isLocal?: boolean,
     ): ActionHandler => ({
       id,
       name,
@@ -56,6 +58,7 @@ export class ActionRegistry {
       category,
       enabled: true,
       replaceMode: "replace",
+      isLocal,
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       buildPrompt(input: string, _ctx: ActionContext) {
         return { user: buildPrompt(input) };
@@ -86,9 +89,20 @@ export class ActionRegistry {
 
     this.register(
       build(
-        "fix_spelling",
+        "fix_spelling_local",
         "Fix spelling & grammar",
         "Check",
+        "primary",
+        (input) => input,
+        true,
+      ),
+    );
+
+    this.register(
+      build(
+        "fix_spelling",
+        "Fix spellings and grammer with AI",
+        "Sparkles",
         "primary",
         (input) =>
           `Fix all spelling mistakes, typographical errors, and grammatical slips in the following text. Keep it exact and do not change the tone or structure unless necessary to fix errors:\n\n"${input}"\n\n${BUILTIN_INSTRUCTIONS}`,

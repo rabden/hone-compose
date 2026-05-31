@@ -145,46 +145,48 @@ export default function Popup() {
   };
 
   return (
-    <div className="w-[560px] bg-background text-foreground select-none p-5 flex flex-col gap-5 font-sans antialiased">
+    <div className="w-[560px] bg-background text-foreground select-none p-5 flex flex-col gap-4 font-sans antialiased">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <HoneLogo size={22} alt="Hone Logo" />
-          <span className="text-sm font-semibold tracking-tight text-foreground">
-            Hone
+      <div className="flex items-center justify-between animate-in fade-in duration-500">
+        <div className="flex items-center gap-2.5">
+          <HoneLogo size={20} alt="Hone Logo" />
+          <span className="text-xs font-light tracking-tight text-foreground">
+            Hone compose
           </span>
         </div>
-        <span className="text-[9px] text-muted-foreground/50 font-mono">
+        <span className="text-[9px] text-muted-foreground/40 font-mono">
           v{chrome.runtime.getManifest().version}
         </span>
       </div>
 
       {/* Main Content Sections */}
-      <div className="grid grid-cols-2 gap-5 items-stretch">
+      <div className="grid grid-cols-2 gap-4 items-stretch">
 
         {/* LEFT COLUMN */}
-        <div className="flex flex-col gap-4 min-w-0">
-          {/* Active Engine */}
-          <div className="flex flex-col gap-2 rounded-lg border border-border/40 p-3">
-            <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-              AI Engine
-            </span>
-            <div className="flex flex-col gap-0.5">
-              <span className="text-xs font-semibold text-foreground leading-none">
-                {getProviderName(provider)}
+        <div className="flex flex-col gap-3 min-w-0">
+          {/* Active Engine — double-bezel card */}
+          <div className="rounded-xl border border-border/20 bg-foreground/[0.01] p-0.5 animate-in fade-in slide-in-from-left-2 duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] fill-mode-backwards">
+            <div className="flex flex-col gap-2 rounded-[calc(0.75rem-2px)] bg-foreground/[0.02] p-3.5">
+              <span className="text-[9px] font-mono text-muted-foreground/50 uppercase tracking-[0.15em] font-semibold">
+                Engine
               </span>
-              <span
-                className="text-[9px] text-muted-foreground/60 font-mono mt-0.5 truncate"
-                title={model}
-              >
-                {model}
-              </span>
+              <div className="flex flex-col gap-0.5">
+                <span className="text-xs font-medium text-foreground leading-none">
+                  {getProviderName(provider)}
+                </span>
+                <span
+                  className="text-[9px] text-muted-foreground/50 font-mono mt-0.5 truncate"
+                  title={model}
+                >
+                  {model}
+                </span>
+              </div>
             </div>
           </div>
 
           {/* Shortcuts Section */}
-          <div className="flex flex-col gap-2.5">
-            <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+          <div className="flex flex-col gap-2.5 animate-in fade-in slide-in-from-left-2 duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] fill-mode-backwards" style={{ animationDelay: "80ms" }}>
+            <span className="text-[9px] font-mono text-muted-foreground/50 uppercase tracking-[0.15em] font-semibold">
               Key Bindings
             </span>
 
@@ -199,7 +201,7 @@ export default function Popup() {
                     Open the dropdown
                   </span>
                 </div>
-                <Badge variant="secondary" className="font-mono text-[9px] py-0.5 px-1.5 border-none shadow-none shrink-0 bg-secondary/50 text-foreground">
+                <Badge variant="secondary" className="font-mono text-[9px] py-0.5 px-1.5 border-none shrink-0 bg-foreground/[0.04] text-foreground/70">
                   {menuShortcut || "Alt+Shift+D"}
                 </Badge>
               </div>
@@ -215,11 +217,11 @@ export default function Popup() {
                   </span>
                 </div>
                 {quickShortcut ? (
-                  <Badge variant="secondary" className="font-mono text-[9px] py-0.5 px-1.5 border-none shadow-none shrink-0 bg-secondary/50 text-foreground">
+                  <Badge variant="secondary" className="font-mono text-[9px] py-0.5 px-1.5 border-none shrink-0 bg-foreground/[0.04] text-foreground/70">
                     {quickShortcut}
                   </Badge>
                 ) : (
-                  <span className="text-[9px] text-muted-foreground/40 shrink-0">
+                  <span className="text-[9px] text-muted-foreground/30 shrink-0">
                     —
                   </span>
                 )}
@@ -230,7 +232,7 @@ export default function Popup() {
                 <>
                   <div className="h-px bg-border/20 my-0.5" />
                   <div className="flex flex-col gap-1.5">
-                    <span className="text-[9px] font-semibold text-muted-foreground/50 uppercase tracking-wider">
+                    <span className="text-[8px] font-mono text-muted-foreground/40 uppercase tracking-[0.15em] font-semibold">
                       System
                     </span>
                     {manifestCommands.map((cmd) => (
@@ -241,7 +243,7 @@ export default function Popup() {
                         <span className="text-[11px] text-muted-foreground truncate max-w-[150px]">
                           {cmd.description}
                         </span>
-                        <Badge variant="outline" className="font-mono text-[8px] py-0 px-1 shrink-0 bg-transparent border-border/20">
+                        <Badge variant="outline" className="font-mono text-[8px] py-0 px-1 shrink-0 bg-transparent border-border/20 text-muted-foreground/50">
                           {cmd.shortcut}
                         </Badge>
                       </div>
@@ -254,51 +256,59 @@ export default function Popup() {
         </div>
 
         {/* RIGHT COLUMN */}
-        <div className="flex flex-col gap-4 min-w-0">
-          {/* Quick Start Guide */}
-          <div className="flex-1 flex flex-col gap-3 rounded-lg border border-border/40 p-3">
-            <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-              How to Use
-            </span>
-            <div className="flex flex-col gap-2.5">
-              <div className="flex items-start gap-2.5">
-                <span className="text-[10px] font-semibold text-muted-foreground/50 mt-px shrink-0 w-3 text-right">1</span>
-                <span className="text-[11px] text-muted-foreground leading-relaxed">
-                  Select any input or textarea on a web page.
-                </span>
-              </div>
-              <div className="flex items-start gap-2.5">
-                <span className="text-[10px] font-semibold text-muted-foreground/50 mt-px shrink-0 w-3 text-right">2</span>
-                <span className="text-[11px] text-muted-foreground leading-relaxed">
-                  Press <kbd className="font-mono bg-secondary/60 px-1 py-px rounded text-[9px] text-foreground">{menuShortcut || "Alt+Shift+D"}</kbd> or click the dot.
-                </span>
-              </div>
-              <div className="flex items-start gap-2.5">
-                <span className="text-[10px] font-semibold text-muted-foreground/50 mt-px shrink-0 w-3 text-right">3</span>
-                <span className="text-[11px] text-muted-foreground leading-relaxed">
-                  Pick an action — text transforms in-place.
-                </span>
+        <div className="flex flex-col gap-3 min-w-0">
+          {/* Quick Start Guide — double-bezel card */}
+          <div className="flex-1 rounded-xl border border-border/20 bg-foreground/[0.01] p-0.5 animate-in fade-in slide-in-from-right-2 duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] fill-mode-backwards" style={{ animationDelay: "40ms" }}>
+            <div className="flex flex-col gap-3 rounded-[calc(0.75rem-2px)] bg-foreground/[0.02] p-3.5 h-full">
+              <span className="text-[9px] font-mono text-muted-foreground/50 uppercase tracking-[0.15em] font-semibold">
+                How to Use
+              </span>
+              <div className="flex flex-col gap-2.5">
+                <div className="flex items-start gap-2.5">
+                  <span className="text-[9px] font-mono text-muted-foreground/30 mt-px shrink-0 w-3 text-right">1</span>
+                  <span className="text-[11px] text-muted-foreground leading-relaxed">
+                    Select any input or textarea on a web page.
+                  </span>
+                </div>
+                <div className="flex items-start gap-2.5">
+                  <span className="text-[9px] font-mono text-muted-foreground/30 mt-px shrink-0 w-3 text-right">2</span>
+                  <span className="text-[11px] text-muted-foreground leading-relaxed">
+                    Press <kbd className="font-mono bg-foreground/[0.04] px-1 py-px rounded text-[9px] text-foreground/70 border border-border/30">{menuShortcut || "Alt+Shift+D"}</kbd> or click the dot.
+                  </span>
+                </div>
+                <div className="flex items-start gap-2.5">
+                  <span className="text-[9px] font-mono text-muted-foreground/30 mt-px shrink-0 w-3 text-right">3</span>
+                  <span className="text-[11px] text-muted-foreground leading-relaxed">
+                    Pick an action — text transforms in-place.
+                  </span>
+                </div>
               </div>
             </div>
           </div>
 
-          {/* Hide Floating Trigger Dot switch */}
-          <div className="flex items-center justify-between min-w-0">
-            <div className="flex flex-col gap-0.5">
-              <span className="text-xs font-medium text-foreground leading-none">
-                Hide floating dot
-              </span>
-              <span className="text-[10px] text-muted-foreground/60 leading-none">
-                Keyboard-only mode
-              </span>
-            </div>
-            <MaterialDesign3Switch
-              variant="primary"
-              size="sm"
-              checked={hideDot}
-              onCheckedChange={toggleHideDot}
-              haptic="none"
-            />
+          {/* Hide Floating Trigger Dot row */}
+          <div className="rounded-lg border border-border/20 bg-foreground/[0.01] p-0.5 animate-in fade-in slide-in-from-right-2 duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] fill-mode-backwards" style={{ animationDelay: "120ms" }}>
+            <button
+              type="button"
+              onClick={() => toggleHideDot(!hideDot)}
+              className="flex items-center justify-between w-full rounded-[calc(0.5rem-2px)] bg-foreground/[0.02] hover:bg-foreground/[0.04] px-3 py-2.5 cursor-pointer transition-colors duration-200 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring/20"
+            >
+              <div className="flex flex-col gap-0.5">
+                <span className="text-xs font-medium text-foreground leading-none cursor-pointer">
+                  Hide floating dot
+                </span>
+                <span className="text-[10px] text-muted-foreground/60 leading-none">
+                  Keyboard-only mode
+                </span>
+              </div>
+              <MaterialDesign3Switch
+                variant="primary"
+                size="sm"
+                checked={hideDot}
+                onCheckedChange={toggleHideDot}
+                haptic="none"
+              />
+            </button>
           </div>
 
           {/* Footer Settings Button */}

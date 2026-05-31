@@ -318,7 +318,12 @@ export class NativeInputAdapter implements EditableAdapter {
     const padTop = parseFloat(cs.paddingTop) || 0;
 
     if (idx === 0) {
-      return new DOMRect(elRect.left + padLeft, elRect.top + padTop, 0, parseFloat(cs.lineHeight) || elRect.height);
+      return new DOMRect(
+        elRect.left + padLeft - this.element.scrollLeft,
+        elRect.top + padTop - this.element.scrollTop,
+        0,
+        parseFloat(cs.lineHeight) || elRect.height
+      );
     }
 
     let mirror = _inputCaretMirror;
@@ -352,20 +357,20 @@ export class NativeInputAdapter implements EditableAdapter {
       mirror.style.height = 'auto';
       const lineHeight = parseFloat(cs.lineHeight) || 16;
       const lines = textBefore.split('\n');
-      const y = elRect.top + padTop + (lines.length - 1) * lineHeight;
+      const y = elRect.top + padTop + (lines.length - 1) * lineHeight - this.element.scrollTop;
 
       const lastLine = lines[lines.length - 1] || '';
       const span = document.createElement('span');
       span.textContent = lastLine;
       mirror.textContent = '';
       mirror.appendChild(span);
-      const x = elRect.left + padLeft + span.offsetWidth;
+      const x = elRect.left + padLeft + span.offsetWidth - this.element.scrollLeft;
 
       return new DOMRect(x, y, 0, lineHeight);
     }
 
-    const x = elRect.left + padLeft + mirror.offsetWidth;
-    return new DOMRect(x, elRect.top + padTop, 0, parseFloat(cs.lineHeight) || elRect.height);
+    const x = elRect.left + padLeft + mirror.offsetWidth - this.element.scrollLeft;
+    return new DOMRect(x, elRect.top + padTop - this.element.scrollTop, 0, parseFloat(cs.lineHeight) || elRect.height);
   }
 
   focus(): void {
