@@ -31,6 +31,9 @@ Injected into every webpage. It handles UI rendering, user interaction, and edit
 - **Adapter Pattern**: Abstracted interface for different editor types. See [adapters.ts](file:///disk2/desktop/extensions-A/src/content/adapters.ts).
 - **Transaction Engine**: Sophisticated logic to inject text into rich-text editors (Slate, Lexical, etc.) without breaking their internal state. See [transaction-engine.ts](file:///disk2/desktop/extensions-A/src/content/transaction-engine.ts).
 - **Positioning**: Calculates floating UI placement relative to the text caret using Floating UI. See [positioning.ts](file:///disk2/desktop/extensions-A/src/content/positioning.ts).
+- **Word-Level Diff**: LCS-based diffing algorithm for visualizing text changes. See [word-diff.ts](file:///disk2/desktop/extensions-A/src/content/word-diff.ts).
+- **Local Grammar Checker**: Harper.js WASM integration for instant offline spelling/grammar correction. See [grammar-worker.ts](file:///disk2/desktop/extensions-A/src/content/grammar-worker.ts).
+- **Rich Editor Orchestration**: High-level replacement logic that delegates to transaction-engine. See [rich-editor-replace.ts](file:///disk2/desktop/extensions-A/src/content/rich-editor-replace.ts).
 
 ### 2. Background Service Worker (`src/background/`)
 The extension's central nervous system.
@@ -49,15 +52,41 @@ The extension's central nervous system.
 
 ### **Editor Interaction (The "Nooks and Crannies")**
 Interacting with web editors is the project's biggest challenge. Hone uses a tiered approach:
-1. **Framework Detection**: [editor-detection.ts](file:///disk2/desktop/extensions-A/src/content/editor-detection.ts) identifies if an element is native, Lexical, Slate, or generic `contenteditable`.
+1. **Framework Detection**: [adapters.ts](file:///disk2/desktop/extensions-A/src/content/adapters.ts) identifies if an element is native, Lexical, Slate, ProseMirror, Twitter, or generic `contenteditable` via DOM fingerprinting and React Fiber inspection.
 2. **React Fiber Traversal**: To support editors like Discord (Slate) and Twitter/X (React Native Web Textareas), Hone traverses the React Fiber tree (`__reactFiber$`) in the page context (Main World) to find the internal `editor` instance or trigger event handler props (`onChange`, `onChangeText`, `onInput`) directly. See [main-world-bridge.ts](file:///disk2/desktop/extensions-A/src/content/main-world-bridge.ts) and [transaction-engine.ts](file:///disk2/desktop/extensions-A/src/content/transaction-engine.ts).
 3. **Event Simulation**: Uses `beforeinput` with `insertReplacementText` or simulated `paste` events to ensure editors record the change in their undo/redo history.
-4. **DOM Mapping**: [plain-text-dom.ts](file:///disk2/desktop/extensions-A/src/content/plain-text-dom.ts) uses `TreeWalker` and `Range` APIs to accurately map character offsets in plain text back to specific DOM nodes and offsets.
+4. **Context Snapshotting**: Before replacement, the system captures the current text span location to handle cases where the editor content may have changed between selection and application.
 
 ### **Advanced UI Components**
 The project includes high-fidelity custom components designed for a native-like feel:
 - **Haptic Feedback**: Custom components like `MaterialDesign3Button` and `MaterialDesign3Switch` include a **Web Audio API** based haptic engine that generates "tactile pop" sounds and vibration-like audio cues.
 - **Physics-based Animations**: Custom ripple hooks and spring-based easing (`cubic-bezier(0.175, 0.885, 0.32, 1.275)`) provide high-quality interaction feedback.
+- **2-Column Menu Layout**: The floating action menu uses a split design with actions on the left and a preview card on the right, allowing users to review AI results before applying. See [floating-action-menu.tsx](file:///disk2/desktop/extensions-A/src/content/floating-action-menu.tsx).
+- **Dynamic Sizing**: The preview card automatically adjusts its height and width based on content and available viewport space using `useLayoutEffect` and `useEffect`.
+
+### **Local Grammar & Spelling with Harper.js**
+Hone integrates Harper.js (a well-known open-source grammar checker) for instant, offline spelling and grammar correction:
+- **WASM Module**: Harper.js runs as a WebAssembly module in a dedicated worker ([grammar-worker.ts](file:///disk2/desktop/extensions-A/src/content/grammar-worker.ts)).
+- **Language Detection**: Uses Chrome's `chrome.i18n.detectLanguage` API to determine if text is primarily English before applying corrections.
+- **Smart Fallback**: Skips correction if too many spelling errors are detected (indicating non-English text or gibberish).
+- **Privacy-First**: All processing happens locally in the browser — no text is sent to external servers for grammar checking.
+- **Instant Response**: Local WASM execution provides sub-100ms response times for typical text segments.
+
+### **Word-Level Diff Visualization**
+The [word-diff.ts](file:///disk2/desktop/extensions-A/src/content/word-diff.ts) module implements a Longest Common Subsequence (LCS) algorithm for computing word-level differences:
+- **Tokenization**: Groups words with trailing whitespace to preserve formatting during diffing.
+- **LCS Algorithm**: Dynamic programming approach to find the longest common subsequence between original and rewritten text.
+- **Performance Fallback**: For very large texts (>10,000 characters), uses a simplified diff to prevent UI freezing.
+- **Token Merging**: Consecutive tokens of the same type (add/remove) are merged for cleaner presentation.
+- **Alternating Collapse**: Alternating add/remove runs are collapsed into single replacement blocks for intuitive diff display.
+
+### **Inference Level System**
+When no text is explicitly selected, Hone intelligently infers the target scope:
+- **Selection**: Explicitly highlighted text (highest priority)
+- **Sentence**: Auto-detected via regex pattern matching
+- **Paragraph**: Blank-line delimited text blocks
+- **Full Field**: Entire editor contents
+Users can cycle through these levels in the action menu to fine-tune the rewrite scope.
 
 ---
 
@@ -66,7 +95,7 @@ The project includes high-fidelity custom components designed for a native-like 
 ```text
 src/
 ├── background/
-│   └── service-worker.ts      # [Core] AI provider routing, API fallbacks, IndexedDB/Storage history syncing, and prompt response sanitization (cleanAiResponse).
+│   └── service-worker.ts      # [Core] AI provider routing, API fallbacks, IndexedDB/Storage history syncing, and prompt response sanitization.
 ├── components/
 │   ├── ui/                    # [UI] Radix-based primitives and custom MD3 components.
 │   │   ├── badge.tsx          # Unified badge component with variant support.
@@ -101,17 +130,15 @@ src/
 │   ├── app.tsx                # [Main] Root React component for the injected UI. Manages global state (menu, preview).
 │   │                          # Handles focus tracking, scroll/resize updates, and keyboard event interception.
 │   ├── content.css            # [Styles] Scoped styles for the Shadow DOM container.
-│   ├── editor-detection.ts    # [Logic] Fingerprinting for Slate, Lexical, Native, and contenteditable editors.
+│   ├── floating-action-menu.tsx # [UI] 2-column floating menu with action list and preview card.
+│   ├── grammar-worker.ts      # [Logic] Harper.js WASM integration for local spelling/grammar checking.
 │   ├── index.tsx              # [Entry] Mounts the React app into a Shadow Root with style isolation and injects main-world-bridge.js.
-│   ├── keyboard-guard.ts      # [Logic] Prevents activation keys (Enter, Space) from leaking to host pages during preview.
 │   ├── main-world-bridge.ts   # [Bridge] Standard isolated world bypass allowing direct React/Slate Fiber interactions from the main world.
-│   ├── plain-text-dom.ts      # [Logic] DOM Range/Selection utilities for mapping plain text offsets to DOM nodes.
 │   ├── positioning.ts         # [UI] Floating-UI integration for anchoring the menu to the text caret.
-│   ├── preview-panel.tsx      # [UI] "Before/After" review panel for AI transformations.
-│   ├── preview-types.ts       # [Types] TypeScript interfaces for the preview system.
 │   ├── rich-editor-replace.ts # [Logic] High-level replacement orchestration for rich-text editors.
 │   ├── storage.ts             # [Data] Chrome Storage & IndexedDB (for History) abstraction layer.
-│   └── transaction-engine.ts  # [Logic] Low-level framework transaction commits (Slate React Fiber bridge traversal, BeforeInput, ExecCommand, Paste).
+│   ├── transaction-engine.ts  # [Logic] Low-level framework transaction commits (Slate React Fiber bridge traversal, BeforeInput, ExecCommand, Paste).
+│   └── word-diff.ts           # [Logic] Word-level LCS diff algorithm for visualizing text changes.
 ├── hooks/
 │   └── use-mobile.ts          # [Utility] Responsive breakpoint hooks targeting mobile layouts.
 ├── lib/

@@ -170,7 +170,7 @@ graph TD
 |---|---|
 | **Improve writing** | Enhances grammar, flow, vocabulary — makes any text polished and engaging |
 | **Paraphrase** | Rewrites while preserving meaning — fresh wording, natural flow |
-| **Fix spelling & grammar** | Corrects errors without changing tone or structure |
+| **Fix spelling & grammar** | Corrects errors without changing tone or structure — powered by Harper.js for instant local checking |
 | **Professional tone** | Shifts text to clear, business-appropriate language |
 | **Casual tone** | Makes text conversational and easy to read |
 | **Exciting tone** | Adds enthusiasm and energy |
@@ -213,6 +213,28 @@ When no text is selected, Hone intelligently guesses what you want to rewrite:
 4. **Full field** — entire editor contents
 
 Cycle through options in the action menu with a single click.
+
+### ⚡ Instant Spelling & Grammar with Harper.js
+
+Hone integrates **Harper.js** — a well-known, open-source grammar checker that runs entirely in your browser via WebAssembly. This provides instant spelling and grammar corrections without sending your text to any external server.
+
+**Why Harper.js?**
+- **Privacy-First**: All grammar checking happens locally in your browser. Your text never leaves your device for spelling/grammar analysis.
+- **Instant Response**: WebAssembly execution delivers sub-100ms correction times for typical text segments — no network latency.
+- **No API Costs**: Unlike cloud-based grammar services, Harper.js is free to use with no rate limits or subscription fees.
+- **Offline Capable**: Works without an internet connection once the WASM module is loaded.
+- **SEO-Friendly**: Harper is a widely recognized name in the developer community, making Hone more discoverable for users searching for grammar checking solutions.
+
+**How it works:**
+1. When you select "Fix spelling & grammar," Hone first checks if the text is primarily English using Chrome's language detection API.
+2. Harper.js runs locally as a WebAssembly module, analyzing your text for spelling errors, grammar mistakes, and awkward phrasing.
+3. Corrections are displayed in the preview card with word-level diff visualization showing exactly what changed.
+4. Smart fallback skips correction if too many errors are detected (indicating non-English text or gibberish).
+
+**Performance:**
+- WASM-based execution for near-native speed
+- Language detection prevents unnecessary processing on non-English text
+- Smart error threshold avoids false positives on code snippets or technical content
 
 ### Rich-Text Editor Compatibility
 
