@@ -155,6 +155,7 @@ export function FloatingActionMenu({
   const [cardHeight, setCardHeight] = useState<number | null>(null);
   const heightRafRef = useRef<number>(0);
   const leftColHeightRef = useRef<number>(280);
+  const displayCardHeight = showCard ? cardHeight : null;
 
   // Dynamic card width for 2-column mode: when text overflows the available
   // height (menu height minus padding), expand the card horizontally.
@@ -214,10 +215,7 @@ export function FloatingActionMenu({
 
   // Height animation for the card
   useEffect(() => {
-    if (!showCard) {
-      setCardHeight(null);
-      return;
-    }
+    if (!showCard) return;
     const card = cardRef.current;
     const textEl = textContentRef.current;
     if (!card) return;
@@ -498,7 +496,7 @@ export function FloatingActionMenu({
           width: isCardOnly ? `${width}px` : `${cardWidth}px`,
           minWidth: `${width}px`,
           maxWidth: "480px",
-          height: cardHeight !== null ? `${cardHeight}px` : undefined,
+          height: displayCardHeight !== null ? `${displayCardHeight}px` : undefined,
           alignSelf: isCardOnly ? "flex-start" : undefined,
           transition:
             "width 0.3s cubic-bezier(0.4, 0, 0.2, 1), height 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
