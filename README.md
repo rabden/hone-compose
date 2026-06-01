@@ -277,6 +277,10 @@ The Options page gives you full control:
 
 ---
 
+<video src="./src/assets/using-extension.mp4" width="100%" controls style="border-radius:12px;border:1px solid #333;"></video>
+
+<br>
+
 ## 📸 Showcase
 
 <table>
