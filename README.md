@@ -277,13 +277,7 @@ The Options page gives you full control:
 
 ---
 
-<p align="center">
-  <a href="./src/assets/using-extension.mp4">
-    <img src="./src/assets/extension.png" alt="Click to watch demo video of Hone Extension" width="100%" style="border-radius:12px;border:1px solid #333;" />
-  </a>
-  <br>
-  <em>▶ Click image to watch the demo video</em>
-</p>
+<img src="./src/assets/using-extension.gif" alt="Hone Extension Demo" width="100%" style="border-radius:12px;border:1px solid #333;" />
 
 <br>
 
