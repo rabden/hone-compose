@@ -6,6 +6,7 @@ export type EditorFramework =
   | "slate"
   | "prosemirror"
   | "twitter"
+  | "draftjs"
   | "contenteditable";
 
 export function isXHost(): boolean {
@@ -109,6 +110,7 @@ export function detectEditorFramework(element: HTMLElement): EditorFramework {
   if (root.closest('[data-lexical-editor="true"]')) return "lexical";
   if (root.closest("[data-slate-editor='true']")) return "slate";
   if (root.closest(".ProseMirror")) return "prosemirror";
+  if (root.closest('.DraftEditor-root') || root.querySelector('.DraftEditor-root')) return "draftjs";
 
   return "contenteditable";
 }

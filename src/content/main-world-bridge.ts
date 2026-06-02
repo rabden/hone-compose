@@ -101,117 +101,129 @@ function resolveTwitterEditable(host: HTMLElement): HTMLElement {
   return host;
 }
 
-function invokeReactTextHandlers(
-  root: HTMLElement,
-  newText: string,
-): boolean {
-  const fiber = getReactFiber(root);
-  if (!fiber) return false;
+function getSlateTextLeaves(nodes: any[]): Array<{ path: number[]; textNode: any; startOffset: number; endOffset: number }> {
+  const leaves: any[] = [];
+  let currentOffset = 0;
 
-  const queue: FiberNode[] = [fiber];
-  const seen = new Set<FiberNode>();
-  let invoked = false;
-
-  while (queue.length > 0) {
-    const node = queue.shift()!;
-    if (!node || seen.has(node)) continue;
-    seen.add(node);
-    if (seen.size > 600) break;
-
-    const props = node.memoizedProps;
-    if (props) {
-      if (typeof props.onChangeText === "function") {
-        (props.onChangeText as (text: string) => void)(newText);
-        invoked = true;
-      }
-      if (typeof props.onInput === "function") {
-        (props.onInput as (e: unknown) => void)({
-          target: root,
-          currentTarget: root,
-          type: "input",
-          preventDefault() {},
-          stopPropagation() {},
+  function dfs(nodeList: any[], path: number[]) {
+    if (!nodeList || !Array.isArray(nodeList)) return;
+    for (let i = 0; i < nodeList.length; i++) {
+      const node = nodeList[i];
+      if (!node) continue;
+      const nextPath = [...path, i];
+      if (typeof node.text === "string") {
+        leaves.push({
+          path: nextPath,
+          textNode: node,
+          startOffset: currentOffset,
+          endOffset: currentOffset + node.text.length
         });
-        invoked = true;
-      }
-      if (typeof props.onChange === "function") {
-        (props.onChange as (e: { target: { value: string } }) => void)({
-          target: { value: newText },
-          currentTarget: root,
-          preventDefault() {},
-          stopPropagation() {},
-        } as { target: { value: string }; currentTarget: HTMLElement });
-        invoked = true;
+        currentOffset += node.text.length;
+      } else if (Array.isArray(node.children)) {
+        dfs(node.children, nextPath);
       }
     }
-
-    if (node.child) queue.push(node.child);
-    if (node.sibling) queue.push(node.sibling);
-    if (node.return) queue.push(node.return);
   }
 
-  return invoked;
+  dfs(nodes, []);
+  return leaves;
 }
 
-function runTwitterTransaction(
+function getSlatePointFromOffset(leaves: any[], charIdx: number): { path: number[]; offset: number } | null {
+  if (leaves.length === 0) return null;
+  const maxOffset = leaves[leaves.length - 1].endOffset;
+  const target = Math.max(0, Math.min(charIdx, maxOffset));
+
+  for (const leaf of leaves) {
+    if (target >= leaf.startOffset && target <= leaf.endOffset) {
+      return {
+        path: leaf.path,
+        offset: target - leaf.startOffset
+      };
+    }
+  }
+
+  const last = leaves[leaves.length - 1];
+  return {
+    path: last.path,
+    offset: last.textNode.text.length
+  };
+}
+
+// ============================================================================
+// TWITTER/X (DRAFT.JS) TRANSACTION HANDLER
+// ============================================================================
+// IMPORTANT: This simple paste-event approach is the ONLY working solution for Twitter/X.
+//
+// WHY COMPLEX APPROACHES FAILED:
+// 1. React Fiber traversal (invokeReactTextHandlers): Draft.js stores state handlers on
+//    ancestor components 2-6 levels up the tree. Traversing up caused state corruption,
+//    while immediate-node-only checks found no handlers at all.
+//
+// 2. Direct Slate-like selection mapping: Twitter uses Draft.js, not Slate. Attempting to
+//    map offsets to internal paths was incompatible with Draft.js's immutable EditorState.
+//
+// 3. selectNodeContents(root): When selecting entire text, this selected the entire HTML
+//    structure including Draft.js's internal blocks and spans. execCommand then obliterated
+//    all spans, leaving raw text nodes and corrupting the editor state completely.
+//
+// WHY THIS SIMPLE APPROACH WORKS:
+// - Draft.js was explicitly designed to intercept and handle browser-native paste events
+// - It integrates paste content into its immutable state machine automatically
+// - No manual state synchronization or React handler invocation is needed
+// - Preserves Draft.js's internal block and span structure
+//
+// DO NOT CHANGE THIS APPROACH unless you have a deep understanding of Draft.js internals.
+// Any attempt to manually manipulate Draft.js state will likely break it.
+// ============================================================================
+async function runTwitterTransaction(
   host: HTMLElement,
   replacement: string,
   start: number,
   end: number,
-): boolean {
+): Promise<boolean> {
   const root = resolveTwitterEditable(host);
   const beforeText = extractPlainText(root);
   const len = beforeText.length;
   const s = Math.max(0, Math.min(start, len));
   const e = Math.max(s, Math.min(end, len));
-  const newText =
-    beforeText.substring(0, s) + replacement + beforeText.substring(e);
 
   root.focus({ preventScroll: true });
 
-  if (s === 0 && e === len && len > 0) {
-    const sel = window.getSelection();
-    const range = document.createRange();
-    range.selectNodeContents(root);
-    sel?.removeAllRanges();
-    sel?.addRange(range);
-  } else {
-    setDomSelectionByOffsets(root, s, e);
-  }
+  // Set selection using text node offsets (preserves Draft.js span structure)
+  setDomSelectionByOffsets(root, s, e);
 
   document.dispatchEvent(new Event("selectionchange"));
 
-  let inserted: boolean;
-  try {
-    inserted = document.execCommand("insertText", false, replacement);
-  } catch {
-    inserted = false;
-  }
+  // Small delay to let Draft.js process selection before paste
+  await new Promise((resolve) => setTimeout(resolve, 10));
 
-  if (!inserted) {
+  // Use simple paste event - Draft.js handles this natively and correctly
+  try {
+    const dt = new DataTransfer();
+    dt.setData("text/plain", replacement);
+    root.dispatchEvent(
+      new ClipboardEvent("paste", {
+        bubbles: true,
+        cancelable: true,
+        clipboardData: dt,
+      }),
+    );
+  } catch {
+    // Fallback to execCommand if paste event fails (rare)
     try {
-      const dt = new DataTransfer();
-      dt.setData("text/plain", replacement);
-      root.dispatchEvent(
-        new ClipboardEvent("paste", {
-          bubbles: true,
-          cancelable: true,
-          clipboardData: dt,
-        }),
-      );
-      inserted = true;
+      document.execCommand("insertText", false, replacement);
     } catch {
-      inserted = false;
+      return false;
     }
   }
 
-  invokeReactTextHandlers(root, newText);
-
   const after = extractPlainText(root);
+  const newText = beforeText.substring(0, s) + replacement + beforeText.substring(e);
   const probe = replacement.trim().slice(0, Math.min(32, replacement.length));
   if (after === newText) return true;
   if (probe && after.includes(probe)) return true;
-  return inserted;
+  return false;
 }
 
 function findSlateEditorInFiber(fiber: FiberNode): Record<string, unknown> | null {
@@ -245,13 +257,13 @@ function findSlateEditorInFiber(fiber: FiberNode): Record<string, unknown> | nul
   return null;
 }
 
-window.addEventListener("message", (event) => {
+window.addEventListener("message", async (event) => {
   if (event.source !== window) {
     return;
   }
 
   if (event.data?.type === "HONE_RUN_SLATE_TRANSACTION") {
-    const { targetId, replacement } = event.data;
+    const { targetId, replacement, start, end } = event.data;
     const element = document.getElementById(targetId);
 
     if (!element) {
@@ -263,6 +275,9 @@ window.addEventListener("message", (event) => {
     }
 
     try {
+      const s = typeof start === "number" ? start : Number(start) || 0;
+      const e = typeof end === "number" ? end : Number(end) || 0;
+
       const fiber = getReactFiber(element);
       if (!fiber) {
         window.postMessage(
@@ -276,14 +291,33 @@ window.addEventListener("message", (event) => {
         return;
       }
 
-      const editor = findSlateEditorInFiber(fiber);
+      const editor = findSlateEditorInFiber(fiber) as any;
       if (editor) {
-        if (typeof editor.deleteFragment === "function") {
-          (editor.deleteFragment as () => void)();
+        if (typeof editor.focus === "function") {
+          editor.focus();
         }
-        (editor.insertText as (text: string) => void)(replacement);
+
+        // Map offsets directly to Slate internal paths & offsets
+        const leaves = getSlateTextLeaves(editor.children);
+        const anchor = getSlatePointFromOffset(leaves, s);
+        const focus = getSlatePointFromOffset(leaves, e);
+
+        if (anchor && focus) {
+          editor.selection = { anchor, focus };
+        } else {
+          setDomSelectionByOffsets(element as HTMLElement, s, e);
+          document.dispatchEvent(new Event("selectionchange"));
+          await new Promise((resolve) => setTimeout(resolve, 15)); 
+        }
+        
+        if (typeof editor.deleteFragment === "function") {
+          editor.deleteFragment();
+        }
+        if (typeof editor.insertText === "function") {
+          editor.insertText(replacement);
+        }
         if (typeof editor.onChange === "function") {
-          (editor.onChange as () => void)();
+          editor.onChange();
         }
 
         window.postMessage({ type: "HONE_TRANSACTION_RESULT", success: true }, "*");
@@ -317,7 +351,7 @@ window.addEventListener("message", (event) => {
     }
 
     try {
-      const ok = runTwitterTransaction(
+      const ok = await runTwitterTransaction(
         element,
         String(replacement ?? ""),
         Number(start) || 0,
@@ -391,7 +425,6 @@ window.addEventListener("message", (event) => {
         }
       }
 
-      // Don't dispatch additional events - React handlers already handle state updates
       window.postMessage({ type: "HONE_TRANSACTION_RESULT", success: true }, "*");
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);

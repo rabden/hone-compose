@@ -110,7 +110,10 @@ async function fetchOpenRouter(
     body: JSON.stringify({
       model,
       messages: chatMessages(system, prompt),
-      temperature: 0.7
+      temperature: 0.7,
+      reasoning: {
+        effort: "none"  // Disable reasoning to speed up response time
+      }
     })
   }, 15000, externalSignal);
 
@@ -286,7 +289,7 @@ async function tryGoogleAISudio(
 
   const config: Record<string, unknown> = {
     thinkingConfig: {
-      thinkingLevel: ThinkingLevel.MINIMAL,
+      thinkingLevel: ThinkingLevel.MINIMAL, // Minimizes thinking to speed up response time
     },
   };
   if (system) {
@@ -330,14 +333,15 @@ async function tryOpenRouterFree(
     "google/gemma-4-31b-it:free",
     "openai/gpt-oss-120b:free",
     "z-ai/glm-4.5-air:free",
-    "meta-llama/llama-3.3-70b-instruct:free",
     "moonshotai/kimi-k2.6:free",
-    "minimax/minimax-m2.5:free",
     "google/gemma-4-26b-a4b-it:free",
     "poolside/laguna-xs.2:free",
     "openai/gpt-oss-20b:free",
     "nvidia/nemotron-3-nano-30b-a3b:free",
-    "meta-llama/llama-3.2-3b-instruct:free",
+    "nvidia/nemotron-3-super-120b-a12b:free",
+    "poolside/laguna-m.1:free",
+    "nvidia/nemotron-nano-9b-v2:free",
+    "openrouter/owl-alpha:free",
   ];
 
   const apiKey = settings.openrouterKey?.trim() || '';

@@ -154,12 +154,10 @@ async function verifyDomReplace(ctx: TransactionContext, maxWaitMs = 150): Promi
 
 function prepareDomSelection(ctx: TransactionContext): void {
   const { root, start, end, expectedSlice } = ctx;
-  // Only focus if the element is already focused or is the active element
-  // This prevents focus stealing when user has moved to another input
-  const active = document.activeElement;
-  if (!active || active === root || root.contains(active)) {
-    root.focus({ preventScroll: true });
-  }
+
+  // Always force focus the editor root during a transaction execution
+  // to ensure rich-text listeners (Slate/DraftJS) are awake and active
+  root.focus({ preventScroll: true });
 
   if (
     !selectPlainTextRange(root, start, end, expectedSlice, { focus: false }) &&
@@ -206,11 +204,9 @@ async function commitViaMainWorldSlate(ctx: TransactionContext): Promise<boolean
 
   if (!slateRoot) return false;
 
-  // Set DOM selection first so Slate can sync its internal selection
   prepareDomSelection({ ...ctx, root: slateRoot });
   await delayForSelectionSync();
 
-  // Ensure it has an ID so we can find it in the Main World
   if (!slateRoot.id) {
     slateRoot.id = `hone-slate-${Math.random().toString(36).slice(2, 11)}`;
   }
@@ -218,25 +214,26 @@ async function commitViaMainWorldSlate(ctx: TransactionContext): Promise<boolean
   return new Promise((resolve) => {
     const handleResult = (event: MessageEvent) => {
       if (event.source !== window || event.data?.type !== "HONE_TRANSACTION_RESULT") return;
-      
+
       window.removeEventListener("message", handleResult);
       if (event.data.success) {
-        // Even if the bridge says success, verify the DOM update from our side
-        verifyDomReplace({ ...ctx, root: slateRoot }).then(resolve);
+        // Trust the specialized bridge state directly
+        resolve(true);
       } else {
         resolve(false);
       }
     };
 
     window.addEventListener("message", handleResult);
-    
+
     window.postMessage({
       type: "HONE_RUN_SLATE_TRANSACTION",
       targetId: slateRoot.id,
-      replacement: ctx.replacement
+      replacement: ctx.replacement,
+      start: ctx.start,
+      end: ctx.end,
     }, "*");
 
-    // Safety timeout
     setTimeout(() => {
       window.removeEventListener("message", handleResult);
       resolve(false);
@@ -313,7 +310,8 @@ async function commitViaMainWorldTwitter(
 
       window.removeEventListener("message", handleResult);
       if (event.data.success) {
-        verifyDomReplace(ctx).then(resolve);
+        // Trust the specialized bridge state directly
+        resolve(true);
       } else {
         resolve(false);
       }
@@ -438,7 +436,7 @@ export async function applyEditorTransaction(
     };
   }
 
-  if (framework === "twitter") {
+  if (framework === "twitter" || framework === "draftjs") {
     if (await commitViaMainWorldTwitter(ctx)) {
       return { committed: true, confidence: 0.95, suggestClipboardPaste: false };
     }

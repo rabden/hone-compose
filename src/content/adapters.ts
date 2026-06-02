@@ -874,6 +874,11 @@ export class ProseMirrorAdapter extends ContentEditableAdapter {}
 export class TwitterAdapter extends ContentEditableAdapter {}
 
 /**
+ * DraftJSAdapter: Handles general Facebook Draft.js editors
+ */
+export class DraftJSAdapter extends ContentEditableAdapter {}
+
+/**
  * Detect and create the appropriate adapter for an element
  * @param element - The element to adapt
  * @returns An EditableAdapter instance, or null if not adaptable
@@ -903,6 +908,11 @@ export function createAdapter(element: Element | null): EditableAdapter | null {
       el.closest('[data-testid^="tweetTextarea"]'))
   ) {
     return new TwitterAdapter(root);
+  }
+
+  // Detect Draft.js editors globally
+  if (root.closest('.DraftEditor-root') || root.querySelector('.DraftEditor-root')) {
+    return new DraftJSAdapter(root);
   }
 
   if (root.closest('[data-lexical-editor="true"]')) {

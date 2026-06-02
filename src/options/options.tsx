@@ -86,14 +86,15 @@ const OPENROUTER_FREE_MODELS = [
   { id: "google/gemma-4-31b-it:free", label: "Gemma 4 31B" },
   { id: "openai/gpt-oss-120b:free", label: "GPT-OSS 120B" },
   { id: "z-ai/glm-4.5-air:free", label: "GLM 4.5 Air" },
-  { id: "meta-llama/llama-3.3-70b-instruct:free", label: "Llama 3.3 70B" },
   { id: "moonshotai/kimi-k2.6:free", label: "Kimi K2.6" },
-  { id: "minimax/minimax-m2.5:free", label: "Minimax M2.5" },
   { id: "google/gemma-4-26b-a4b-it:free", label: "Gemma 4 26B" },
   { id: "poolside/laguna-xs.2:free", label: "Laguna XS.2" },
   { id: "openai/gpt-oss-20b:free", label: "GPT-OSS 20B" },
   { id: "nvidia/nemotron-3-nano-30b-a3b:free", label: "Nemotron 3 Nano 30B" },
-  { id: "meta-llama/llama-3.2-3b-instruct:free", label: "Llama 3.2 3B" },
+  { id: "nvidia/nemotron-3-super-120b-a12b:free", label: "Nemotron 3 Super" },
+  { id: "poolside/laguna-m.1:free", label: "Laguna M.1" },
+  { id: "nvidia/nemotron-nano-9b-v2:free", label: "Nemotron Nano 9B V2" },
+  { id: "openrouter/owl-alpha:free", label: "Owl Alpha" },
 ];
 
 const ACTION_PROVIDER_OPTIONS = [
