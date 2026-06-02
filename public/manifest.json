@@ -40,7 +40,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["harper_wasm_bg.wasm"],
+      "resources": ["harper_wasm_bg.wasm", "main-world-bridge.js"],
       "matches": ["<all_urls>"]
     }
   ],

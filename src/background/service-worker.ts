@@ -370,6 +370,10 @@ async function tryOpenRouterFree(
   throw new Error(`OpenRouter Free failed. Last error: ${lastError ? lastError.message : 'Unknown'}`);
 }
 
+function errMsg(e: unknown): string {
+  return e instanceof Error ? e.message : String(e);
+}
+
 async function callAIProviderRaw(
   actionId: string,
   text: string,
@@ -422,11 +426,11 @@ async function callAIProviderRaw(
     const res = await runProvider(primaryProvider);
     await saveToHistory({ originalText: text, rewrittenText: res.text, action: actionId, url, provider: primaryProvider, model: res.model });
     return { text: res.text, provider: primaryProvider, model: res.model };
-  } catch (primaryErr: any) {
+  } catch (primaryErr: unknown) {
     if (signal?.aborted) {
       throw primaryErr;
     }
-    console.warn(`Primary provider ${primaryProvider} failed:`, primaryErr.message);
+    console.warn(`Primary provider ${primaryProvider} failed:`, errMsg(primaryErr));
 
     // 2. Identify all alternative configured providers
     const providersList = ['google_ai_studio', 'openai', 'anthropic', 'gemini', 'openrouter_paid', 'openrouter'];
@@ -447,7 +451,7 @@ async function callAIProviderRaw(
     console.log(`Smart Fallback: Trying alternative configured providers in order:`, altProviders);
 
     // 3. Cycle through alternative providers
-    let lastError = primaryErr;
+    let lastError: unknown = primaryErr;
     for (const altProvider of altProviders) {
       try {
         console.log(`Smart Fallback: Attempting alternate provider: ${altProvider}`);
@@ -456,16 +460,16 @@ async function callAIProviderRaw(
         
         await saveToHistory({ originalText: text, rewrittenText: res.text, action: actionId, url, provider: altProvider, model: res.model });
         return { text: res.text, provider: altProvider, model: res.model, fallbackUsed: altProvider };
-      } catch (altErr: any) {
+      } catch (altErr: unknown) {
         if (signal?.aborted) {
           throw altErr;
         }
-        console.warn(`Fallback provider ${altProvider} failed:`, altErr.message);
+        console.warn(`Fallback provider ${altProvider} failed:`, errMsg(altErr));
         lastError = altErr;
       }
     }
 
-    throw new Error(`Primary provider (${primaryProvider}) failed: ${primaryErr.message}. Also all alternative configured providers failed. Last error: ${lastError.message}`);
+    throw new Error(`Primary provider (${primaryProvider}) failed: ${errMsg(primaryErr)}. Also all alternative configured providers failed. Last error: ${errMsg(lastError)}`, { cause: primaryErr });
   }
 }
 

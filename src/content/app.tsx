@@ -20,7 +20,7 @@ import {
   isActivationKey,
   shouldSuppressActivationKey,
 } from "./keyboard-guard";
-import { wordDiff } from "./word-diff";
+import { wordDiff, type DiffToken } from "./word-diff";
 import { checkGrammarAndSpelling } from "./grammar-worker";
 
 interface Toast {
@@ -81,11 +81,11 @@ export default function App({
   // New Generalized Card & Settings states
   const [previewInCard, setPreviewInCard] = useState<boolean>(true);
   const [cardResultText, setCardResultText] = useState<string>("");
-  const [cardDiff, setCardDiff] = useState<any[] | null>(null);
+  const [cardDiff, setCardDiff] = useState<DiffToken[] | null>(null);
   const [isHarperLoading, setIsHarperLoading] = useState<boolean>(false);
   const [loadingActionId, setLoadingActionId] = useState<string | null>(null);
   const [localResultText, setLocalResultText] = useState<string>("");
-  const [localDiff, setLocalDiff] = useState<any[] | null>(null);
+  const [localDiff, setLocalDiff] = useState<DiffToken[] | null>(null);
   const [revealMenuOverride, setRevealMenuOverride] = useState<boolean>(false);
   const [harperHasErrors, setHarperHasErrors] = useState<boolean>(false);
 
@@ -110,6 +110,7 @@ export default function App({
   // New refs for card state management
   const loadingActionIdRef = useRef<string | null>(null);
   const cardActionIdRef = useRef<string | null>(null);
+  const [cardActionId, setCardActionId] = useState<string | null>(null);
   const cardApplyTextRef = useRef("");
   const cardOverrideInferenceRef = useRef<InferredSelection | undefined>(undefined);
   const blurTimeoutRef = useRef(0);
@@ -200,15 +201,9 @@ export default function App({
   }, [inferenceOptions, selectedInferenceLevel]);
 
   useEffect(() => {
-    if (!isMenuOpen || !activeLevelText) {
-      setCardResultText("");
-      setCardDiff(null);
-      setIsHarperLoading(false);
-      return;
-    }
-
     let active = true;
     const runHarper = async () => {
+      if (!isMenuOpen || !activeLevelText) return;
       setIsHarperLoading(true);
       try {
         const corrected = await checkGrammarAndSpelling(activeLevelText);
@@ -227,6 +222,7 @@ export default function App({
         setLocalResultText(corrected);
         setLocalDiff(diff);
         cardActionIdRef.current = "fix_spelling_local";
+        setCardActionId("fix_spelling_local");
         cardOverrideInferenceRef.current = undefined;
         setIsHarperLoading(false);
       } catch (err) {
@@ -444,6 +440,7 @@ export default function App({
       cardApplyTextRef.current = localResultText;
       setCardDiff(localDiff);
       cardActionIdRef.current = "fix_spelling_local";
+      setCardActionId("fix_spelling_local");
       cardOverrideInferenceRef.current = undefined;
       setLoadingActionId(null);
       loadingActionIdRef.current = null;
@@ -535,6 +532,7 @@ export default function App({
         setLoadingActionId(action);
         loadingActionIdRef.current = action;
         cardActionIdRef.current = action;
+        setCardActionId(action);
         cardOverrideInferenceRef.current = overrideInference;
 
         setCardResultText("");
@@ -641,6 +639,7 @@ export default function App({
       setLoadingActionId(null);
       loadingActionIdRef.current = null;
       cardActionIdRef.current = "fix_spelling_local";
+      setCardActionId("fix_spelling_local");
       setCardResultText(localResultText);
       cardApplyTextRef.current = localResultText;
       setCardDiff(localDiff);
@@ -808,7 +807,7 @@ export default function App({
 
     window.addEventListener("keydown", handleKeyDown, true);
     return () => window.removeEventListener("keydown", handleKeyDown, true);
-  }, [shortcut, dropdownShortcut, isMenuOpen, openAssistant, actionConfirm, cycleInferenceLevel, inferenceOptions, isAiProcessing, revealMenuOverride]);
+  }, [shortcut, dropdownShortcut, isMenuOpen, openAssistant, actionConfirm, cycleInferenceLevel, inferenceOptions, isAiProcessing, revealMenuOverride, cancelActionConfirm, handleCancelCard]);
 
   // ── Chrome command shortcuts (manifest commands) ──
   useEffect(() => {
@@ -1064,17 +1063,12 @@ export default function App({
   }, [loadingActionId]);
 
   useEffect(() => {
-    if (!isMenuOpen) {
-      setCardResultText("");
-      setCardDiff(null);
-      setHarperHasErrors(false);
+    if (!isMenuOpen) return;
+    return () => {
       cardApplyTextRef.current = "";
       cardActionIdRef.current = "fix_spelling_local";
-      setLoadingActionId(null);
       loadingActionIdRef.current = null;
-      setActionConfirm(null);
-      setRevealMenuOverride(false);
-    }
+    };
   }, [isMenuOpen]);
 
   // ── Keep editor focused while menu is open ──
@@ -1151,7 +1145,7 @@ export default function App({
   );
 
   const hasNonLocalCardResult =
-    !!cardResultText && !!cardActionIdRef.current && cardActionIdRef.current !== "fix_spelling_local";
+    !!cardResultText && !!cardActionId && cardActionId !== "fix_spelling_local";
 
   const isCardOnly =
     !revealMenuOverride &&
@@ -1169,7 +1163,7 @@ export default function App({
     harperHasErrors ||
     !!loadingActionId ||
     !!actionConfirm ||
-    (!!cardActionIdRef.current && cardActionIdRef.current !== "fix_spelling_local");
+    (!!cardActionId && cardActionId !== "fix_spelling_local");
 
   // ── Capture keyboard so Enter/Space never reach the field behind ──
   useEffect(() => {
@@ -1489,7 +1483,7 @@ export default function App({
           cardDiff={cardDiff}
           isCardLoading={isHarperLoading || !!loadingActionId}
           loadingActionId={loadingActionId}
-          cardActionId={cardActionIdRef.current}
+          cardActionId={cardActionId}
           onApplyCard={handleApplyCard}
           onCancelCard={handleCancelCard}
           isCardOnly={isCardOnly}

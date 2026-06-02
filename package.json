@@ -8,7 +8,9 @@
     "build:pages": "vite build",
     "build:background": "ENTRY=background vite build",
     "build:content": "ENTRY=content vite build",
-    "build": "tsc -b && npm run build:pages && npm run build:background && npm run build:content",
+    "build:bridge": "ENTRY=bridge vite build",
+    "build:copy-wasm": "cp node_modules/harper.js/dist/harper_wasm_bg.wasm dist/harper_wasm_bg.wasm",
+    "build": "tsc -b && npm run build:pages && npm run build:background && npm run build:content && npm run build:bridge && npm run build:copy-wasm",
     "lint": "eslint .",
     "preview": "vite preview"
   },
