@@ -104,6 +104,30 @@ function normalizePlain(s: string): string {
   return s.replace(/\s+/g, " ").trim();
 }
 
+function expectedTextAfterReplace(ctx: TransactionContext): string {
+  return (
+    ctx.beforeText.substring(0, ctx.start) +
+    ctx.replacement +
+    ctx.beforeText.substring(ctx.end)
+  );
+}
+
+function looksLikeExpectedReplace(ctx: TransactionContext, text: string): boolean {
+  const expected = expectedTextAfterReplace(ctx);
+  if (text === expected || normalizePlain(text) === normalizePlain(expected)) {
+    return true;
+  }
+
+  const oldPart = ctx.expectedSlice;
+  const probe = ctx.replacement
+    .trim()
+    .slice(0, Math.min(48, ctx.replacement.length));
+
+  if (!probe) return true;
+
+  return text.includes(probe) && (!oldPart || !text.includes(oldPart));
+}
+
 /**
  * Yield execution to the browser event loop so editor frameworks
  * (Slate, Draft.js, Lexical) can process focus / selectionchange events
@@ -118,13 +142,9 @@ async function verifyDomReplace(ctx: TransactionContext, maxWaitMs = 150): Promi
 
   while (performance.now() - startTime < maxWaitMs) {
     const after = extractPlainText(ctx.root);
-    const expected =
-      ctx.beforeText.substring(0, ctx.start) +
-      ctx.replacement +
-      ctx.beforeText.substring(ctx.end);
     const oldPart = ctx.expectedSlice;
 
-    if (after === expected || normalizePlain(after) === normalizePlain(expected)) {
+    if (looksLikeExpectedReplace(ctx, after)) {
       return true;
     }
 
@@ -136,13 +156,6 @@ async function verifyDomReplace(ctx: TransactionContext, maxWaitMs = 150): Promi
     ) {
       // Still showing old part AND new replacement? 
       // This might mean it was appended instead of replaced.
-    }
-
-    const probe = ctx.replacement.trim().slice(0, Math.min(48, ctx.replacement.length));
-    if (!probe) return true;
-
-    if (after.includes(probe) && (!oldPart || !after.includes(oldPart))) {
-      return true;
     }
 
     // Yield execution to allow the host page's renderer to update the DOM
@@ -241,8 +254,23 @@ async function commitViaMainWorldSlate(ctx: TransactionContext): Promise<boolean
   });
 }
 
+type BeforeInputAttempt = {
+  verified: boolean;
+  changed: boolean;
+  defaultPrevented: boolean;
+};
+
+type MainWorldAttempt = {
+  verified: boolean;
+  changed: boolean;
+};
+
 /** Lexical / many CE: one beforeinput with insertReplacementText */
-async function commitViaBeforeInput(ctx: TransactionContext): Promise<boolean> {
+async function commitViaBeforeInputAttempt(
+  ctx: TransactionContext,
+  maxWaitMs = 150,
+): Promise<BeforeInputAttempt> {
+  const before = extractPlainText(ctx.root);
   prepareDomSelection(ctx);
   await delayForSelectionSync();
 
@@ -253,12 +281,83 @@ async function commitViaBeforeInput(ctx: TransactionContext): Promise<boolean> {
       inputType: "insertReplacementText",
       data: ctx.replacement,
     });
-    ctx.root.dispatchEvent(evt);
+    const dispatchResult = ctx.root.dispatchEvent(evt);
     syncSelectionChange();
-    return await verifyDomReplace(ctx);
+    const verified = await verifyDomReplace(ctx, maxWaitMs);
+    const after = extractPlainText(ctx.root);
+    return {
+      verified,
+      changed: after !== before,
+      defaultPrevented: !dispatchResult || evt.defaultPrevented,
+    };
   } catch {
-    return false;
+    return {
+      verified: false,
+      changed: extractPlainText(ctx.root) !== before,
+      defaultPrevented: false,
+    };
   }
+}
+
+async function commitViaBeforeInput(ctx: TransactionContext): Promise<boolean> {
+  return (await commitViaBeforeInputAttempt(ctx)).verified;
+}
+
+async function commitViaMainWorldLexicalAttempt(
+  ctx: TransactionContext,
+): Promise<MainWorldAttempt> {
+  const lexicalRoot =
+    (ctx.root.closest('[data-lexical-editor="true"]') as HTMLElement | null) ??
+    (ctx.root.querySelector('[data-lexical-editor="true"]') as HTMLElement | null);
+
+  if (!lexicalRoot) {
+    return { verified: false, changed: false };
+  }
+
+  if (!lexicalRoot.id) {
+    lexicalRoot.id = `hone-lexical-${Math.random().toString(36).slice(2, 11)}`;
+  }
+
+  const requestId = `hone-lexical-${Math.random().toString(36).slice(2, 11)}`;
+
+  return new Promise((resolve) => {
+    const handleResult = (event: MessageEvent) => {
+      if (
+        event.source !== window ||
+        event.data?.type !== "HONE_TRANSACTION_RESULT" ||
+        event.data?.requestId !== requestId
+      ) {
+        return;
+      }
+
+      window.removeEventListener("message", handleResult);
+      resolve({
+        verified: !!event.data.success,
+        changed: !!event.data.changed,
+      });
+    };
+
+    window.addEventListener("message", handleResult);
+
+    window.postMessage(
+      {
+        type: "HONE_RUN_LEXICAL_TRANSACTION",
+        requestId,
+        targetId: lexicalRoot.id,
+        replacement: ctx.replacement,
+        start: ctx.start,
+        end: ctx.end,
+        beforeText: ctx.beforeText,
+        expectedSlice: ctx.expectedSlice,
+      },
+      "*",
+    );
+
+    setTimeout(() => {
+      window.removeEventListener("message", handleResult);
+      resolve({ verified: false, changed: false });
+    }, 900);
+  });
 }
 
 /** Simulated paste — editors often commit this as a real transaction */
@@ -403,15 +502,11 @@ export async function applyEditorTransaction(
   }
 
   if (framework === "lexical") {
-    if (await commitViaBeforeInput(ctx)) {
-      return { committed: true, confidence: 0.9, suggestClipboardPaste: false };
+    const mainWorld = await commitViaMainWorldLexicalAttempt(ctx);
+    if (mainWorld.verified) {
+      return { committed: true, confidence: 0.95, suggestClipboardPaste: false };
     }
-    if (await commitViaPasteEvent(ctx)) {
-      return { committed: true, confidence: 0.8, suggestClipboardPaste: false };
-    }
-    if (await commitViaExecCommand(ctx)) {
-      return { committed: true, confidence: 0.6, suggestClipboardPaste: false };
-    }
+
     return {
       committed: false,
       confidence: 0,
