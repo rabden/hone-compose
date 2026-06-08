@@ -393,7 +393,7 @@ export default function App({
     return () => {
       active = false;
     };
-  }, [isMenuOpen, activeLevelText, autoSpellcheckMode, inferenceOptions, selectedInferenceLevel, showToast]);
+  }, [isMenuOpen, activeLevelText, autoSpellcheckMode, autoSpellcheckWordThreshold, inferenceOptions, selectedInferenceLevel, showToast]);
 
   // Load config from storage
   useEffect(() => {
@@ -1099,7 +1099,7 @@ export default function App({
 
       const hasPinnedCardState =
         isCardOnly ||
-        !!actionConfirm ||
+        actionConfirmRef.current ||
         !!loadingActionIdRef.current ||
         (!!cardActionIdRef.current &&
           cardActionIdRef.current !== "fix_spelling_local");

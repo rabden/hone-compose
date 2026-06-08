@@ -152,20 +152,18 @@ export function FloatingActionMenu({
   const textContentRef = useRef<HTMLDivElement>(null);
   const leftColRef = useRef<HTMLDivElement>(null);
 
-  const [leftColHeight, setLeftColHeight] = useState<number | null>(null);
+  const [observedHeight, setObservedHeight] = useState<number | null>(null);
+  const leftColHeight: number | null = isCardOnly ? null : observedHeight;
 
   useEffect(() => {
-    if (isCardOnly) {
-      setLeftColHeight(null);
-      return;
-    }
+    if (isCardOnly) return;
 
     const leftCol = leftColRef.current;
     if (!leftCol) return;
 
     const updateLeftColHeight = () => {
       const h = leftCol.scrollHeight || leftCol.offsetHeight;
-      setLeftColHeight((prev) => (h > 0 && h !== prev ? h : prev));
+      setObservedHeight((prev) => (h > 0 && h !== prev ? h : prev));
     };
 
     updateLeftColHeight();
