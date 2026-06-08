@@ -741,15 +741,15 @@ export function inferSelection(adapter: EditableAdapter): InferredSelection {
 
   // Try sentence
   const sentence = findSentenceBoundaries(fullText, caret);
-  const sentenceText = fullText.substring(sentence.start, sentence.end).trim();
-  if (sentenceText.length > 0 && sentenceText.length < fullText.trim().length) {
+  const sentenceText = fullText.substring(sentence.start, sentence.end);
+  if (sentenceText.trim().length > 0 && sentenceText.trim().length < fullText.trim().length) {
     return { text: sentenceText, start: sentence.start, end: sentence.end, isSelection: false, level: 'sentence' };
   }
 
   // Try paragraph
   const paragraph = findParagraphBoundaries(fullText, caret);
-  const paragraphText = fullText.substring(paragraph.start, paragraph.end).trim();
-  if (paragraphText.length > 0 && paragraphText.length < fullText.trim().length) {
+  const paragraphText = fullText.substring(paragraph.start, paragraph.end);
+  if (paragraphText.trim().length > 0 && paragraphText.trim().length < fullText.trim().length) {
     return { text: paragraphText, start: paragraph.start, end: paragraph.end, isSelection: false, level: 'paragraph' };
   }
 
@@ -806,10 +806,11 @@ export function computeInferenceOptions(adapter: EditableAdapter) {
     level: 'field' as const,
   };
 
-  // Choose best: prefer explicit selection, else paragraph if meaningful, else field
+  // Choose best: prefer explicit selection, else the whole field.
+  // Paragraph remains available through the scope switcher, but defaulting to it
+  // silently sends/applies only part of multi-paragraph input.
   let best: InferredSelection = fieldOpt;
   if (selectionOpt) best = selectionOpt;
-  else if (paragraphOpt.text.trim().length > 0 && paragraphOpt.text.trim().length < fullText.trim().length) best = paragraphOpt;
 
   return {
     selection: selectionOpt,

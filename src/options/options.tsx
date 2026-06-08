@@ -53,7 +53,9 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Switch as MaterialDesign3Switch } from "@/components/ui/material-design-3-switch";
+import { Slider } from "@/components/ui/slider";
 import type { CustomAction } from "../content/storage";
+import type { AutoSpellcheckMode } from "../content/storage";
 import {
   loadCustomActions,
   saveCustomAction,
@@ -211,6 +213,10 @@ export default function Options() {
   // Appearance settings state
   const [hideDot, setHideDot] = useState(false);
   const [previewInCard, setPreviewInCard] = useState(true);
+  const [autoSpellcheckMode, setAutoSpellcheckMode] =
+    useState<AutoSpellcheckMode>("browser_only");
+  const [autoSpellcheckWordThreshold, setAutoSpellcheckWordThreshold] =
+    useState(50);
 
   // History & Toast status states
 
@@ -290,6 +296,8 @@ export default function Options() {
         "dropdownShortcutMeta",
         "hideDot",
         "previewInCard",
+        "autoSpellcheckMode",
+        "autoSpellcheckWordThreshold",
         "history",
       ])
       .then((res: Record<string, unknown>) => {
@@ -341,6 +349,18 @@ export default function Options() {
 
         setHideDot(!!res.hideDot);
         setPreviewInCard(res.previewInCard !== undefined ? !!res.previewInCard : true);
+        setAutoSpellcheckMode(
+          res.autoSpellcheckMode === "disabled" ||
+          res.autoSpellcheckMode === "browser_only" ||
+          res.autoSpellcheckMode === "always"
+            ? (res.autoSpellcheckMode as AutoSpellcheckMode)
+            : "browser_only",
+        );
+        setAutoSpellcheckWordThreshold(
+          typeof res.autoSpellcheckWordThreshold === "number"
+            ? Math.min(100, Math.max(1, Math.round(res.autoSpellcheckWordThreshold)))
+            : 50,
+        );
 
         getHistory().then(async (existingDBHistory) => {
           let finalHistory = existingDBHistory;
@@ -418,6 +438,8 @@ export default function Options() {
         dropdownShortcutMeta,
         hideDot,
         previewInCard,
+        autoSpellcheckMode,
+        autoSpellcheckWordThreshold,
       })
       .catch(console.error);
   }, [
@@ -435,6 +457,8 @@ export default function Options() {
     dropdownShortcutMeta,
     hideDot,
     previewInCard,
+    autoSpellcheckMode,
+    autoSpellcheckWordThreshold,
   ]);
 
   // Show status toasts
@@ -1663,6 +1687,82 @@ export default function Options() {
                                 haptic="none"
                               />
                             </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Automatic Spellcheck Row */}
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 py-6 border-t border-border/30">
+                        <div className="pr-4">
+                          <Label className="text-xs font-semibold text-foreground">
+                            Automatic Spellcheck
+                          </Label>
+                          <p className="text-[10px] text-muted-foreground/70 mt-1 leading-normal">
+                            Controls the automatic spellcheck flow. Text under the threshold uses Hone&apos;s local spelling and grammar algorithm. Text over the threshold uses your AI API for correction, and can be gated by the browser proofreader or local detector first.
+                          </p>
+                        </div>
+                        <div className="md:col-span-2">
+                          <div className="rounded-xl border border-border/20 bg-foreground/[0.01] p-0.5">
+                            <div className="flex flex-col gap-4 rounded-[calc(0.75rem-2px)] bg-foreground/[0.02] p-4">
+                              <div className="flex flex-col gap-1.5">
+                                <Label className="text-xs font-semibold text-foreground">
+                                  Long text auto-check mode
+                                </Label>
+                                <p className="text-[10px] text-muted-foreground/70 leading-normal">
+                                  When text is longer than the threshold, Hone can stay off, run only when the browser proofreader or fallback detector finds an issue, or always run the AI spellcheck.
+                                </p>
+                              </div>
+                              <Select
+                                value={autoSpellcheckMode}
+                                onValueChange={(value) =>
+                                  setAutoSpellcheckMode(value as AutoSpellcheckMode)
+                                }
+                              >
+                                <SelectTrigger className="mt-1 h-10 text-xs">
+                                  <SelectValue placeholder="Choose auto-check mode" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectGroup>
+                                    <SelectLabel className="text-[10px] uppercase tracking-wider text-muted-foreground px-2 py-1">
+                                      Auto-check modes
+                                    </SelectLabel>
+                                    <SelectItem value="disabled" className="text-xs">
+                                      Off
+                                    </SelectItem>
+                                    <SelectItem value="browser_only" className="text-xs">
+                                      Only if errors are detected
+                                    </SelectItem>
+                                    <SelectItem value="always" className="text-xs">
+                                      Always run
+                                    </SelectItem>
+                                  </SelectGroup>
+                                </SelectContent>
+                              </Select>
+                              <div className="flex flex-col gap-2">
+                                <div className="flex items-center justify-between gap-3">
+                                  <Label className="text-xs font-semibold text-foreground">
+                                    Long text threshold
+                                  </Label>
+                                  <span className="text-[10px] font-medium text-muted-foreground tabular-nums">
+                                    {autoSpellcheckWordThreshold} words
+                                  </span>
+                                </div>
+                                <Slider
+                                  value={[autoSpellcheckWordThreshold]}
+                                  min={1}
+                                  max={100}
+                                  step={1}
+                                  onValueChange={(value) =>
+                                    setAutoSpellcheckWordThreshold(
+                                      Math.min(100, Math.max(1, Math.round(value[0] ?? 50))),
+                                    )
+                                  }
+                                />
+                                <p className="text-[10px] text-muted-foreground/70 leading-normal">
+                                  Shorter text uses the local algorithm. Longer text crosses this threshold and may trigger detection first, then your AI API depending on the mode above. Hard capped at 100 words.
+                                </p>
+                              </div>
+                            </div>
                           </div>
                         </div>
                       </div>

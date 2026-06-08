@@ -22,6 +22,9 @@ import {
 } from "./keyboard-guard";
 import { wordDiff, type DiffToken } from "./word-diff";
 import { checkGrammarAndSpelling } from "./grammar-worker";
+import { browserHasSpellingErrors } from "./browser-proofreader";
+import { nspellHasSpellingErrors } from "./nspell-detector";
+import type { AutoSpellcheckMode } from "./storage";
 
 interface Toast {
   message: string;
@@ -36,6 +39,10 @@ interface Shortcut {
   meta: boolean;
   action: string;
 }
+
+type CardApplyTarget = InferredSelection & {
+  fieldSnapshot: string;
+};
 
 export default function App({
   portalContainer,
@@ -80,6 +87,10 @@ export default function App({
 
   // New Generalized Card & Settings states
   const [previewInCard, setPreviewInCard] = useState<boolean>(true);
+  const [autoSpellcheckMode, setAutoSpellcheckMode] =
+    useState<AutoSpellcheckMode>("browser_only");
+  const [autoSpellcheckWordThreshold, setAutoSpellcheckWordThreshold] =
+    useState(50);
   const [cardResultText, setCardResultText] = useState<string>("");
   const [cardDiff, setCardDiff] = useState<DiffToken[] | null>(null);
   const [isHarperLoading, setIsHarperLoading] = useState<boolean>(false);
@@ -113,6 +124,8 @@ export default function App({
   const [cardActionId, setCardActionId] = useState<string | null>(null);
   const cardApplyTextRef = useRef("");
   const cardOverrideInferenceRef = useRef<InferredSelection | undefined>(undefined);
+  const cardApplyTargetRef = useRef<CardApplyTarget | null>(null);
+  const lastAcceptedFieldTextRef = useRef<string | null>(null);
   const blurTimeoutRef = useRef(0);
   const heldResponseRef = useRef<{
     response: {
@@ -126,6 +139,23 @@ export default function App({
     span: { start: number; end: number; text: string; level: string };
     fieldSnapshot: string;
   } | null>(null);
+  const grammarCheckCacheRef = useRef<Map<string, string>>(new Map());
+
+  const clearCardState = useCallback(() => {
+    setCardResultText("");
+    setCardDiff(null);
+    setLocalResultText("");
+    setLocalDiff(null);
+    setCardActionId(null);
+    cardActionIdRef.current = null;
+    cardApplyTextRef.current = "";
+    cardOverrideInferenceRef.current = undefined;
+    cardApplyTargetRef.current = null;
+    setHarperHasErrors(false);
+    setLoadingActionId(null);
+    loadingActionIdRef.current = null;
+    setIsHarperLoading(false);
+  }, []);
 
   // Sync refs synchronously
   useEffect(() => {
@@ -202,43 +232,168 @@ export default function App({
 
   useEffect(() => {
     let active = true;
-    const runHarper = async () => {
+    const runGrammarCheck = async () => {
       if (!isMenuOpen || !activeLevelText) return;
-      setIsHarperLoading(true);
-      try {
-        const corrected = await checkGrammarAndSpelling(activeLevelText);
-        if (!active) return;
-        if (loadingActionIdRef.current) {
+
+      const threshold = Math.min(100, Math.max(1, autoSpellcheckWordThreshold || 50));
+      const wordCount = activeLevelText
+        .trim()
+        .split(/\s+/)
+        .filter((w) => w.length > 0).length;
+
+      const ctx = activeContextRef.current;
+      const adapter = ctx?.adapter;
+      const activeOverride =
+        inferenceOptions && selectedInferenceLevel
+          ? (inferenceOptions[selectedInferenceLevel] as InferredSelection | undefined)
+          : undefined;
+      const activeSpan = adapter
+        ? resolveReplacementSpan(adapter, activeOverride)
+        : null;
+      const fieldSnapshot = adapter?.getText() ?? "";
+      if (fieldSnapshot && fieldSnapshot === lastAcceptedFieldTextRef.current) {
+        setIsHarperLoading(false);
+        return;
+      }
+
+      if (wordCount <= threshold) {
+        setIsHarperLoading(true);
+        try {
+          const corrected = await checkGrammarAndSpelling(activeLevelText);
+          if (!active) return;
+          if (loadingActionIdRef.current) {
+            setIsHarperLoading(false);
+            return;
+          }
+
+          const diff = wordDiff(activeLevelText, corrected);
+          const hasErrors = diff.some((t) => t.type !== "equal");
+          setHarperHasErrors(hasErrors);
+          setCardResultText(corrected);
+          cardApplyTextRef.current = corrected;
+          setCardDiff(diff);
+          setLocalResultText(corrected);
+          setLocalDiff(diff);
+          cardActionIdRef.current = "fix_spelling_local";
+          setCardActionId("fix_spelling_local");
+          cardOverrideInferenceRef.current = activeOverride;
+          cardApplyTargetRef.current = activeSpan
+            ? { ...activeSpan, fieldSnapshot }
+            : null;
           setIsHarperLoading(false);
+        } catch (err) {
+          console.error("Failed to run Harper.js local check:", err);
+          if (active) {
+            setIsHarperLoading(false);
+          }
+        }
+        return;
+      }
+
+      if (autoSpellcheckMode === "disabled") {
+        setIsHarperLoading(false);
+        return;
+      }
+
+      setIsHarperLoading(true);
+
+      if (autoSpellcheckMode === "browser_only") {
+        const browserHasErrors = await browserHasSpellingErrors(activeLevelText);
+        if (!active || browserHasErrors === false) {
+          if (active) setIsHarperLoading(false);
           return;
         }
 
-        const diff = wordDiff(activeLevelText, corrected);
-        const hasErrors = diff.some(t => t.type !== "equal");
-        setHarperHasErrors(hasErrors);
-        setCardResultText(corrected);
-        cardApplyTextRef.current = corrected;
-        setCardDiff(diff);
-        setLocalResultText(corrected);
-        setLocalDiff(diff);
-        cardActionIdRef.current = "fix_spelling_local";
-        setCardActionId("fix_spelling_local");
-        cardOverrideInferenceRef.current = undefined;
-        setIsHarperLoading(false);
-      } catch (err) {
-        console.error("Failed to run Harper.js local check:", err);
-        if (active) {
-          setIsHarperLoading(false);
+        if (browserHasErrors === null) {
+          const nspellHasErrors = nspellHasSpellingErrors(activeLevelText, 500);
+          if (nspellHasErrors !== true) {
+            setIsHarperLoading(false);
+            return;
+          }
         }
+      }
+
+      const cacheKey = activeLevelText;
+      const cachedResponse = grammarCheckCacheRef.current.get(cacheKey);
+      if (cachedResponse) {
+        const diff = wordDiff(activeLevelText, cachedResponse);
+        setCardResultText(cachedResponse);
+        cardApplyTextRef.current = cachedResponse;
+        setCardDiff(diff);
+        setLocalResultText(cachedResponse);
+        setLocalDiff(diff);
+        cardActionIdRef.current = "fix_spelling_auto";
+        setCardActionId("fix_spelling_auto");
+        cardOverrideInferenceRef.current = activeOverride;
+        cardApplyTargetRef.current = activeSpan
+          ? { ...activeSpan, fieldSnapshot }
+          : null;
+        setHarperHasErrors(diff.some((t) => t.type !== "equal"));
+        setLoadingActionId(null);
+        loadingActionIdRef.current = null;
+        if (active) setIsHarperLoading(false);
+        return;
+      }
+
+      setLoadingActionId("fix_spelling_auto");
+      loadingActionIdRef.current = "fix_spelling_auto";
+      cardActionIdRef.current = "fix_spelling_auto";
+      setCardActionId("fix_spelling_auto");
+      cardOverrideInferenceRef.current = activeOverride;
+      cardApplyTargetRef.current = activeSpan
+        ? { ...activeSpan, fieldSnapshot }
+        : null;
+      setCardResultText("");
+      cardApplyTextRef.current = "";
+      setCardDiff(null);
+
+      if (adapter && activeSpan) {
+        const requestId = ++aiRequestIdRef.current;
+
+        chrome.runtime.sendMessage(
+          { type: "PROCESS_TEXT", action: "fix_spelling", text: activeSpan.text, requestId },
+          (response: {
+            success: boolean;
+            text?: string;
+            error?: string;
+            requestId?: number;
+          }) => {
+            if (!active || requestId !== aiRequestIdRef.current) return;
+            if (loadingActionIdRef.current !== "fix_spelling_auto") return;
+
+            setLoadingActionId(null);
+            loadingActionIdRef.current = null;
+            setIsHarperLoading(false);
+
+            if (response && response.success && response.text !== undefined) {
+              grammarCheckCacheRef.current.set(cacheKey, response.text);
+
+              const diff = wordDiff(activeLevelText, response.text);
+              setCardResultText(response.text);
+              cardApplyTextRef.current = response.text;
+              setCardDiff(diff);
+              setLocalResultText(response.text);
+              setLocalDiff(diff);
+              setHarperHasErrors(diff.some((t) => t.type !== "equal"));
+            } else {
+              showToast(response?.error || "AI request failed.", "error");
+              setCardResultText(activeLevelText);
+              cardApplyTextRef.current = activeLevelText;
+              setCardDiff(null);
+            }
+          }
+        );
+      } else if (active) {
+        setIsHarperLoading(false);
       }
     };
 
-    void runHarper();
+    void runGrammarCheck();
 
     return () => {
       active = false;
     };
-  }, [isMenuOpen, activeLevelText]);
+  }, [isMenuOpen, activeLevelText, autoSpellcheckMode, inferenceOptions, selectedInferenceLevel, showToast]);
 
   // Load config from storage
   useEffect(() => {
@@ -257,6 +412,8 @@ export default function App({
         "dropdownShortcutMeta",
         "hideDot",
         "previewInCard",
+        "autoSpellcheckMode",
+        "autoSpellcheckWordThreshold",
       ])) as Record<string, unknown>;
 
       if (res.shortcutKey) {
@@ -285,8 +442,20 @@ export default function App({
         action: "toggle_menu",
       });
 
-      setHideDot(!!res.hideDot);
-      setPreviewInCard(res.previewInCard !== undefined ? !!res.previewInCard : true);
+        setHideDot(!!res.hideDot);
+        setPreviewInCard(res.previewInCard !== undefined ? !!res.previewInCard : true);
+        setAutoSpellcheckMode(
+          res.autoSpellcheckMode === "disabled" ||
+          res.autoSpellcheckMode === "browser_only" ||
+          res.autoSpellcheckMode === "always"
+            ? (res.autoSpellcheckMode as AutoSpellcheckMode)
+            : "browser_only",
+        );
+        setAutoSpellcheckWordThreshold(
+          typeof res.autoSpellcheckWordThreshold === "number"
+            ? Math.min(100, Math.max(1, Math.round(res.autoSpellcheckWordThreshold)))
+            : 50,
+        );
     };
     loadConfig();
 
@@ -306,7 +475,9 @@ export default function App({
         changes.dropdownShortcutShift ||
         changes.dropdownShortcutMeta ||
         changes.hideDot ||
-        changes.previewInCard
+        changes.previewInCard ||
+        changes.autoSpellcheckMode ||
+        changes.autoSpellcheckWordThreshold
       ) {
         loadConfig();
       }
@@ -382,6 +553,12 @@ export default function App({
         // Clear saved focus after applying to prevent focus stealing
         editorElementRef.current = null;
         savedSelectionRef.current = null;
+        cardApplyTargetRef.current = null;
+        const expectedText =
+          fieldSnapshot.slice(0, span.start) +
+          response.text +
+          fieldSnapshot.slice(span.end);
+        lastAcceptedFieldTextRef.current = adapter.getText() || expectedText;
 
         if (response.fallbackUsed) {
           const providerNames: Record<string, string> = {
@@ -397,11 +574,13 @@ export default function App({
         } else {
           showToast(`Done! (${span.level})`, "success");
         }
+
+        clearCardState();
       } else {
         showToast(response?.error || "AI request failed.", "error");
       }
     },
-    [showToast],
+    [showToast, clearCardState],
   );
 
   // ── Apply suggestion card contents to editor ──
@@ -412,8 +591,9 @@ export default function App({
     const adapter = ctx?.adapter;
     if (!adapter) return;
 
-    const span = resolveReplacementSpan(adapter, cardOverrideInferenceRef.current);
-    const fieldSnapshot = adapter.getText();
+    const target = cardApplyTargetRef.current;
+    const span = target ?? resolveReplacementSpan(adapter, cardOverrideInferenceRef.current);
+    const fieldSnapshot = target?.fieldSnapshot ?? adapter.getText();
 
     setIsMenuOpen(false);
     setActionConfirm(null);
@@ -442,6 +622,7 @@ export default function App({
       cardActionIdRef.current = "fix_spelling_local";
       setCardActionId("fix_spelling_local");
       cardOverrideInferenceRef.current = undefined;
+      cardApplyTargetRef.current = null;
       setLoadingActionId(null);
       loadingActionIdRef.current = null;
     }
@@ -534,6 +715,10 @@ export default function App({
         cardActionIdRef.current = action;
         setCardActionId(action);
         cardOverrideInferenceRef.current = overrideInference;
+        cardApplyTargetRef.current = {
+          ...span,
+          fieldSnapshot: adapter.getText(),
+        };
 
         setCardResultText("");
         cardApplyTextRef.current = "";
@@ -554,6 +739,20 @@ export default function App({
           return;
         }
 
+        // Check cache for fix_spelling action
+        if (action === "fix_spelling") {
+          const cachedResponse = grammarCheckCacheRef.current.get(span.text);
+          if (cachedResponse) {
+            setLoadingActionId(null);
+            loadingActionIdRef.current = null;
+            const diff = wordDiff(span.text, cachedResponse);
+            setCardResultText(cachedResponse);
+            cardApplyTextRef.current = cachedResponse;
+            setCardDiff(diff);
+            return;
+          }
+        }
+
         const requestId = ++aiRequestIdRef.current;
         chrome.runtime.sendMessage(
           { type: "PROCESS_TEXT", action, text: span.text, requestId },
@@ -570,6 +769,11 @@ export default function App({
             loadingActionIdRef.current = null;
 
             if (response && response.success && response.text !== undefined) {
+              // Cache fix_spelling responses
+              if (action === "fix_spelling") {
+                grammarCheckCacheRef.current.set(span.text, response.text);
+              }
+              
               setCardResultText(response.text);
               cardApplyTextRef.current = response.text;
               if (action === "fix_spelling") {
@@ -834,6 +1038,21 @@ export default function App({
     return () => chrome.runtime.onMessage.removeListener(handleCommand);
   }, [isMenuOpen, openAssistant]);
 
+  const hasNonLocalCardResult =
+    !!cardResultText &&
+    !!cardActionId &&
+    cardActionId !== "fix_spelling_local" &&
+    cardActionId !== "fix_spelling_auto";
+
+  // Don't collapse to card-only mode for automatic grammar checking
+  // (fix_spelling_local for Harper.js, fix_spelling_auto for AI), even during loading state
+  const isCardOnly =
+    !revealMenuOverride &&
+    cardActionId !== "fix_spelling_local" &&
+    cardActionId !== "fix_spelling_auto" &&
+    loadingActionId !== "fix_spelling_auto" &&
+    (!!actionConfirm || hasNonLocalCardResult || !!loadingActionId);
+
   // ── Focus tracking ──
   useEffect(() => {
     const onFocusIn = (e: FocusEvent) => {
@@ -875,37 +1094,23 @@ export default function App({
       }
     };
 
-    const onFocusOut = (e: FocusEvent) => {
+    const onFocusOut = () => {
       if (isInsideShadow.current) return;
-      // Don't close if there's an active operation (loading, confirmation, or AI result to apply)
-      // Allow closing for Harper.js local spellcheck results
-      const hasActiveOperation =
-        !!loadingActionIdRef.current ||
-        !!actionConfirmRef.current ||
-        (cardActionIdRef.current && cardActionIdRef.current !== "fix_spelling_local");
-      if (
-        isMenuOpenRef.current ||
-        hasActiveOperation
-      ) {
-        return;
-      }
 
-      const relatedTarget = e.relatedTarget as Element | null;
-      if (relatedTarget && isEditableElement(relatedTarget)) return;
+      const hasPinnedCardState =
+        isCardOnly ||
+        !!actionConfirm ||
+        !!loadingActionIdRef.current ||
+        (!!cardActionIdRef.current &&
+          cardActionIdRef.current !== "fix_spelling_local");
+
+      if (hasPinnedCardState && !document.hasFocus()) return;
+
+      if (isCardOnly) return;
 
       blurTimeoutRef.current = window.setTimeout(() => {
         if (isInsideShadow.current) return;
-        // Re-check active operation in timeout
-        const hasActiveOperationNow =
-          !!loadingActionIdRef.current ||
-          !!actionConfirmRef.current ||
-          (cardActionIdRef.current && cardActionIdRef.current !== "fix_spelling_local");
-        if (
-          isMenuOpenRef.current ||
-          hasActiveOperationNow
-        ) {
-          return;
-        }
+        if (hasPinnedCardState && !document.hasFocus()) return;
         activeContextRef.current = null;
         setActiveContext(null);
         anchorRectRef.current = null;
@@ -922,7 +1127,7 @@ export default function App({
       window.removeEventListener("focusin", onFocusIn, true);
       window.removeEventListener("focusout", onFocusOut, true);
     };
-  }, []);
+  }, [isCardOnly]);
 
   // ── Throttled rect updater ──
   const updateRect = useCallback(() => {
@@ -997,20 +1202,14 @@ export default function App({
     if (!isMenuOpen) return;
     const handleClick = () => {
       if (!isInsideShadow.current) {
-        // Don't close if there's an active operation (loading, confirmation, or AI result to apply)
-        // Allow closing for Harper.js local spellcheck results
-        const hasActiveOperation =
-          !!loadingActionIdRef.current ||
-          !!actionConfirmRef.current ||
-          (cardActionIdRef.current && cardActionIdRef.current !== "fix_spelling_local");
-        if (!hasActiveOperation) {
+        if (!isCardOnly) {
           setIsMenuOpen(false);
         }
       }
     };
     document.addEventListener("mousedown", handleClick, true);
     return () => document.removeEventListener("mousedown", handleClick, true);
-  }, [isMenuOpen]);
+  }, [isMenuOpen, isCardOnly]);
 
   // ── MutationObserver: detect removed active element ──
   useEffect(() => {
@@ -1065,11 +1264,9 @@ export default function App({
   useEffect(() => {
     if (!isMenuOpen) return;
     return () => {
-      cardApplyTextRef.current = "";
-      cardActionIdRef.current = "fix_spelling_local";
-      loadingActionIdRef.current = null;
+      clearCardState();
     };
-  }, [isMenuOpen]);
+  }, [isMenuOpen, clearCardState]);
 
   // ── Keep editor focused while menu is open ──
   useEffect(() => {
@@ -1144,13 +1341,6 @@ export default function App({
     ],
   );
 
-  const hasNonLocalCardResult =
-    !!cardResultText && !!cardActionId && cardActionId !== "fix_spelling_local";
-
-  const isCardOnly =
-    !revealMenuOverride &&
-    (!!actionConfirm || hasNonLocalCardResult || !!loadingActionId);
-
   const canApplyCard =
     !!cardResultText &&
     !isHarperLoading &&
@@ -1163,7 +1353,7 @@ export default function App({
     harperHasErrors ||
     !!loadingActionId ||
     !!actionConfirm ||
-    (!!cardActionId && cardActionId !== "fix_spelling_local");
+    (!!cardActionId && cardActionId !== "fix_spelling_local" && cardActionId !== "fix_spelling_auto");
 
   // ── Capture keyboard so Enter/Space never reach the field behind ──
   useEffect(() => {

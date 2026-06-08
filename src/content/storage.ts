@@ -29,6 +29,8 @@ export interface CustomAction {
   createdAt: number
 }
 
+export type AutoSpellcheckMode = 'disabled' | 'browser_only' | 'always';
+
 export interface Config {
   // Shortcuts
   shortcutKey?: string;
@@ -47,6 +49,8 @@ export interface Config {
   // UI
   hideDot?: boolean;
   previewInCard?: boolean;
+  autoSpellcheckMode?: AutoSpellcheckMode;
+  autoSpellcheckWordThreshold?: number;
 
   // API
   googleAiStudioKey?: string;
@@ -70,6 +74,8 @@ const CONFIG_KEYS: (keyof Config)[] = [
   'dropdownShortcutMeta',
   'hideDot',
   'previewInCard',
+  'autoSpellcheckMode',
+  'autoSpellcheckWordThreshold',
   'googleAiStudioKey',
   'googleAiStudioModel',
   'provider',
@@ -298,4 +304,3 @@ export async function clearHistory(): Promise<void> {
     request.onsuccess = () => resolve();
   });
 }
-
