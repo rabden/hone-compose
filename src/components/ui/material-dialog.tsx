@@ -101,7 +101,7 @@ export function DialogContent({ children, className, onOpened, ...props }: Dialo
                 slot="content"
                 className={cn(
                     // Default panel styles — override via className
-                    "bg-card border border-border/40 rounded-2xl shadow-2xl overflow-hidden w-full flex flex-col",
+                    "bg-card rounded-2xl shadow-lg overflow-hidden w-full flex flex-col",
                     className
                 )}
             >
@@ -118,7 +118,7 @@ export function DialogContent({ children, className, onOpened, ...props }: Dialo
  */
 export function DialogTitle({ children, className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
     return (
-        <div className={cn("px-6 pt-5 pb-4 border-b border-border/40", className)} {...props}>
+        <div className={cn("px-6 pt-5 pb-4", className)} {...props}>
             {children}
         </div>
     );

@@ -2,6 +2,7 @@
 @import "@fontsource-variable/noto-sans";
 @import "tailwindcss";
 @import "shadcn/tailwind.css";
+@import "../components/dotmatrix-loader.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -9,75 +10,76 @@
 :host,
 .ai-assistant-shadow-root {
     --radius: 0.625rem;
-    --background: oklch(1 0 0);
-    --foreground: oklch(0.145 0 0);
-    --card: oklch(1 0 0);
-    --card-foreground: oklch(0.145 0 0);
-    --popover: oklch(1 0 0);
-    --popover-foreground: oklch(0.145 0 0);
-    --primary: oklch(0.205 0 0);
-    --primary-foreground: oklch(0.985 0 0);
-    --secondary: oklch(0.97 0 0);
-    --secondary-foreground: oklch(0.205 0 0);
-    --muted: oklch(0.97 0 0);
-    --muted-foreground: oklch(0.556 0 0);
-    --accent: oklch(0.97 0 0);
-    --accent-foreground: oklch(0.205 0 0);
-    --destructive: oklch(0.577 0.245 27.325);
+    --background: oklch(0.982774 0.006715 277.1653);
+    --foreground: oklch(0.318359 0.014970 251.7953);
+    --card: oklch(0.948846 0.009935 267.3575);
+    --card-foreground: oklch(0.318359 0.014970 251.7953);
+    --popover: oklch(0.930265 0.011638 264.5087);
+    --popover-foreground: oklch(0.318359 0.014970 251.7953);
+    --primary: oklch(0.484162 0.075260 246.5208);
+    --primary-foreground: oklch(0.981556 0.008604 264.5226);
+    --secondary: oklch(0.912879 0.030745 255.1100);
+    --secondary-foreground: oklch(0.436129 0.030498 250.2541);
+    --muted: oklch(0.914307 0.012155 259.9449);
+    --muted-foreground: oklch(0.486394 0.013464 251.6625);
+    --accent: oklch(0.832623 0.066810 287.9082);
+    --accent-foreground: oklch(0.377165 0.067549 284.9524);
+    --destructive: oklch(0.502673 0.147783 25.0107);
     --destructive-foreground: oklch(0.985 0 0);
-    --border: oklch(0.922 0 0);
-    --input: oklch(0.922 0 0);
-    --ring: oklch(0.708 0 0);
+    --border: oklch(0.762152 0.014090 263.0125);
+    --input: oklch(0.762152 0.014090 263.0125);
+    --ring: oklch(0.484162 0.075260 246.5208);
     font-family: "Geist Variable", system-ui, sans-serif;
     color-scheme: light;
+    cursor: default;
 }
 
 @media (prefers-color-scheme: dark) {
     :host,
     .ai-assistant-shadow-root {
-        --background: oklch(0.145 0 0);
-        --foreground: oklch(0.985 0 0);
-        --card: oklch(0.205 0 0);
-        --card-foreground: oklch(0.985 0 0);
-        --popover: oklch(0.205 0 0);
-        --popover-foreground: oklch(0.985 0 0);
-        --primary: oklch(0.922 0 0);
-        --primary-foreground: oklch(0.205 0 0);
-        --secondary: oklch(0.269 0 0);
-        --secondary-foreground: oklch(0.985 0 0);
-        --muted: oklch(0.269 0 0);
-        --muted-foreground: oklch(0.708 0 0);
-        --accent: oklch(0.269 0 0);
-        --accent-foreground: oklch(0.985 0 0);
-        --destructive: oklch(0.704 0.191 22.216);
+        --background: oklch(0.163416 0.009062 264.2845);
+        --foreground: oklch(0.923417 0.012124 259.9448);
+        --card: oklch(0.215990 0.011544 253.5261);
+        --card-foreground: oklch(0.923417 0.012124 259.9448);
+        --popover: oklch(0.240631 0.012108 248.3295);
+        --popover-foreground: oklch(0.923417 0.012124 259.9448);
+        --primary: oklch(0.827961 0.055887 248.5033);
+        --primary-foreground: oklch(0.372263 0.057941 244.9352);
+        --secondary: oklch(0.352797 0.031394 247.0131);
+        --secondary-foreground: oklch(0.804788 0.030459 253.4472);
+        --muted: oklch(0.266643 0.014961 256.7978);
+        --muted-foreground: oklch(0.739797 0.014197 263.0105);
+        --accent: oklch(0.832623 0.066810 287.9082);
+        --accent-foreground: oklch(0.377165 0.067549 284.9524);
+        --destructive: oklch(0.716674 0.165639 24.1225);
         --destructive-foreground: oklch(0.985 0 0);
-        --border: oklch(1 0 0 / 10%);
-        --input: oklch(1 0 0 / 15%);
-        --ring: oklch(0.556 0 0);
+        --border: oklch(0.399672 0.013499 256.7583);
+        --input: oklch(0.399672 0.013499 256.7583);
+        --ring: oklch(0.827961 0.055887 248.5033);
         color-scheme: dark;
     }
 }
 
 .ai-assistant-shadow-root.dark {
-    --background: oklch(0.145 0 0);
-    --foreground: oklch(0.985 0 0);
-    --card: oklch(0.205 0 0);
-    --card-foreground: oklch(0.985 0 0);
-    --popover: oklch(0.205 0 0);
-    --popover-foreground: oklch(0.985 0 0);
-    --primary: oklch(0.922 0 0);
-    --primary-foreground: oklch(0.205 0 0);
-    --secondary: oklch(0.269 0 0);
-    --secondary-foreground: oklch(0.985 0 0);
-    --muted: oklch(0.269 0 0);
-    --muted-foreground: oklch(0.708 0 0);
-    --accent: oklch(0.269 0 0);
-    --accent-foreground: oklch(0.985 0 0);
-    --destructive: oklch(0.704 0.191 22.216);
+    --background: oklch(0.163416 0.009062 264.2845);
+    --foreground: oklch(0.923417 0.012124 259.9448);
+    --card: oklch(0.215990 0.011544 253.5261);
+    --card-foreground: oklch(0.923417 0.012124 259.9448);
+    --popover: oklch(0.240631 0.012108 248.3295);
+    --popover-foreground: oklch(0.923417 0.012124 259.9448);
+    --primary: oklch(0.827961 0.055887 248.5033);
+    --primary-foreground: oklch(0.372263 0.057941 244.9352);
+    --secondary: oklch(0.352797 0.031394 247.0131);
+    --secondary-foreground: oklch(0.804788 0.030459 253.4472);
+    --muted: oklch(0.266643 0.014961 256.7978);
+    --muted-foreground: oklch(0.739797 0.014197 263.0105);
+    --accent: oklch(0.832623 0.066810 287.9082);
+    --accent-foreground: oklch(0.377165 0.067549 284.9524);
+    --destructive: oklch(0.716674 0.165639 24.1225);
     --destructive-foreground: oklch(0.985 0 0);
-    --border: oklch(1 0 0 / 10%);
-    --input: oklch(1 0 0 / 15%);
-    --ring: oklch(0.556 0 0);
+    --border: oklch(0.399672 0.013499 256.7583);
+    --input: oklch(0.399672 0.013499 256.7583);
+    --ring: oklch(0.827961 0.055887 248.5033);
     color-scheme: dark;
 }
 
@@ -323,7 +325,7 @@
     border-radius: 9999px;
     border: 3px solid transparent;
     background-clip: content-box;
-    transition: border-width 150ms ease;
+    transition: border-width 250ms cubic-bezier(0.34, 1.56, 0.64, 1), background 250ms cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 .ai-assistant-shadow-root::-webkit-scrollbar-thumb:hover,
 .ai-assistant-shadow-root *::-webkit-scrollbar-thumb:hover {

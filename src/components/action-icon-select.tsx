@@ -77,7 +77,7 @@ export function ActionIconSelect({
         aria-expanded={open}
         onClick={() => setOpen((prev) => !prev)}
         className={cn(
-          "flex h-9 w-full items-center justify-between gap-2 rounded-lg border border-input bg-secondary/80 hover:bg-secondary px-3",
+          "flex h-9 w-full items-center justify-between gap-2 rounded-lg border border-input bg-background hover:bg-background/50 px-3",
           "text-xs transition-colors",
           open && "border-ring ring-3 ring-ring/50",
         )}
@@ -90,7 +90,7 @@ export function ActionIconSelect({
         </span>
         <ChevronDown
           className={cn(
-            "size-3.5 shrink-0 text-muted-foreground transition-transform duration-200",
+            "size-3.5 shrink-0 text-muted-foreground transition-transform duration-200 ease-out",
             open && "rotate-180",
           )}
           aria-hidden
@@ -101,7 +101,7 @@ export function ActionIconSelect({
         <div
           role="listbox"
           aria-label="Choose action icon"
-          className="absolute left-0 top-[calc(100%+4px)] z-50 w-full min-w-[13rem] rounded-xl border border-border bg-card p-2 shadow-lg"
+          className="absolute left-0 top-[calc(100%+4px)] z-50 w-full min-w-[13rem] rounded-xl border border-border bg-card p-2 shadow-lg animate-in fade-in duration-200 ease-out"
         >
           <div className="relative mb-2">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground/50 pointer-events-none" />
@@ -141,11 +141,11 @@ export function ActionIconSelect({
                       aria-selected={isSelected}
                       title={label}
                       onClick={() => handleSelect(name)}
-                      className={cn(
-                        "flex size-8 items-center justify-center rounded-lg transition-all duration-150",
-                        "hover:bg-muted/60 active:scale-90",
-                        isSelected && "bg-foreground/[0.06]",
-                      )}
+                       className={cn(
+                         "flex size-8 items-center justify-center rounded-lg transition-all duration-150 ease-out",
+                         "hover:bg-muted/60 active:scale-[0.92]",
+                         isSelected && "bg-foreground/[0.06]",
+                       )}
                       style={
                         isSelected
                           ? {

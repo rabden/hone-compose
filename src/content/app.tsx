@@ -72,7 +72,7 @@ export default function App({
   >(null);
   const [menuPos, setMenuPos] = useState({ top: 0, left: 0 });
   const [focusedActionIdx, setFocusedActionIdx] = useState(0);
-  const [customActions, setCustomActions] = useState<ActionHandler[]>([]);
+  const [actions, setActions] = useState<ActionHandler[]>([]);
   const [isAiProcessing, setIsAiProcessing] = useState(false);
   const [processingSpan, setProcessingSpan] = useState<{
     start: number;
@@ -90,7 +90,7 @@ export default function App({
   const [autoSpellcheckMode, setAutoSpellcheckMode] =
     useState<AutoSpellcheckMode>("browser_only");
   const [autoSpellcheckWordThreshold, setAutoSpellcheckWordThreshold] =
-    useState(50);
+    useState(20);
   const [cardResultText, setCardResultText] = useState<string>("");
   const [cardDiff, setCardDiff] = useState<DiffToken[] | null>(null);
   const [isHarperLoading, setIsHarperLoading] = useState<boolean>(false);
@@ -165,21 +165,20 @@ export default function App({
     anchorRectRef.current = anchorRect;
   }, [anchorRect]);
 
-  // ── Load custom actions from registry ──
+  // ── Load all actions from registry ──
   useEffect(() => {
     const load = async () => {
       const registry = new ActionRegistry();
-      await registry.loadCustoms();
+      await registry.loadActions();
       registryRef.current = registry;
-      setCustomActions(registry.getByCategory("custom"));
+      setActions(registry.getAll());
     };
     load();
 
-    // Reload on storage changes
     const onChange = (changes: {
       [key: string]: chrome.storage.StorageChange;
     }) => {
-      if (changes.customActions) {
+      if (changes.actionConfigs || changes.customActions) {
         load();
       }
     };
@@ -235,7 +234,7 @@ export default function App({
     const runGrammarCheck = async () => {
       if (!isMenuOpen || !activeLevelText) return;
 
-      const threshold = Math.min(100, Math.max(1, autoSpellcheckWordThreshold || 50));
+      const threshold = Math.min(50, Math.max(10, autoSpellcheckWordThreshold || 20));
       const wordCount = activeLevelText
         .trim()
         .split(/\s+/)
@@ -453,8 +452,8 @@ export default function App({
         );
         setAutoSpellcheckWordThreshold(
           typeof res.autoSpellcheckWordThreshold === "number"
-            ? Math.min(100, Math.max(1, Math.round(res.autoSpellcheckWordThreshold)))
-            : 50,
+            ? Math.min(50, Math.max(10, Math.round(res.autoSpellcheckWordThreshold)))
+            : 20,
         );
     };
     loadConfig();
@@ -902,19 +901,6 @@ export default function App({
     [showToast, triggerAIAction],
   );
 
-  const cycleInferenceLevel = useCallback((direction: -1 | 1) => {
-    if (!selectedInferenceLevel) return;
-    const order: Array<"selection" | "paragraph" | "field"> = [
-      "selection",
-      "paragraph",
-      "field",
-    ];
-    const currentLevel = selectedInferenceLevel === "sentence" ? "paragraph" : selectedInferenceLevel;
-    const idx = order.indexOf(currentLevel as "selection" | "paragraph" | "field");
-    const next = order[(idx + direction + order.length) % order.length];
-    setSelectedInferenceLevel(next);
-  }, [selectedInferenceLevel]);
-
   const getInferenceOverride = useCallback((): InferredSelection | undefined => {
     if (!inferenceOptions || !selectedInferenceLevel) return undefined;
     return inferenceOptions[selectedInferenceLevel] as InferredSelection | undefined;
@@ -978,25 +964,6 @@ export default function App({
         return;
       }
 
-      const hasActivePreviewCardOnlyState =
-        !revealMenuOverride &&
-        (!!actionConfirm ||
-          !!loadingActionIdRef.current ||
-          (!!cardActionIdRef.current &&
-            cardActionIdRef.current !== "fix_spelling_local"));
-
-      // 4. Left/Right arrow keys change inference level only when the menu
-      // column is actually available, not while a card-only preview owns the UI.
-      if (isMenuOpen && inferenceOptions && !hasActivePreviewCardOnlyState) {
-        if (e.key === "ArrowLeft") {
-          e.preventDefault();
-          cycleInferenceLevel(-1);
-        } else if (e.key === "ArrowRight") {
-          e.preventDefault();
-          cycleInferenceLevel(1);
-        }
-      }
-
       // 5. Escape key to cancel background AI generation when menu is closed
       if (e.key === "Escape" && isAiProcessing && !actionConfirm && !isMenuOpen) {
         e.preventDefault();
@@ -1011,7 +978,7 @@ export default function App({
 
     window.addEventListener("keydown", handleKeyDown, true);
     return () => window.removeEventListener("keydown", handleKeyDown, true);
-  }, [shortcut, dropdownShortcut, isMenuOpen, openAssistant, actionConfirm, cycleInferenceLevel, inferenceOptions, isAiProcessing, revealMenuOverride, cancelActionConfirm, handleCancelCard]);
+  }, [shortcut, dropdownShortcut, isMenuOpen, openAssistant, actionConfirm, isAiProcessing, revealMenuOverride, cancelActionConfirm, handleCancelCard]);
 
   // ── Chrome command shortcuts (manifest commands) ──
   useEffect(() => {
@@ -1236,11 +1203,16 @@ export default function App({
   }, []);
 
   // ── Menu keyboard-nav indices (primary → custom → tone → length) ──
-  const PRIMARY_ACTION_COUNT = 3;
-  const TONE_ACTION_COUNT = 4;
-  const LENGTH_ACTION_COUNT = 2;
-  const customActionCount = customActions.length;
-  const toneActionStartIdx = PRIMARY_ACTION_COUNT + customActionCount;
+  const primaryActions = useMemo(() => actions.filter((a) => a.category === "primary"), [actions]);
+  const customActions = useMemo(() => actions.filter((a) => a.category === "custom"), [actions]);
+  const toneActions = useMemo(() => actions.filter((a) => a.category === "tone"), [actions]);
+  const lengthActions = useMemo(() => actions.filter((a) => a.category === "length"), [actions]);
+  const PRIMARY_ACTION_COUNT = primaryActions.length;
+  const CUSTOM_ACTION_COUNT = customActions.length;
+  const TONE_ACTION_COUNT = toneActions.length;
+  const LENGTH_ACTION_COUNT = lengthActions.length;
+  const customActionStartIdx = PRIMARY_ACTION_COUNT;
+  const toneActionStartIdx = PRIMARY_ACTION_COUNT + CUSTOM_ACTION_COUNT;
   const lengthActionStartIdx = toneActionStartIdx + TONE_ACTION_COUNT;
   const actionItemCount =
     lengthActionStartIdx + LENGTH_ACTION_COUNT;
@@ -1292,6 +1264,11 @@ export default function App({
     return () => clearTimeout(timeout);
   }, [isMenuOpen, actionItemCount]);
 
+  const flatActionList = useMemo(
+    () => [...primaryActions, ...customActions, ...toneActions, ...lengthActions],
+    [primaryActions, customActions, toneActions, lengthActions],
+  );
+
   const activateMenuActionAtIndex = useCallback(
     (idx: number) => {
       const override: InferredSelection | undefined =
@@ -1299,35 +1276,7 @@ export default function App({
           ? (inferenceOptions[selectedInferenceLevel] as InferredSelection | undefined)
           : undefined;
 
-      const primary = ["improve", "paraphrase", "fix_spelling"] as const;
-      const tones = [
-        "tone_professional",
-        "tone_casual",
-        "tone_exciting",
-        "tone_friendly",
-      ] as const;
-      const lengths = ["length_shorter", "length_longer"] as const;
-
-      const actionId = (() => {
-        if (idx < PRIMARY_ACTION_COUNT) {
-          return primary[idx] ?? null;
-        }
-        if (idx < PRIMARY_ACTION_COUNT + customActions.length) {
-          return customActions[idx - PRIMARY_ACTION_COUNT]?.id ?? null;
-        }
-        if (
-          idx <
-          PRIMARY_ACTION_COUNT + customActions.length + TONE_ACTION_COUNT
-        ) {
-          return tones[idx - PRIMARY_ACTION_COUNT - customActions.length] ?? null;
-        }
-        const lenIdx =
-          idx -
-          PRIMARY_ACTION_COUNT -
-          customActions.length -
-          TONE_ACTION_COUNT;
-        return lengths[lenIdx] ?? null;
-      })();
+      const actionId = flatActionList[idx]?.id ?? null;
       if (actionId) {
         suppressKeysUntilRef.current = performance.now() + 250;
         triggerAIAction(actionId, override);
@@ -1336,7 +1285,7 @@ export default function App({
     [
       inferenceOptions,
       selectedInferenceLevel,
-      customActions,
+      flatActionList,
       triggerAIAction,
     ],
   );
@@ -1656,16 +1605,13 @@ export default function App({
           width={menuWidth}
           shortcut={dropdownShortcut}
           quickShortcut={shortcut}
-          inferenceOptions={inferenceOptions as Record<string, { text?: string }> | null}
-          selectedInferenceLevel={selectedInferenceLevel}
-          onInferencePrev={() => cycleInferenceLevel(-1)}
-          onInferenceNext={() => cycleInferenceLevel(1)}
-          customActions={customActions}
+
+          actions={actions}
           focusedActionIdx={focusedActionIdx}
           onFocusAction={setFocusedActionIdx}
           onTriggerAction={triggerAIAction}
           hasAdapter={!!activeContext?.adapter}
-          customActionStartIdx={PRIMARY_ACTION_COUNT}
+          customActionStartIdx={customActionStartIdx}
           toneActionStartIdx={toneActionStartIdx}
           lengthActionStartIdx={lengthActionStartIdx}
           getInferenceOverride={getInferenceOverride}

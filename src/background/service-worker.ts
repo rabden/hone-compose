@@ -28,6 +28,7 @@ async function saveToHistory(item: Omit<HistoryItem, 'id' | 'timestamp'>) {
       ...item,
       rewrittenText: cleanAiResponse(item.rewrittenText),
     });
+    chrome.runtime.sendMessage({ type: 'HISTORY_UPDATED' }).catch(() => {});
   } catch (err) {
     console.error('Failed to save history:', err);
   }
@@ -39,7 +40,7 @@ let _registry: ActionRegistry | null = null;
 async function getRegistry(): Promise<ActionRegistry> {
   if (!_registry) {
     _registry = new ActionRegistry();
-    await _registry.loadCustoms();
+    await _registry.loadActions();
   }
   return _registry;
 }
@@ -149,7 +150,7 @@ async function tryOpenAI(
   signal?: AbortSignal
 ): Promise<{ text: string; model: string }> {
   const apiKey = settings.openaiKey;
-  const model = settings.openaiModel || 'gpt-4o-mini';
+  const model = settings.openaiModel || 'gpt-5-mini';
   const endpoint = settings.openaiEndpoint || 'https://api.openai.com/v1/chat/completions';
 
   if (!apiKey) throw new Error('OpenAI API Key is missing.');
@@ -185,13 +186,13 @@ async function tryAnthropic(
   signal?: AbortSignal
 ): Promise<{ text: string; model: string }> {
   const apiKey = settings.anthropicKey;
-  const model = settings.anthropicModel || 'claude-3-5-sonnet-20241022';
+  const model = settings.anthropicModel || 'claude-sonnet-4-6';
 
   if (!apiKey) throw new Error('Anthropic API Key is missing.');
 
   const body: Record<string, unknown> = {
     model,
-    max_tokens: 1024,
+    max_tokens: 8192,
     messages: [{ role: 'user', content: prompt }],
     temperature: 0.7
   };
@@ -273,6 +274,50 @@ async function tryOpenRouterPaid(
   if (!model) throw new Error('OpenRouter Paid Model Name is missing.');
 
   const resultText = await fetchOpenRouter(apiKey, model, prompt, system, signal);
+  return { text: resultText, model };
+}
+
+async function tryGroq(
+  settings: Record<string, string | undefined>,
+  prompt: string,
+  system?: string,
+  signal?: AbortSignal
+): Promise<{ text: string; model: string }> {
+  const apiKey = settings.groqKey;
+  const model = settings.groqModel || 'groq/compound-mini';
+
+  if (!apiKey) throw new Error('Groq API Key is missing.');
+
+  const res = await fetchWithTimeout('https://api.groq.com/openai/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`
+    },
+    body: JSON.stringify({
+      model,
+      messages: chatMessages(system, prompt),
+      temperature: 1,
+      max_completion_tokens: 1024,
+      top_p: 1,
+      stream: false,
+      stop: null,
+      compound_custom: {
+        tools: {
+          enabled_tools: [],
+        },
+      },
+    })
+  }, 20000, signal);
+
+  if (!res.ok) {
+    const errorJson = await res.json().catch(() => ({}));
+    throw new Error(errorJson?.error?.message || `Groq request failed: ${res.statusText}`);
+  }
+
+  const data = await res.json();
+  const resultText = data.choices?.[0]?.message?.content?.trim();
+  if (!resultText) throw new Error('Empty response received from Groq.');
   return { text: resultText, model };
 }
 
@@ -398,7 +443,9 @@ async function callAIProviderRaw(
     'openrouterPaidKey',
     'openrouterPaidModel',
     'googleAiStudioKey',
-    'googleAiStudioModel'
+    'googleAiStudioModel',
+    'groqKey',
+    'groqModel'
   ]);
   const settings = rawSettings as Record<string, string | undefined>;
   const registry = await getRegistry();
@@ -416,6 +463,8 @@ async function callAIProviderRaw(
         return tryGemini(settings, prompt, system, signal);
       case 'google_ai_studio':
         return tryGoogleAISudio(settings, prompt, system, signal);
+      case 'groq':
+        return tryGroq(settings, prompt, system, signal);
       case 'openrouter_paid':
         return tryOpenRouterPaid(settings, prompt, system, signal);
       case 'openrouter':
@@ -437,12 +486,13 @@ async function callAIProviderRaw(
     console.warn(`Primary provider ${primaryProvider} failed:`, errMsg(primaryErr));
 
     // 2. Identify all alternative configured providers
-    const providersList = ['google_ai_studio', 'openai', 'anthropic', 'gemini', 'openrouter_paid', 'openrouter'];
+    const providersList = ['google_ai_studio', 'openai', 'anthropic', 'gemini', 'groq', 'openrouter_paid', 'openrouter'];
     const altProviders = providersList.filter(p => p !== primaryProvider).filter(p => {
       if (p === 'openai' && settings.openaiKey) return true;
       if (p === 'anthropic' && settings.anthropicKey) return true;
       if (p === 'gemini' && settings.geminiKey) return true;
       if (p === 'google_ai_studio' && settings.googleAiStudioKey) return true;
+      if (p === 'groq' && settings.groqKey) return true;
       if (p === 'openrouter_paid' && settings.openrouterPaidKey && settings.openrouterPaidModel) return true;
       if (p === 'openrouter' && settings.openrouterKey) return true;
       return false;

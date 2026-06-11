@@ -296,10 +296,10 @@ The Options page gives you full control:
   </tr>
   <tr>
     <td width="50%" align="center">
-      <img src="./src/assets/extension.png" alt="Hone Extension in Action" width="100%" style="border-radius:12px;border:1px solid #333;" />
+      <img src="./src/assets/customizations.png" alt="Hone Custom Actions" width="100%" style="border-radius:12px;border:1px solid #333;" />
       <br><br>
-      <strong>In Action</strong><br>
-      <span style="font-size:13px;color:#888;">Floating menu over a web text field</span>
+      <strong>Customize Settings</strong><br>
+      <span style="font-size:13px;color:#888;">Tailor providers, key bindings, and default behaviors to your workflow</span>
     </td>
     <td width="50%" align="center">
       <img src="./src/assets/new-action.png" alt="Hone Custom Action Editor" width="100%" style="border-radius:12px;border:1px solid #333;" />

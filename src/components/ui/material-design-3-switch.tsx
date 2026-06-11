@@ -75,9 +75,10 @@ export interface SwitchProps
     VariantProps<typeof switchVariants> {
   onCheckedChange?: (checked: boolean) => void;
   showIcons?: boolean;
-  checkedIcon?: React.ReactNode;   // Custom Icon for On State
-  uncheckedIcon?: React.ReactNode; // Custom Icon for Off State
+  checkedIcon?: React.ReactNode;
+  uncheckedIcon?: React.ReactNode;
   haptic?: "heavy" | "light" | "none";
+  pressed?: boolean;
 }
 
 const Switch = React.forwardRef<HTMLInputElement, SwitchProps>(
@@ -92,13 +93,15 @@ const Switch = React.forwardRef<HTMLInputElement, SwitchProps>(
     checkedIcon, 
     uncheckedIcon, 
     haptic = "none", 
+    pressed,
     style, 
     disabled, 
     ...props 
   }, ref) => {
     const [isChecked, setIsChecked] = React.useState(defaultChecked ?? false);
-    const [isPressed, setIsPressed] = React.useState(false);
+    const [internalPressed, setInternalPressed] = React.useState(false);
     const [isHovered, setIsHovered] = React.useState(false);
+    const isPressed = pressed !== undefined ? pressed : internalPressed;
 
     React.useEffect(() => {
       if (checked !== undefined) {
@@ -139,10 +142,10 @@ const Switch = React.forwardRef<HTMLInputElement, SwitchProps>(
           "min-w-[48px] min-h-[48px]" 
         )}
         style={{ ...SWITCH_THEME, ...style }}
-        onPointerDown={() => !disabled && setIsPressed(true)}
-        onPointerUp={() => setIsPressed(false)}
+        onPointerDown={() => !disabled && setInternalPressed(true)}
+        onPointerUp={() => setInternalPressed(false)}
         onPointerLeave={() => {
-          setIsPressed(false);
+          setInternalPressed(false);
           setIsHovered(false);
         }}
         onPointerEnter={() => !disabled && setIsHovered(true)}

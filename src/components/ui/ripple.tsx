@@ -25,6 +25,12 @@ export const Ripple = React.forwardRef<HTMLElement, RippleProps>(({
             unbounded={unbounded}
             className={className}
             suppressHydrationWarning
+            style={{
+                "--md-ripple-hover-color": "transparent",
+                "--md-ripple-hover-opacity": "0",
+                "--md-ripple-pressed-color": "currentColor",
+                "--md-ripple-pressed-opacity": "0.12",
+            } as React.CSSProperties}
             {...props}
         />
     );

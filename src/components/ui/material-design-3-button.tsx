@@ -258,9 +258,6 @@ const useMaterialRipple = (disabled = false) => {
       onPointerEnter: handlePointerEnter,
       onPointerLeave: handlePointerLeave,
       onClick: handleClick,
-      onKeyDown: (e: React.KeyboardEvent) => {
-        if (e.key === "Enter" || e.key === " ") handleClick();
-      },
     },
   };
 };
@@ -306,7 +303,7 @@ Ripple.displayName = "Ripple";
 
 // --- 6. MD3 EXPRESSIVE BUTTON VARIANTS (SHADCN API ALIGNED) ---
 const buttonVariants = cva(
-  "group relative inline-flex items-center justify-center whitespace-nowrap font-medium tracking-[0.01em] transition-[background-color,color,box-shadow,border-radius] duration-300 ease-[cubic-bezier(0.2,0.8,0.2,1.2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-[0.38] disabled:shadow-none overflow-hidden [&_svg]:transition-transform [&_svg]:duration-300 [&_svg]:ease-[cubic-bezier(0.2,0.8,0.2,1.2)] data-[pressed=true]:[&_svg]:scale-[0.90]",
+  "group relative inline-flex items-center justify-center whitespace-nowrap font-medium tracking-[0.01em] transition-[background-color,color,box-shadow,border-radius] duration-300 ease-[cubic-bezier(0.2,0.8,0.2,1.2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-[0.38] disabled:shadow-none overflow-hidden select-none [&_svg]:transition-transform [&_svg]:duration-300 [&_svg]:ease-[cubic-bezier(0.2,0.8,0.2,1.2)] data-[pressed=true]:[&_svg]:scale-[0.90]",
   {
     variants: {
       variant: {
@@ -415,18 +412,18 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     const componentProps = {
       className: cn(buttonVariants({ variant, size, shape, className })),
       style: style,
-      "data-pressed": noMorph ? undefined : pressed, 
-      ...events,
+      "data-pressed": noMorph ? undefined : pressed,
+      onPointerDown: events.onPointerDown,
+      onPointerUp: events.onPointerUp,
+      onPointerEnter: events.onPointerEnter,
+      onPointerLeave: events.onPointerLeave,
       onClick: (e: React.MouseEvent<HTMLButtonElement>) => {
-        // Fire ripple and standard events
         events.onClick();
-        
-        // --- NEW FEATURE: Auditory Feedback for Prominent Buttons ---
+
         if (size && ["xl", "2xl", "icon-xl", "icon-2xl"].includes(size)) {
           playTactilePopSound();
         }
 
-        // Fire user's custom onClick if provided
         onClick?.(e);
       },
       ...props,

@@ -1,24 +1,14 @@
-import { type RefObject, type ReactNode, useRef, useState, useEffect } from "react";
+import { type RefObject, type ReactNode, useRef, useState, useEffect, useMemo } from "react";
 import {
-  Briefcase,
-  Feather,
-  Heart,
-  Maximize2,
-  MessageSquare,
-  Minimize2,
-  RefreshCw,
-  Zap,
-  Sparkles,
   CornerDownLeft,
 } from "lucide-react";
 import { HoneLogo } from "@/components/hone-logo";
 import type { InferredSelection } from "./adapters";
 import { renderActionIcon } from "@/lib/action-icons";
 import type { ActionHandler } from "./actions";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/components/ui/material-design-3-button";
+import { DotmSquare12 } from "@/components/ui/dotm-square-12";
 import { cn } from "@/lib/utils";
-
-type InferenceLevel = "selection" | "sentence" | "paragraph" | "field";
 
 interface ShortcutBadge {
   key: string;
@@ -36,11 +26,7 @@ export interface FloatingActionMenuProps {
   width: number;
   shortcut: ShortcutBadge | null;
   quickShortcut: ShortcutBadge | null;
-  inferenceOptions: Record<string, { text?: string }> | null;
-  selectedInferenceLevel: InferenceLevel | null;
-  onInferencePrev: () => void;
-  onInferenceNext: () => void;
-  customActions: ActionHandler[];
+  actions: ActionHandler[];
   focusedActionIdx: number;
   onFocusAction: (idx: number) => void;
   onTriggerAction: (actionId: string, override?: InferredSelection) => void;
@@ -73,24 +59,6 @@ export interface FloatingActionMenuProps {
   showCard?: boolean;
 }
 
-const PRIMARY_ACTIONS = [
-  { action: "improve", icon: Feather, label: "Improve writing" },
-  { action: "paraphrase", icon: RefreshCw, label: "Paraphrase" },
-  { action: "fix_spelling", icon: Sparkles, label: "Fix spellings and grammer with AI" },
-] as const;
-
-const TONE_ACTIONS = [
-  { action: "tone_professional", icon: Briefcase, label: "Professional" },
-  { action: "tone_casual", icon: MessageSquare, label: "Casual" },
-  { action: "tone_exciting", icon: Zap, label: "Exciting" },
-  { action: "tone_friendly", icon: Heart, label: "Friendly" },
-] as const;
-
-const LENGTH_ACTIONS = [
-  { action: "length_shorter", icon: Minimize2, label: "Shorter" },
-  { action: "length_longer", icon: Maximize2, label: "Longer" },
-] as const;
-
 function formatShortcut(s: ShortcutBadge) {
   const parts: string[] = [];
   if (s.meta) parts.push("⌘");
@@ -101,17 +69,6 @@ function formatShortcut(s: ShortcutBadge) {
   return parts.join("");
 }
 
-function inferencePreview(
-  options: Record<string, { text?: string }> | null,
-  level: InferenceLevel | null,
-) {
-  if (!options || !level) return "";
-  const opt = options[level];
-  if (!opt?.text) return "";
-  const t = opt.text.replace(/\s+/g, " ").trim();
-  return t.length > 72 ? `${t.slice(0, 69)}…` : t;
-}
-
 export function FloatingActionMenu({
   menuRef,
   top,
@@ -119,11 +76,7 @@ export function FloatingActionMenu({
   width,
   shortcut,
   quickShortcut,
-  inferenceOptions,
-  selectedInferenceLevel,
-  onInferencePrev,
-  onInferenceNext,
-  customActions,
+  actions,
   focusedActionIdx,
   onFocusAction,
   onTriggerAction,
@@ -172,7 +125,13 @@ export function FloatingActionMenu({
     const ro = new ResizeObserver(updateLeftColHeight);
     ro.observe(leftCol);
     return () => ro.disconnect();
-  }, [isCardOnly, customActions.length, inferenceOptions, selectedInferenceLevel]);
+  }, [isCardOnly, actions.length]);
+
+  const primaryActions = useMemo(() => actions.filter((a) => a.category === "primary"), [actions]);
+  const customActions = useMemo(() => actions.filter((a) => a.category === "custom"), [actions]);
+  const toneActions = useMemo(() => actions.filter((a) => a.category === "tone"), [actions]);
+  const lengthActions = useMemo(() => actions.filter((a) => a.category === "length"), [actions]);
+  const hasToneOrLength = toneActions.length > 0 || lengthActions.length > 0;
 
   return (
     <div
@@ -181,14 +140,10 @@ export function FloatingActionMenu({
       aria-label="Hone actions"
       onMouseDownCapture={onMouseDownCapture}
       onMouseDown={onMouseDown}
-      className="hone-surface hone-fade-in fixed flex flex-row items-start gap-3 p-2 antialiased select-none outline-none"
+      className="hone-surface hone-fade-in fixed flex flex-row items-start gap-3 p-2 antialiased select-none outline-none bg-background"
       style={{
         top: `${top}px`,
         left: `${left}px`,
-        // In card-only mode the outer shell shrinks to wrap the card (which
-        // itself is min-width ${width}px and grows with content). In 2-col mode
-        // it is a fixed two-column width. Animating min-width instead of width
-        // lets the auto-sizing card grow beyond it without jank.
         minWidth: !showCard
           ? `${width + 16}px`
           : isCardOnly
@@ -215,198 +170,151 @@ export function FloatingActionMenu({
             "width 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1), margin-right 0.3s cubic-bezier(0.4, 0, 0.2, 1), max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
         }}
       >
-          <header className="flex items-center justify-between gap-2 px-2 pt-1.5 pb-1">
-            <div className="flex min-w-0 items-center gap-2">
-              <HoneLogo size={16} alt="" className="opacity-90" />
-              <span className="text-xs font-semibold tracking-tight text-foreground">
-                Hone compose
-              </span>
-            </div>
-            {shortcut?.key ? (
-              <span className="hone-kbd shrink-0 tabular-nums">
-                {formatShortcut(shortcut)}
-              </span>
-            ) : null}
-          </header>
-
-          {inferenceOptions && selectedInferenceLevel ? (
-            <div className="mx-1 mb-0.5 flex h-7 gap-0">
-              {/* Left button */}
-              <button
-                type="button"
-                className="flex h-7 w-[18px] items-center justify-center rounded-l-lg text-muted-foreground hover:text-foreground"
-                style={{
-                  backgroundColor:
-                    "color-mix(in oklch, var(--foreground) 8%, transparent)",
-                }}
-                onClick={onInferencePrev}
-                aria-label="Previous text scope"
-              >
-                ‹
-              </button>
-
-              {/* Center text area */}
-              <div
-                className="flex min-w-0 flex-1 items-center justify-start px-2"
-                style={{
-                  backgroundColor:
-                    "color-mix(in oklch, var(--foreground) 6%, transparent)",
-                }}
-              >
-                <span className="truncate text-[11px] font-medium capitalize leading-tight text-foreground">
-                  {selectedInferenceLevel}
-                  {inferencePreview(inferenceOptions, selectedInferenceLevel) &&
-                    " • "}
-                  <span className="font-normal text-muted-foreground">
-                    {inferencePreview(inferenceOptions, selectedInferenceLevel)}
-                  </span>
-                </span>
-              </div>
-
-              {/* Right button */}
-              <button
-                type="button"
-                className="flex h-7 w-[18px] items-center justify-center rounded-r-lg text-muted-foreground hover:text-foreground"
-                style={{
-                  backgroundColor:
-                    "color-mix(in oklch, var(--foreground) 8%, transparent)",
-                }}
-                onClick={onInferenceNext}
-                aria-label="Next text scope"
-              >
-                ›
-              </button>
-            </div>
+        <header className="flex items-center justify-between gap-2 px-2 pt-1.5 pb-1">
+          <div className="flex min-w-0 items-center gap-2">
+            <HoneLogo size={16} alt="" className="opacity-90" />
+            <span className="text-xs font-semibold tracking-tight text-foreground">
+              Hone compose
+            </span>
+          </div>
+          {shortcut?.key ? (
+            <span className="hone-kbd shrink-0 tabular-nums">
+              {formatShortcut(shortcut)}
+            </span>
           ) : null}
+        </header>
 
-          {hasAdapter ? (
-            <>
+        {hasAdapter ? (
+          <>
+            {primaryActions.length > 0 && (
               <div className="flex flex-col gap-0.5 px-0.5">
-                {PRIMARY_ACTIONS.map((item, i) => (
+                {primaryActions.map((item, i) => (
                   <MenuRow
-                    key={item.action}
+                    key={item.id}
                     idx={i}
                     focused={focusedActionIdx === i}
-                    isLoading={loadingActionId === item.action}
-                    icon={
-                      <item.icon className="size-3.5 shrink-0" strokeWidth={2} />
-                    }
-                    label={item.label}
-                    shortcut={shortcut?.action === item.action ? shortcut : null}
+                    isLoading={loadingActionId === item.id}
+                    icon={renderActionIcon(item.icon, {
+                      size: 14,
+                      color: item.type === "builtin" ? undefined : (item.color || "var(--foreground)"),
+                    })}
+                    label={item.name}
+                    shortcut={shortcut?.action === item.id ? shortcut : null}
                     onFocus={() => onFocusAction(i)}
-                    onSelect={() => onTriggerAction(item.action, override)}
+                    onSelect={() => onTriggerAction(item.id, override)}
                   />
                 ))}
               </div>
+            )}
 
-              {customActions.length > 0 ? (
-                <div className="flex flex-col gap-0.5 px-0.5">
-                  {customActions.map((ca, i) => {
-                    const idx = customActionStartIdx + i;
-                    const actionShortcut =
-                      quickShortcut?.action === ca.id ? quickShortcut : ca.shortcut;
+            {customActions.length > 0 && (
+              <div className="flex flex-col gap-0.5 px-0.5">
+                {customActions.map((ca, i) => {
+                  const idx = customActionStartIdx + i;
+                  const actionShortcut =
+                    quickShortcut?.action === ca.id ? quickShortcut : ca.shortcut;
+                  return (
+                    <MenuRow
+                      key={ca.id}
+                      idx={idx}
+                      focused={focusedActionIdx === idx}
+                      isLoading={loadingActionId === ca.id}
+                      icon={renderActionIcon(ca.icon, {
+                        size: 14,
+                        color: ca.color || "var(--foreground)",
+                      })}
+                      label={ca.name}
+                      shortcut={actionShortcut}
+                      onFocus={() => onFocusAction(idx)}
+                      onSelect={() => onTriggerAction(ca.id, override)}
+                    />
+                  );
+                })}
+              </div>
+            )}
+
+            {hasToneOrLength && (
+              <>
+                <div className="flex items-center gap-2 px-2 py-0.5">
+                  <div className="flex-1 h-px bg-border/60" />
+                  <span className="text-[9px] font-medium uppercase tracking-wider text-muted-foreground/60">
+                    Change Tone or length
+                  </span>
+                  <div className="flex-1 h-px bg-border/60" />
+                </div>
+                <div className="grid grid-cols-2 gap-1 px-1">
+                  {toneActions.map((item, i) => {
+                    const idx = toneActionStartIdx + i;
+                    const isFocused = focusedActionIdx === idx;
+                    const isLoading = loadingActionId === item.id;
                     return (
-                      <MenuRow
-                        key={ca.id}
-                        idx={idx}
-                        focused={focusedActionIdx === idx}
-                        isLoading={loadingActionId === ca.id}
-                        icon={renderActionIcon(ca.icon, {
-                          size: 14,
-                          color: ca.color || "var(--foreground)",
-                        })}
-                        label={ca.name}
-                        shortcut={actionShortcut}
-                        onFocus={() => onFocusAction(idx)}
-                        onSelect={() => onTriggerAction(ca.id, override)}
-                      />
+                      <button
+                        key={item.id}
+                        type="button"
+                        data-action-idx={idx}
+                        data-focused={isFocused ? "true" : undefined}
+                        className="hone-tone-btn"
+                        onMouseEnter={() => onFocusAction(idx)}
+                        onClick={() => onTriggerAction(item.id, override)}
+                      >
+                        {isLoading ? (
+                          <DotmSquare12 />
+                        ) : (
+                          renderActionIcon(item.icon, { size: 12, color: item.type === "builtin" ? undefined : (item.color || "var(--foreground)") })
+                        )}
+                        <span className="flex-1 truncate text-left">{item.name}</span>
+                        {isFocused && !isLoading && (
+                          <span className="hone-kbd shrink-0 flex items-center justify-center p-0.5 border-foreground/20 bg-foreground/10 text-foreground scale-90">
+                            <CornerDownLeft className="size-2.5 text-foreground" strokeWidth={3} />
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                  {lengthActions.map((item, i) => {
+                    const idx = lengthActionStartIdx + i;
+                    const isFocused = focusedActionIdx === idx;
+                    const isLoading = loadingActionId === item.id;
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        data-action-idx={idx}
+                        data-focused={isFocused ? "true" : undefined}
+                        className="hone-tone-btn"
+                        onMouseEnter={() => onFocusAction(idx)}
+                        onClick={() => onTriggerAction(item.id, override)}
+                      >
+                        {isLoading ? (
+                          <DotmSquare12 />
+                        ) : (
+                          renderActionIcon(item.icon, { size: 12, color: item.type === "builtin" ? undefined : (item.color || "var(--foreground)") })
+                        )}
+                        <span className="flex-1 truncate text-left">{item.name}</span>
+                        {isFocused && !isLoading && (
+                          <span className="hone-kbd shrink-0 flex items-center justify-center p-0.5 border-foreground/20 bg-foreground/10 text-foreground scale-90">
+                            <CornerDownLeft className="size-2.5 text-foreground" strokeWidth={3} />
+                          </span>
+                        )}
+                      </button>
                     );
                   })}
                 </div>
-              ) : null}
-
-              <div className="flex items-center gap-2 px-2 py-0.5">
-                <div className="flex-1 h-px bg-border/60" />
-                <span className="text-[9px] font-medium uppercase tracking-wider text-muted-foreground/60">
-                  Change Tone or length
-                </span>
-                <div className="flex-1 h-px bg-border/60" />
-              </div>
-              <div className="grid grid-cols-2 gap-1 px-1">
-                {TONE_ACTIONS.map((item, i) => {
-                  const idx = toneActionStartIdx + i;
-                  const isLoading = loadingActionId === item.action;
-                  const isFocused = focusedActionIdx === idx;
-                  return (
-                    <button
-                      key={item.action}
-                      type="button"
-                      data-action-idx={idx}
-                      data-focused={isFocused ? "true" : undefined}
-                      className="hone-tone-btn"
-                      onMouseEnter={() => onFocusAction(idx)}
-                      onClick={() => onTriggerAction(item.action, override)}
-                    >
-                      {isLoading ? (
-                        <svg className="size-3 animate-spin shrink-0" viewBox="0 0 24 24" fill="none" strokeWidth="2">
-                          <path d="M21 12a9 9 0 1 1-6.219-8.56" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" />
-                        </svg>
-                      ) : (
-                        <item.icon className="size-3 shrink-0" strokeWidth={2} />
-                      )}
-                      <span className="flex-1 truncate text-left">{item.label}</span>
-                      {isFocused && !isLoading && (
-                        <span className="hone-kbd shrink-0 flex items-center justify-center p-0.5 border-foreground/20 bg-foreground/10 text-foreground scale-90">
-                          <CornerDownLeft className="size-2.5 text-foreground" strokeWidth={3} />
-                        </span>
-                      )}
-                    </button>
-                  );
-                })}
-                {LENGTH_ACTIONS.map((item, i) => {
-                  const idx = lengthActionStartIdx + i;
-                  const isLoading = loadingActionId === item.action;
-                  const isFocused = focusedActionIdx === idx;
-                  return (
-                    <button
-                      key={item.action}
-                      type="button"
-                      data-action-idx={idx}
-                      data-focused={isFocused ? "true" : undefined}
-                      className="hone-tone-btn"
-                      onMouseEnter={() => onFocusAction(idx)}
-                      onClick={() => onTriggerAction(item.action, override)}
-                    >
-                      {isLoading ? (
-                        <svg className="size-3 animate-spin shrink-0" viewBox="0 0 24 24" fill="none" strokeWidth="2">
-                          <path d="M21 12a9 9 0 1 1-6.219-8.56" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" />
-                        </svg>
-                      ) : (
-                        <item.icon className="size-3 shrink-0" strokeWidth={2} />
-                      )}
-                      <span className="flex-1 truncate text-left">{item.label}</span>
-                      {isFocused && !isLoading && (
-                        <span className="hone-kbd shrink-0 flex items-center justify-center p-0.5 border-foreground/20 bg-foreground/10 text-foreground scale-90">
-                          <CornerDownLeft className="size-2.5 text-foreground" strokeWidth={3} />
-                        </span>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            </>
-          ) : (
-            <p className="px-3 py-2 text-center text-xs text-muted-foreground">
-              Text selected (read-only)
-            </p>
-          )}
-        </div>
+              </>
+            )}
+          </>
+        ) : (
+          <p className="px-3 py-2 text-center text-xs text-muted-foreground">
+            Text selected (read-only)
+          </p>
+        )}
+      </div>
 
       {/* Right Column: Local Spellcheck & AI Preview Card */}
       {showCard && (
         <div
           ref={cardRef}
-          className="flex flex-col rounded-lg border border-border/80 bg-muted/15 relative overflow-hidden"
+          className="flex flex-col rounded-lg border border-border/80 bg-card relative overflow-hidden"
           style={{
             position: "relative",
             flexShrink: 0,
@@ -428,13 +336,13 @@ export function FloatingActionMenu({
               <p className="text-xs leading-relaxed text-foreground font-medium">
                 {confirmState.action === "cancel_generation"
                   ? "Are you sure you want to cancel the AI generation?"
-                  : `An action is already running. Abort it and run “${confirmState.actionLabel}”?`}
+                  : `An action is already running. Abort it and run "${confirmState.actionLabel}"?`}
               </p>
               <div className="flex items-center justify-end gap-1.5 pt-2 mt-auto">
                 <Button
                   type="button"
                   variant="ghost"
-                  size="xs"
+                  noMorph
                   className="h-6 rounded-full px-2.5 text-[10px] font-medium gap-1 [&_svg]:size-3"
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={onCancelConfirm}
@@ -444,12 +352,12 @@ export function FloatingActionMenu({
                 <Button
                   type="button"
                   variant="default"
-                  size="xs"
-                  className="h-6 rounded-full px-2.5 text-[10px] font-medium gap-1 [&_svg]:size-3 bg-primary text-primary-foreground select-none cursor-pointer"
+                  noMorph
+                  className="h-6 rounded-full px-2.5 text-[10px] font-medium gap-1 [&_svg]:size-3 select-none cursor-pointer"
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={onConfirmAction}
                 >
-                  <CornerDownLeft className="size-2.5 text-primary-foreground" strokeWidth={3} />
+                  <CornerDownLeft className="size-2.5" strokeWidth={3} />
                   Yes
                 </Button>
               </div>
@@ -463,11 +371,12 @@ export function FloatingActionMenu({
                   fontFamily: '"Geist Variable", system-ui, sans-serif',
                   height: "100%",
                   width: "100%",
-                  padding: "12px 12px 40px 12px", // Top, Right, Bottom (space for buttons), Left
+                  padding: "12px 12px 40px 12px",
                 }}
               >
                 {isCardLoading && !cardResultText ? (
-                  <span className="text-muted-foreground italic">
+                  <span className="text-muted-foreground italic inline-flex items-center gap-2">
+                    <DotmSquare12 />
                     {loadingActionId === "fix_spelling" || loadingActionId === "fix_spelling_auto"
                       ? "Checking for spelling and grammar errors..."
                       : "Honing your text..."}
@@ -535,7 +444,7 @@ export function FloatingActionMenu({
                   <Button
                     type="button"
                     variant="ghost"
-                    size="xs"
+                    noMorph
                     className="h-6 rounded-full px-2.5 text-[10px] font-medium gap-1 [&_svg]:size-3 text-muted-foreground hover:text-foreground"
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={onCancelCard}
@@ -546,7 +455,7 @@ export function FloatingActionMenu({
                 <Button
                   type="button"
                   variant="default"
-                  size="xs"
+                  noMorph
                   disabled={
                     !!(isCardLoading ||
                       !cardResultText ||
@@ -555,7 +464,7 @@ export function FloatingActionMenu({
                         cardDiff[0].type === "equal"))
                   }
                   className={cn(
-                    "h-6 rounded-full px-2.5 text-[10px] font-medium gap-1 [&_svg]:size-3 bg-primary text-primary-foreground select-none cursor-pointer transition hover:opacity-90 active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none"
+                    "h-6 rounded-full px-2.5 text-[10px] font-medium gap-1 [&_svg]:size-3 select-none cursor-pointer transition hover:opacity-90 disabled:opacity-50 disabled:pointer-events-none"
                   )}
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={onApplyCard}
@@ -582,7 +491,7 @@ export function FloatingActionMenu({
                         backgroundColor: "color-mix(in oklch, var(--primary-foreground) 10%, transparent)",
                       }}
                     >
-                      <CornerDownLeft className="size-2.5 text-primary-foreground" strokeWidth={3} />
+                      <CornerDownLeft className="size-2.5" strokeWidth={3} />
                     </span>
                   </div>
                 </Button>
@@ -633,9 +542,7 @@ function MenuRow({
     >
       <span className="hone-menu-item-icon">
         {isLoading ? (
-          <svg className="size-3.5 animate-spin shrink-0" viewBox="0 0 24 24" fill="none" strokeWidth="2">
-            <path d="M21 12a9 9 0 1 1-6.219-8.56" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
+          <DotmSquare12 />
         ) : (
           icon
         )}

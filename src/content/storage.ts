@@ -24,9 +24,11 @@ export interface CustomAction {
   model?: string
   shortcut?: ShortcutConfig
   category?: string
+  type?: 'builtin' | 'custom'
   replaceMode: 'replace' | 'preview'
   enabled: boolean
   createdAt: number
+  isLocal?: boolean
 }
 
 export type AutoSpellcheckMode = 'disabled' | 'browser_only' | 'always';
@@ -52,6 +54,9 @@ export interface Config {
   autoSpellcheckMode?: AutoSpellcheckMode;
   autoSpellcheckWordThreshold?: number;
 
+  // History
+  historyLimit?: number;
+
   // API
   googleAiStudioKey?: string;
   googleAiStudioModel?: string;
@@ -76,6 +81,7 @@ const CONFIG_KEYS: (keyof Config)[] = [
   'previewInCard',
   'autoSpellcheckMode',
   'autoSpellcheckWordThreshold',
+  'historyLimit',
   'googleAiStudioKey',
   'googleAiStudioModel',
   'provider',
@@ -146,29 +152,71 @@ export function onConfigChanged(
   };
 }
 
-const CUSTOM_ACTIONS_KEY = 'customActions';
+import { BUILTIN_ACTION_DEFAULTS } from "./builtin-defaults";
 
+const CUSTOM_ACTIONS_KEY = 'customActions';
+const ACTION_CONFIGS_KEY = 'actionConfigs';
+
+async function migrateCustomActions(): Promise<void> {
+  const existing = await chrome.storage.local.get([CUSTOM_ACTIONS_KEY, ACTION_CONFIGS_KEY]);
+  if (existing[ACTION_CONFIGS_KEY]) return;
+  const legacy = (existing[CUSTOM_ACTIONS_KEY] as CustomAction[]) || [];
+  await chrome.storage.local.set({ [ACTION_CONFIGS_KEY]: legacy });
+  await chrome.storage.local.remove(CUSTOM_ACTIONS_KEY);
+}
+
+export async function loadAllActionConfigs(): Promise<CustomAction[]> {
+  await migrateCustomActions();
+  const result = await chrome.storage.local.get(ACTION_CONFIGS_KEY);
+  let configs = (result[ACTION_CONFIGS_KEY] as CustomAction[]) || [];
+  const hadSpellingLocal = configs.some((c) => c.id === "fix_spelling_local");
+  if (hadSpellingLocal) {
+    configs = configs.filter((c) => c.id !== "fix_spelling_local");
+    await chrome.storage.local.set({ [ACTION_CONFIGS_KEY]: configs });
+  }
+  const hasBuiltins = configs.some((c) => c.type === "builtin");
+  if (!hasBuiltins) {
+    const merged = [...BUILTIN_ACTION_DEFAULTS, ...configs];
+    await chrome.storage.local.set({ [ACTION_CONFIGS_KEY]: merged });
+    return merged;
+  }
+  return configs;
+}
+
+export async function saveAllActionConfigs(configs: CustomAction[]): Promise<void> {
+  await chrome.storage.local.set({ [ACTION_CONFIGS_KEY]: configs });
+}
+
+export async function saveActionConfig(action: CustomAction): Promise<void> {
+  const configs = await loadAllActionConfigs();
+  const idx = configs.findIndex((a) => a.id === action.id);
+  if (idx >= 0) {
+    configs[idx] = action;
+  } else {
+    configs.push(action);
+  }
+  await chrome.storage.local.set({ [ACTION_CONFIGS_KEY]: configs });
+}
+
+export async function deleteActionConfig(id: string): Promise<void> {
+  const configs = await loadAllActionConfigs();
+  await chrome.storage.local.set({
+    [ACTION_CONFIGS_KEY]: configs.filter((a) => a.id !== id),
+  });
+}
+
+// Legacy wrappers for backward compat — operate on the unified key
 export async function loadCustomActions(): Promise<CustomAction[]> {
-  const result = await chrome.storage.local.get(CUSTOM_ACTIONS_KEY);
-  return (result[CUSTOM_ACTIONS_KEY] as CustomAction[]) || [];
+  const all = await loadAllActionConfigs();
+  return all.filter((a) => a.type === 'custom' || !a.type);
 }
 
 export async function saveCustomAction(action: CustomAction): Promise<void> {
-  const actions = await loadCustomActions();
-  const idx = actions.findIndex((a) => a.id === action.id);
-  if (idx >= 0) {
-    actions[idx] = action;
-  } else {
-    actions.push(action);
-  }
-  await chrome.storage.local.set({ [CUSTOM_ACTIONS_KEY]: actions });
+  await saveActionConfig(action);
 }
 
 export async function deleteCustomAction(id: string): Promise<void> {
-  const actions = await loadCustomActions();
-  await chrome.storage.local.set({
-    [CUSTOM_ACTIONS_KEY]: actions.filter((a) => a.id !== id),
-  });
+  await deleteActionConfig(id);
 }
 
 /**
@@ -211,23 +259,74 @@ async function openDB(): Promise<IDBDatabase> {
 }
 
 /**
+ * Read history limit from chrome.storage.local (default 1000)
+ */
+async function getHistoryLimit(): Promise<number> {
+  const res = await chrome.storage.local.get('historyLimit');
+  return typeof res.historyLimit === 'number' ? res.historyLimit : 1000;
+}
+
+/**
+ * Prune oldest history entries when count exceeds the configured limit
+ */
+async function enforceHistoryLimit(): Promise<void> {
+  const maxItems = await getHistoryLimit();
+  const db = await openDB();
+
+  const count = await new Promise<number>((resolve, reject) => {
+    const tx = db.transaction([HISTORY_STORE], 'readonly');
+    const store = tx.objectStore(HISTORY_STORE);
+    const req = store.count();
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+
+  if (count <= maxItems) return;
+
+  const excess = count - maxItems;
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction([HISTORY_STORE], 'readwrite');
+    const store = tx.objectStore(HISTORY_STORE);
+    const index = store.index('timestamp');
+    const cursorReq = index.openCursor(null, 'next');
+    let deleted = 0;
+
+    cursorReq.onsuccess = () => {
+      const cursor = cursorReq.result;
+      if (cursor && deleted < excess) {
+        store.delete(cursor.primaryKey);
+        deleted++;
+        cursor.continue();
+      }
+    };
+
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+/**
  * Add history entry to IndexedDB
  */
 export async function addHistoryEntry(entry: Omit<HistoryEntry, 'id' | 'timestamp'> & { id?: string; timestamp?: number }): Promise<string> {
   const db = await openDB();
-  return new Promise((resolve, reject) => {
+  const finalEntry: HistoryEntry = {
+    ...entry,
+    id: entry.id || crypto.randomUUID(),
+    timestamp: entry.timestamp || Date.now()
+  };
+
+  await new Promise<void>((resolve, reject) => {
     const transaction = db.transaction([HISTORY_STORE], 'readwrite');
     const store = transaction.objectStore(HISTORY_STORE);
-    const finalEntry: HistoryEntry = {
-      ...entry,
-      id: entry.id || crypto.randomUUID(),
-      timestamp: entry.timestamp || Date.now()
-    };
     const request = store.put(finalEntry);
-
     request.onerror = () => reject(request.error);
-    request.onsuccess = () => resolve(finalEntry.id!);
+    request.onsuccess = () => resolve();
   });
+
+  await enforceHistoryLimit();
+
+  return finalEntry.id!;
 }
 
 /**
