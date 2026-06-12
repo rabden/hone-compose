@@ -2,7 +2,8 @@ import { GoogleGenAI, ThinkingLevel } from '@google/genai';
 import { ActionRegistry } from '../content/actions';
 import type { PromptPayload } from '../content/actions';
 
-import { addHistoryEntry } from '../content/storage';
+import { addHistoryEntry, saveActionConfig } from '../content/storage';
+import type { CustomAction } from '../content/storage';
 
 interface HistoryItem {
   id: string;
@@ -527,6 +528,133 @@ async function callAIProviderRaw(
   }
 }
 
+// ── Marketplace constants ──
+const REGISTRY_URL = 'https://gitlab.com/rabden-group/hone-actions-registry/-/raw/main/registry.json';
+const REGISTRY_BASE_URL = 'https://gitlab.com/rabden-group/hone-actions-registry/-/raw/main/';
+const REGISTRY_CACHE_KEY = 'marketplaceRegistryCache';
+const REGISTRY_CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
+const VALID_ACTION_PATH_RE = /^actions\/[a-z0-9-]+\.json$/;
+
+interface RegistryAction {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+  color: string;
+  version: string;
+  author: string;
+  tags: string[];
+  path: string;
+}
+
+interface Registry {
+  schemaVersion: number;
+  actions: RegistryAction[];
+}
+
+interface RegistryCache {
+  registry: Registry;
+  fetchedAt: number;
+}
+
+// ── Marketplace handlers ──
+async function handleFetchRegistry(forceRefresh: boolean): Promise<{ success: boolean; registry?: Registry; error?: string }> {
+  try {
+    // Check cache first
+    if (!forceRefresh) {
+      const stored = await chrome.storage.local.get(REGISTRY_CACHE_KEY);
+      const cached = stored[REGISTRY_CACHE_KEY] as RegistryCache | undefined;
+      if (cached && Date.now() - cached.fetchedAt < REGISTRY_CACHE_TTL_MS) {
+        return { success: true, registry: cached.registry };
+      }
+    }
+
+    const res = await fetchWithTimeout(REGISTRY_URL, { method: 'GET' }, 12000);
+    if (!res.ok) {
+      throw new Error(`Registry fetch failed: ${res.statusText}`);
+    }
+    const registry = await res.json() as Registry;
+    if (!registry || typeof registry.schemaVersion !== 'number' || !Array.isArray(registry.actions)) {
+      throw new Error('Invalid registry format');
+    }
+
+    const cache: RegistryCache = { registry, fetchedAt: Date.now() };
+    await chrome.storage.local.set({ [REGISTRY_CACHE_KEY]: cache });
+
+    return { success: true, registry };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+async function handleInstallAction(sourceId: string, path: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    // Validate path strictly before fetching
+    if (!VALID_ACTION_PATH_RE.test(path)) {
+      return { success: false, error: 'Invalid action path format.' };
+    }
+
+    const url = REGISTRY_BASE_URL + path;
+    const res = await fetchWithTimeout(url, { method: 'GET' }, 12000);
+    if (!res.ok) {
+      throw new Error(`Action fetch failed: ${res.statusText}`);
+    }
+
+    const raw = await res.json() as Record<string, unknown>;
+
+    // Strict field validation — never blind-spread fetched JSON
+    const name = typeof raw.name === 'string' ? raw.name.trim() : '';
+    const promptTemplate = typeof raw.promptTemplate === 'string' ? raw.promptTemplate : '';
+    const description = typeof raw.description === 'string' ? raw.description.trim() : '';
+    const icon = typeof raw.icon === 'string' ? raw.icon.trim() : 'Sparkles';
+    const color = typeof raw.color === 'string' ? raw.color.trim() : '#8B5CF6';
+    const systemPrompt = typeof raw.systemPrompt === 'string' ? raw.systemPrompt : undefined;
+    const version = typeof raw.version === 'string' ? raw.version.trim() : '1.0.0';
+    const author = typeof raw.author === 'string' ? raw.author.trim() : '';
+    const tags = Array.isArray(raw.tags) ? (raw.tags as unknown[]).filter((t): t is string => typeof t === 'string') : [];
+
+    // Validation rules
+    if (!name || name.length > 80) {
+      return { success: false, error: 'Action name is missing or too long (max 80 chars).' };
+    }
+    if (!promptTemplate) {
+      return { success: false, error: 'Action is missing a prompt template.' };
+    }
+    if (!promptTemplate.includes('{{input}}')) {
+      return { success: false, error: 'Prompt template must contain {{input}} placeholder.' };
+    }
+    if (promptTemplate.length > 4000) {
+      return { success: false, error: 'Prompt template exceeds 4000 characters.' };
+    }
+
+    // Construct the action with only whitelisted fields
+    const action: CustomAction = {
+      id: sourceId,
+      name,
+      description: description || undefined,
+      icon,
+      color,
+      promptTemplate,
+      systemPrompt,
+      category: 'marketplace',
+      type: 'marketplace',
+      sourceId,
+      version,
+      author: author || undefined,
+      tags: tags.length > 0 ? tags : undefined,
+      installedAt: Date.now(),
+      enabled: true,
+      replaceMode: 'replace',
+      createdAt: Date.now(),
+    };
+
+    await saveActionConfig(action);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 // Listen for keyboard shortcuts from Chrome manifest.json commands
 // These are more reliable than content script keyboard listeners
 // Works even when websites intercept keys (Gmail, Notion, etc.)
@@ -563,6 +691,23 @@ chrome.runtime.onMessage.addListener((message: Record<string, unknown>, sender: 
     activeAIAbort = null;
     sendResponse({ success: true });
     return false;
+  }
+
+  if (message.type === 'MARKETPLACE_FETCH_REGISTRY') {
+    const forceRefresh = message.forceRefresh === true;
+    handleFetchRegistry(forceRefresh).then(sendResponse);
+    return true;
+  }
+
+  if (message.type === 'MARKETPLACE_INSTALL_ACTION') {
+    const sourceId = message.sourceId as string;
+    const path = message.path as string;
+    if (!sourceId || !path) {
+      sendResponse({ success: false, error: 'Missing sourceId or path.' });
+      return false;
+    }
+    handleInstallAction(sourceId, path).then(sendResponse);
+    return true;
   }
 
   if (message.type === 'PROCESS_TEXT') {

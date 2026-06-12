@@ -16,7 +16,7 @@ export interface ActionItem {
   id: string;
   name: string;
   description?: string;
-  type: "builtin" | "custom";
+  type: "builtin" | "custom" | "marketplace";
   icon?: string;
   color?: string;
   category?: string;
@@ -54,7 +54,9 @@ export class ActionRegistry {
 
     for (const config of storedConfigs) {
       const isBuiltin = config.type === "builtin";
-      if (!config.enabled && isBuiltin) continue;
+      const isMarketplace = config.type === "marketplace";
+      // Skip disabled builtins and disabled marketplace actions (don't delete them)
+      if (!config.enabled && (isBuiltin || isMarketplace)) continue;
       this.handlers.set(config.id, this.configToHandler(config));
     }
   }
@@ -64,7 +66,7 @@ export class ActionRegistry {
       id: ca.id,
       name: ca.name,
       description: ca.description,
-      type: ca.type === "builtin" ? "builtin" : "custom",
+      type: ca.type === "builtin" ? "builtin" : ca.type === "marketplace" ? "marketplace" : "custom",
       icon: ca.icon,
       color: ca.color,
       category: ca.category || "custom",

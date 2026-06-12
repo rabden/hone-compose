@@ -24,11 +24,17 @@ export interface CustomAction {
   model?: string
   shortcut?: ShortcutConfig
   category?: string
-  type?: 'builtin' | 'custom'
+  type?: 'builtin' | 'custom' | 'marketplace'
   replaceMode: 'replace' | 'preview'
   enabled: boolean
   createdAt: number
   isLocal?: boolean
+  // Marketplace-specific fields
+  sourceId?: string
+  version?: string
+  author?: string
+  installedAt?: number
+  tags?: string[]
 }
 
 export type AutoSpellcheckMode = 'disabled' | 'browser_only' | 'always';
