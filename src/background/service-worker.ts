@@ -636,7 +636,10 @@ async function handleInstallAction(sourceId: string, path: string): Promise<{ su
       color,
       promptTemplate,
       systemPrompt,
-      category: 'marketplace',
+      // Store with category 'custom' so the floating action menu renders it:
+      // app.tsx and floating-action-menu.tsx group strictly by
+      // primary/custom/tone/length. Marketplace identity is tracked via type/sourceId.
+      category: 'custom',
       type: 'marketplace',
       sourceId,
       version,

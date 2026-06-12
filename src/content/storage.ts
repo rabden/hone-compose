@@ -212,9 +212,11 @@ export async function deleteActionConfig(id: string): Promise<void> {
 }
 
 // Legacy wrappers for backward compat — operate on the unified key
+// Includes marketplace actions so label resolution (getActionLabel) works
+// for history entries and shortcut displays.
 export async function loadCustomActions(): Promise<CustomAction[]> {
   const all = await loadAllActionConfigs();
-  return all.filter((a) => a.type === 'custom' || !a.type);
+  return all.filter((a) => a.type === 'custom' || a.type === 'marketplace' || !a.type);
 }
 
 export async function saveCustomAction(action: CustomAction): Promise<void> {
