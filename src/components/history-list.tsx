@@ -68,9 +68,11 @@ export function HistoryList({
           onClick={() => onItemClick(item)}
           className={cn(
             "relative flex items-center gap-4 px-5 cursor-pointer transition-colors duration-200 text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/20 overflow-hidden select-none py-4 bg-background hover:bg-background/50",
-            totalItems === 1 && "rounded-xl",
-            totalItems > 1 && i === 0 && "rounded-t-xl rounded-b-md",
-            totalItems > 1 && i === totalItems - 1 && "rounded-b-xl rounded-t-md",
+            totalItems === 1 && "rounded-3xl",
+            totalItems > 1 && i === 0 && "rounded-t-3xl rounded-b-md",
+            totalItems > 1 &&
+              i === totalItems - 1 &&
+              "rounded-b-3xl rounded-t-md",
             totalItems > 1 && i !== 0 && i !== totalItems - 1 && "rounded-md",
           )}
         >

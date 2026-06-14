@@ -44,19 +44,32 @@ interface KeyBindingsTabProps {
 }
 
 export default function KeyBindingsTab({
-  shortcutKey, setShortcutKey,
-  shortcutCtrl, setShortcutCtrl,
-  shortcutAlt, setShortcutAlt,
-  shortcutShift, setShortcutShift,
-  shortcutMeta, setShortcutMeta,
-  shortcutAction, setShortcutAction,
-  isRecordingKey, setIsRecordingKey,
-  dropdownShortcutKey, setDropdownShortcutKey,
-  dropdownShortcutCtrl, setDropdownShortcutCtrl,
-  dropdownShortcutAlt, setDropdownShortcutAlt,
-  dropdownShortcutShift, setDropdownShortcutShift,
-  dropdownShortcutMeta, setDropdownShortcutMeta,
-  isRecordingDropdownKey, setIsRecordingDropdownKey,
+  shortcutKey,
+  setShortcutKey,
+  shortcutCtrl,
+  setShortcutCtrl,
+  shortcutAlt,
+  setShortcutAlt,
+  shortcutShift,
+  setShortcutShift,
+  shortcutMeta,
+  setShortcutMeta,
+  shortcutAction,
+  setShortcutAction,
+  isRecordingKey,
+  setIsRecordingKey,
+  dropdownShortcutKey,
+  setDropdownShortcutKey,
+  dropdownShortcutCtrl,
+  setDropdownShortcutCtrl,
+  dropdownShortcutAlt,
+  setDropdownShortcutAlt,
+  dropdownShortcutShift,
+  setDropdownShortcutShift,
+  dropdownShortcutMeta,
+  setDropdownShortcutMeta,
+  isRecordingDropdownKey,
+  setIsRecordingDropdownKey,
   customActions,
 }: KeyBindingsTabProps) {
   const getShortcutDisplay = () => {
@@ -96,8 +109,8 @@ export default function KeyBindingsTab({
           Key Bindings
         </h1>
         <p className="text-sm text-muted-foreground/80 max-w-2xl leading-relaxed">
-          Configure fast global and contextual keyboard shortcuts
-          to trigger your text transformations on any webpage.
+          Configure fast global and contextual keyboard shortcuts to trigger
+          your text transformations on any webpage.
         </p>
       </div>
 
@@ -108,13 +121,13 @@ export default function KeyBindingsTab({
               Text Transformation Shortcut
             </Label>
             <p className="text-[10px] text-muted-foreground/70 mt-1 leading-normal">
-              Combination to execute the chosen transformation
-              action instantly on your focused or highlighted text.
+              Combination to execute the chosen transformation action instantly
+              on your focused or highlighted text.
             </p>
           </div>
           <div className="md:col-span-2">
             <div className="flex gap-3 items-center">
-              <div className="bg-background rounded-lg px-4 py-3.5 text-xs text-center flex-1 font-mono font-semibold text-foreground flex items-center justify-center gap-2 select-none min-h-[50px]">
+              <div className="bg-background rounded-3xl px-4 py-3.5 text-xs text-center flex-1 font-mono font-semibold text-foreground flex items-center justify-center gap-2 select-none min-h-[50px]">
                 {isRecordingKey ? (
                   <span className="animate-pulse text-foreground flex items-center gap-2">
                     <span className="w-2 h-2 bg-foreground rounded-full animate-ping" />
@@ -152,7 +165,8 @@ export default function KeyBindingsTab({
               Shortcut Trigger Action
             </Label>
             <p className="text-[10px] text-muted-foreground/70 mt-1 leading-normal">
-              Action that will run when the text transformation key combination is pressed.
+              Action that will run when the text transformation key combination
+              is pressed.
             </p>
           </div>
           <div className="md:col-span-2">
@@ -178,33 +192,54 @@ export default function KeyBindingsTab({
                     </SelectItem>
                   ))}
                 </SelectGroup>
-                {customActions.length > 0 && (
+                {customActions.filter((a) => a.type === "custom").length >
+                  0 && (
                   <SelectGroup>
                     <SelectLabel className="text-[10px] uppercase tracking-wider text-muted-foreground px-2 py-1">
                       Custom actions
                     </SelectLabel>
-                    {customActions.map((action) => (
-                      <SelectItem
-                        key={action.id}
-                        value={action.id}
-                        className="text-xs"
-                      >
-                        {action.name || "Untitled action"}
-                      </SelectItem>
-                    ))}
+                    {customActions
+                      .filter((a) => a.type === "custom")
+                      .map((action) => (
+                        <SelectItem
+                          key={action.id}
+                          value={action.id}
+                          className="text-xs"
+                        >
+                          {action.name || "Untitled action"}
+                        </SelectItem>
+                      ))}
                   </SelectGroup>
                 )}
-                {shortcutAction &&
-                  !isKnownShortcutAction(shortcutAction) && (
-                    <SelectGroup>
-                      <SelectItem
-                        value={shortcutAction}
-                        className="text-xs text-muted-foreground"
-                      >
-                        {getActionName(shortcutAction)} (unavailable)
-                      </SelectItem>
-                    </SelectGroup>
-                  )}
+                {customActions.filter((a) => a.type === "marketplace").length >
+                  0 && (
+                  <SelectGroup>
+                    <SelectLabel className="text-[10px] uppercase tracking-wider text-muted-foreground px-2 py-1">
+                      Marketplace actions
+                    </SelectLabel>
+                    {customActions
+                      .filter((a) => a.type === "marketplace")
+                      .map((action) => (
+                        <SelectItem
+                          key={action.id}
+                          value={action.id}
+                          className="text-xs"
+                        >
+                          {action.name || "Untitled action"}
+                        </SelectItem>
+                      ))}
+                  </SelectGroup>
+                )}
+                {shortcutAction && !isKnownShortcutAction(shortcutAction) && (
+                  <SelectGroup>
+                    <SelectItem
+                      value={shortcutAction}
+                      className="text-xs text-muted-foreground"
+                    >
+                      {getActionName(shortcutAction)} (unavailable)
+                    </SelectItem>
+                  </SelectGroup>
+                )}
               </SelectContent>
             </Select>
 
@@ -212,7 +247,10 @@ export default function KeyBindingsTab({
               <ShieldAlert className="w-4 h-4 shrink-0 text-foreground/40 mt-0.5" />
               <div>
                 <strong className="text-foreground/80">Pro Tip:</strong>{" "}
-                Pressing this combination while focusing on any input or textarea on any webpage will extract the selected text (or all text if nothing is selected) and replace it with the corrected version from your active AI provider.
+                Pressing this combination while focusing on any input or
+                textarea on any webpage will extract the selected text (or all
+                text if nothing is selected) and replace it with the corrected
+                version from your active AI provider.
               </div>
             </div>
           </div>
@@ -224,12 +262,13 @@ export default function KeyBindingsTab({
               Menu Toggle Shortcut
             </Label>
             <p className="text-[10px] text-muted-foreground/70 mt-1 leading-normal">
-              Key combination to trigger the contextual dropdown helper menu on active inputs.
+              Key combination to trigger the contextual dropdown helper menu on
+              active inputs.
             </p>
           </div>
           <div className="md:col-span-2">
             <div className="flex gap-3 items-center">
-              <div className="bg-background rounded-lg px-4 py-3.5 text-xs text-center flex-1 font-mono font-semibold text-foreground flex items-center justify-center gap-2 select-none min-h-[50px]">
+              <div className="bg-background rounded-3xl px-4 py-3.5 text-xs text-center flex-1 font-mono font-semibold text-foreground flex items-center justify-center gap-2 select-none min-h-[50px]">
                 {isRecordingDropdownKey ? (
                   <span className="animate-pulse text-foreground flex items-center gap-2">
                     <span className="w-2 h-2 bg-foreground rounded-full animate-ping" />

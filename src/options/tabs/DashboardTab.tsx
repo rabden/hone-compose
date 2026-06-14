@@ -185,7 +185,7 @@ export default function DashboardTab({
         {/* Engine Card - Tall */}
         <button
           onClick={() => setActiveTab("api")}
-          className="group md:col-span-1 md:row-span-2 relative flex flex-col justify-between p-6 text-left cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring/20 overflow-hidden bg-background rounded-md rounded-tl-3xl rounded-bl-3xl transition-colors duration-200 hover:bg-background/50"
+          className="group md:col-span-1 md:row-span-2 relative flex flex-col justify-between p-6 text-left cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring/20 overflow-hidden bg-background rounded-md rounded-tl-3xl rounded-bl-3xl transition-colors duration-200 hover:bg-background/50 select-none"
         >
           <Ripple />
           <div className="relative z-10 pointer-events-none space-y-4 flex flex-col flex-1">
@@ -245,7 +245,7 @@ export default function DashboardTab({
         {/* Shortcut + Visibility Cards - Stack */}
         <button
           onClick={() => setActiveTab("shortcut")}
-          className="group relative flex flex-col justify-between p-6 text-left cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring/20 overflow-hidden bg-background rounded-md transition-colors duration-200 hover:bg-background/50"
+          className="group relative flex flex-col justify-between p-6 text-left cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring/20 overflow-hidden bg-background rounded-md transition-colors duration-200 hover:bg-background/50 select-none"
         >
           <Ripple />
           <div className="relative z-10 pointer-events-none space-y-3">
@@ -266,7 +266,7 @@ export default function DashboardTab({
 
         <button
           onClick={() => setActiveTab("shortcut")}
-          className="group relative flex items-start justify-between p-6 text-left cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring/20 overflow-hidden bg-background rounded-md rounded-tr-3xl transition-colors duration-200 hover:bg-background/50"
+          className="group relative flex items-start justify-between p-6 text-left cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring/20 overflow-hidden bg-background rounded-md rounded-tr-3xl transition-colors duration-200 hover:bg-background/50 select-none"
         >
           <Ripple />
           <div className="relative z-10 pointer-events-none space-y-3">
@@ -288,7 +288,7 @@ export default function DashboardTab({
         {/* Rewrites Card */}
         <button
           onClick={() => setActiveTab("history")}
-          className="group relative flex flex-col justify-between p-6 text-left cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring/20 overflow-hidden bg-background rounded-md transition-colors duration-200 hover:bg-background/50"
+          className="group relative flex flex-col justify-between p-6 text-left cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring/20 overflow-hidden bg-background rounded-md transition-colors duration-200 hover:bg-background/50 select-none"
         >
           <Ripple />
           <div className="relative z-10 pointer-events-none space-y-3">
@@ -310,7 +310,7 @@ export default function DashboardTab({
         {/* Actions Count Card */}
         <button
           onClick={() => setActiveTab("actions")}
-          className="group relative flex flex-col justify-between p-6 text-left cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring/20 overflow-hidden bg-background rounded-md rounded-br-3xl transition-colors duration-200 hover:bg-background/50"
+          className="group relative flex flex-col justify-between p-6 text-left cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring/20 overflow-hidden bg-background rounded-md rounded-br-3xl transition-colors duration-200 hover:bg-background/50 select-none"
         >
           <Ripple />
           <div className="relative z-10 pointer-events-none space-y-3">

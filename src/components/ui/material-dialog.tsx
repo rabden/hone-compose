@@ -1,5 +1,7 @@
 import React, { createContext, useContext, useEffect, useRef } from 'react';
 import { cn } from '@/lib/utils';
+import { X } from 'lucide-react';
+import { Button } from '@/components/ui/material-design-3-button';
 
 interface DialogContextType {
     open: boolean;
@@ -117,9 +119,23 @@ export function DialogContent({ children, className, onOpened, ...props }: Dialo
  * inside the styled panel (slot="content") so it shares the same background.
  */
 export function DialogTitle({ children, className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
+    const context = useContext(DialogContext);
     return (
-        <div className={cn("px-6 pt-5 pb-4", className)} {...props}>
-            {children}
+        <div className={cn("px-6 pt-5 pb-4 flex items-start justify-between gap-4", className)} {...props}>
+            <div className="flex-1 min-w-0">
+                {children}
+            </div>
+            {context && (
+                <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    shape="round"
+                    onClick={() => context.onOpenChange(false)}
+                    aria-label="Close dialog"
+                >
+                    <X className="w-4 h-4" />
+                </Button>
+            )}
         </div>
     );
 }

@@ -158,3 +158,71 @@ src/
 ├── index.css                  # Global Tailwind imports and base styles.
 ├── main.tsx                   # [Dev] Entry point for the Vite development landing page.
 ```
+
+---
+
+## Marketplace Registry
+
+The Hone Actions Registry is a public GitHub repo that acts as a curated catalog of community-contributed actions. All installed marketplace actions are fetched directly from this repo (not bundled with the extension).
+
+### Repo Location
+- **URL**: `github.com/rabden/Hone-Actions-Registry`
+- **Base raw URL**: `https://raw.githubusercontent.com/rabden/Hone-Actions-Registry/main/`
+
+### Registry Files
+
+| File | Purpose |
+|---|---|
+| `registry.json` | Index of all available actions (id, name, icon, color, path, tags) |
+| `schema.json` | JSON Schema that validates individual action JSON files |
+| `actions/*.json` | Individual action definitions (one file per action) |
+| `scripts/validate.js` | CI validation script |
+| `CONTRIBUTING.md` | Contribution guidelines |
+
+### `registry.json` Structure
+
+The registry is an index. Each entry is:
+
+```ts
+interface RegistryAction {
+  id: string;        // e.g. "mkt_action_items"
+  name: string;      // Display name
+  description: string;
+  icon: string;      // Lucide icon name (PascalCase, e.g. "ListChecks")
+  color: string;     // Hex color for the icon
+  version: string;   // Semver
+  author: string;    // GitHub username or team
+  tags: string[];    // Lowercase kebab-case tags
+  path: string;      // Relative path to action JSON, e.g. "actions/action-items.json"
+}
+```
+
+### Action JSON File Fields
+
+Each `actions/*.json` file is validated against `schema.json` and contains:
+
+```ts
+{
+  id: "mkt_<name>",        // Pattern: ^mkt_[a-z0-9_]+$, max 64 chars
+  name: string,            // 3-80 chars
+  description: string,     // 10-160 chars
+  icon: string,            // PascalCase Lucide name
+  color: string,           // Hex #RRGGBB
+  promptTemplate: string,  // 20-4000 chars, must contain {{input}} placeholder
+  systemPrompt?: string,   // Optional, max 12000 chars
+  category: "marketplace", // Always "marketplace"
+  version: string,         // Semver
+  author: string,          // 2-60 chars
+  tags: string[]           // 1-6 lowercase kebab-case tags, max 24 chars each
+}
+```
+
+**No `provider`, `model`, `temperature`, or `replaceMode` fields** exist in the schema. Those are configured by the user in the editor after installation and stored locally with the action config.
+
+### How the Extension Interacts
+
+- **Fetching the catalog**: `handleFetchRegistry()` in `src/background/service-worker.ts:561` fetches `registry.json` and caches it for 6 hours (`REGISTRY_CACHE_TTL_MS`). The `ActionsStudioTab` in the options page sends a `MARKETPLACE_FETCH_REGISTRY` message to trigger this.
+- **Installing an action**: `handleInstallAction()` in `src/background/service-worker.ts:590` fetches the individual action JSON, validates each field (never blind-spreads), constructs a `CustomAction` with `type: 'marketplace'` and `category: 'custom'`, and saves it via `saveActionConfig()`.
+- **Storage schema**: Installed marketplace actions use the same `CustomAction` interface (`src/content/storage.ts:14`) as user-created custom actions, distinguished by `type: 'marketplace'` and `sourceId` tracking the registry ID.
+- **Runtime execution**: The `ActionRegistry` (`src/content/actions.ts:36`) loads all enabled actions (builtin, custom, marketplace) at startup from local storage. The service worker (`callAIProviderRaw()`) routes AI requests using the user's global provider setting -- per-action provider/model fields are not currently read at runtime.
+```

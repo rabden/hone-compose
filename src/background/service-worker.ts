@@ -529,8 +529,8 @@ async function callAIProviderRaw(
 }
 
 // ── Marketplace constants ──
-const REGISTRY_URL = 'https://gitlab.com/rabden-group/hone-actions-registry/-/raw/main/registry.json';
-const REGISTRY_BASE_URL = 'https://gitlab.com/rabden-group/hone-actions-registry/-/raw/main/';
+const REGISTRY_URL = 'https://raw.githubusercontent.com/rabden/Hone-Actions-Registry/main/registry.json';
+const REGISTRY_BASE_URL = 'https://raw.githubusercontent.com/rabden/Hone-Actions-Registry/main/';
 const REGISTRY_CACHE_KEY = 'marketplaceRegistryCache';
 const REGISTRY_CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
 const VALID_ACTION_PATH_RE = /^actions\/[a-z0-9-]+\.json$/;

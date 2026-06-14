@@ -5,7 +5,7 @@ import { ExpandingSearchDock } from "@/components/ui/expanding-search-dock";
 import type { ExpandingSearchDockHandle } from "@/components/ui/expanding-search-dock";
 import { TagGroup, Tag } from "@/components/ui/tag";
 import { Badge } from "@/components/ui/badge";
-import { Trash2, Copy, Check, X, Search } from "lucide-react";
+import { Trash2, Copy, Check, Search } from "lucide-react";
 import { Ripple } from "@/components/ui/ripple";
 import { HistoryList } from "@/components/history-list";
 import {
@@ -173,27 +173,14 @@ export default function HistoryTab({
           {selectedHistoryItem && (
             <>
               <DialogTitle>
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <Badge
-                      variant="secondary"
-                      className="text-[10px] font-mono border-border/40"
-                    >
-                      {getActionName(selectedHistoryItem.action)}
-                    </Badge>
-                    <span className="text-sm font-light">Details</span>
-                  </div>
-                  <MaterialDesign3Button
-                    variant="ghost"
-                    size="icon-sm"
-                    shape="round"
-                    onClick={() => {
-                      setHistoryDialogOpen(false);
-                      setSelectedHistoryItem(null);
-                    }}
+                <div className="flex items-center gap-2">
+                  <Badge
+                    variant="secondary"
+                    className="text-[10px] font-mono border-border/40"
                   >
-                    <X className="w-4 h-4" />
-                  </MaterialDesign3Button>
+                    {getActionName(selectedHistoryItem.action)}
+                  </Badge>
+                  <span className="text-sm font-light">Details</span>
                 </div>
               </DialogTitle>
 

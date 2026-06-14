@@ -649,7 +649,7 @@ export default function App({
       suppressKeysUntilRef.current = performance.now() + 250;
 
       const handler = registryRef.current?.get(action);
-      const isCustomPreview = handler?.type === "custom" && handler.replaceMode === "preview";
+      const isCustomPreview = (handler?.type === "custom" || handler?.type === "marketplace") && handler.replaceMode === "preview";
       const shouldPreviewInCard = previewInCard || isCustomPreview;
 
       if (!shouldPreviewInCard) {

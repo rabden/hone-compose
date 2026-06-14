@@ -48,8 +48,8 @@ function Tag({
         isFirst && "rounded-l-3xl",
         isLast && "rounded-r-3xl",
         interactive
-          ? "bg-background hover:bg-background transition-colors duration-200 cursor-pointer outline-none text-foreground"
-          : "bg-background text-foreground/80",
+          ? "bg-background hover:bg-background transition-colors duration-200 cursor-pointer outline-none text-foreground select-none"
+          : "bg-background text-foreground/80 select-none",
         className,
       )}
       {...(interactive ? { role: "button" } : {})}

@@ -25,16 +25,16 @@ export function RadioCardGroup({
       {options.map((opt) => {
         const isActive = value === opt.value;
         return (
-          <button
-            key={opt.value}
-            type="button"
-            onClick={() => onValueChange(opt.value)}
-            className={cn(
-              "relative flex items-center gap-3 p-3.5 rounded-3xl text-left transition-all duration-300 cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring/20 overflow-hidden group",
-              isActive
-                ? "bg-background/20 border border-foreground/30 text-foreground"
-                : "bg-background text-muted-foreground hover:bg-background/50 hover:text-foreground",
-            )}
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => onValueChange(opt.value)}
+              className={cn(
+                "relative flex items-center gap-3 p-3.5 rounded-3xl text-left transition-all duration-300 cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring/20 overflow-hidden group select-none",
+                isActive
+                  ? "bg-background/20 border border-foreground/30 text-foreground"
+                  : "bg-background text-muted-foreground hover:bg-background/50 hover:text-foreground",
+              )}
           >
             <div className="absolute inset-0 bg-gradient-to-br from-foreground/2 to-transparent pointer-events-none" />
             <Ripple />
@@ -55,7 +55,7 @@ export function RadioCardGroup({
                 )}
               />
             </div>
-            <div className="flex flex-col gap-0.5 relative z-10 min-w-0">
+            <div className="flex flex-col gap-0.5 relative z-10 pointer-events-none min-w-0">
               <span
                 className={cn(
                   "text-xs font-semibold transition-colors",
@@ -125,7 +125,7 @@ export function RadioCardGroupGrouped({
             type="button"
             onClick={() => onValueChange(opt.value)}
             className={cn(
-              "relative flex items-center gap-3 p-3.5 border text-left transition-all duration-300 cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring/20 overflow-hidden group",
+              "relative flex items-center gap-3 p-3.5 border text-left transition-all duration-300 cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring/20 overflow-hidden group select-none",
               rounded,
               isActive
                 ? "bg-background/20 border-foreground/30 text-foreground"

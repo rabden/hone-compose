@@ -588,7 +588,7 @@ export default function Options() {
     <SidebarProvider defaultOpen={true}>
       <div className="flex flex-col w-full h-[100dvh] overflow-hidden bg-background">
         {/* Full-width Header */}
-        <header className="flex items-center h-12 px-4 bg-background shrink-0 relative">
+        <header className="flex items-center h-12 px-4 bg-background shrink-0 relative select-none">
           <div className="absolute left-2">
             <SidebarToggleInHeader />
           </div>
@@ -633,7 +633,7 @@ export default function Options() {
                               isActive={activeTab === item.value}
                               onClick={() => setActiveTab(item.value)}
                               tooltip={item.label}
-                              className="relative data-[active=true]:bg-muted/60 data-[active=true]:text-foreground data-[active=true]:font-semibold hover:bg-muted/30 active:scale-[0.98] transition-all duration-150 ease-[cubic-bezier(0.16,1,0.3,1)] rounded-lg animate-in fade-in slide-in-from-top-1 duration-300 fill-mode-backwards"
+                              className="relative data-[active=true]:bg-muted/60 data-[active=true]:text-foreground data-[active=true]:font-semibold hover:bg-muted/30 active:scale-[0.98] transition-all duration-150 ease-[cubic-bezier(0.16,1,0.3,1)] rounded-lg animate-in fade-in slide-in-from-top-1 duration-300 fill-mode-backwards select-none"
                               style={{ animationDelay: `${index * 40}ms` }}
                             >
                               <Ripple />

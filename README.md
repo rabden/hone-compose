@@ -199,6 +199,18 @@ Hone isn't limited to what we built. The **Actions Studio** is the heart of the 
 - **Enable/disable** — turn actions on/off without deleting them
 - **Test playground** — run your action against sample text directly in the options page
 
+### 🏪 Action Marketplace
+
+Hone includes a built-in **Action Marketplace** for discovering and installing community-built actions — no coding required.
+
+- **Browse & search** actions by name, description, or tags from the marketplace panel in Actions Studio
+- **One-click install** — actions are fetched from the public registry and instantly available in your action menu
+- **Automatic updates** — if an installed action has a newer version, an "Update" badge appears with a single-click update
+- **Per-action management** — enable/disable, uninstall, or update marketplace actions individually
+- **Open registry** — the [Hone Actions Registry](https://github.com/rabden/Hone-Actions-Registry) is a public GitHub repo. Anyone can contribute actions via pull request. See [architecture.md](architecture.md#marketplace-registry) for the full registry schema and contribution guide.
+
+Marketplace actions use the same `CustomAction` storage model as user-created actions, distinguished by type. Provider, model, and temperature are user-configurable per action after installation.
+
 ### Smart Text Boundary Inference
 
 When no text is selected, Hone intelligently guesses what you want to rewrite:

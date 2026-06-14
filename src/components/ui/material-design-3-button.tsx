@@ -18,9 +18,12 @@ const EASING_STANDARD = "cubic-bezier(0.2, 0, 0, 1)";
 const playTactilePopSound = () => {
   try {
     // Safely initialize Web Audio API
-    const AudioContext: typeof window.AudioContext | undefined = window.AudioContext || (window as { webkitAudioContext?: typeof window.AudioContext }).webkitAudioContext;
+    const AudioContext: typeof window.AudioContext | undefined =
+      window.AudioContext ||
+      (window as { webkitAudioContext?: typeof window.AudioContext })
+        .webkitAudioContext;
     if (!AudioContext) return;
-    
+
     const ctx = new AudioContext();
     const osc = ctx.createOscillator();
     const gainNode = ctx.createGain();
@@ -31,7 +34,7 @@ const playTactilePopSound = () => {
     // Create a pleasant, snappy "pop" sound using a sine wave
     osc.type = "sine";
     const now = ctx.currentTime;
-    
+
     // Pitch drops rapidly to simulate a physical click
     osc.frequency.setValueAtTime(600, now);
     osc.frequency.exponentialRampToValueAtTime(100, now + 0.05);
@@ -49,10 +52,10 @@ const playTactilePopSound = () => {
 
 // --- 3. TYPES & STATE MACHINE ---
 const RippleState = {
-  INACTIVE: 'INACTIVE',
-  TOUCH_DELAY: 'TOUCH_DELAY',
-  HOLDING: 'HOLDING',
-  WAITING_FOR_CLICK: 'WAITING_FOR_CLICK',
+  INACTIVE: "INACTIVE",
+  TOUCH_DELAY: "TOUCH_DELAY",
+  HOLDING: "HOLDING",
+  WAITING_FOR_CLICK: "WAITING_FOR_CLICK",
 } as const;
 
 // --- 4. MATERIAL RIPPLE HOOK ---
@@ -94,7 +97,7 @@ const useMaterialRipple = (disabled = false) => {
     const maxDim = Math.max(height, width);
     const softEdgeSize = Math.max(
       SOFT_EDGE_CONTAINER_RATIO * maxDim,
-      SOFT_EDGE_MINIMUM_SIZE
+      SOFT_EDGE_MINIMUM_SIZE,
     );
 
     const initialSize = Math.floor(maxDim * INITIAL_ORIGIN_SCALE);
@@ -152,10 +155,10 @@ const useMaterialRipple = (disabled = false) => {
     growAnimationRef.current = rippleEffectRef.current.animate(
       {
         top: [0, 0],
-        left:[0, 0],
+        left: [0, 0],
         height: [rippleSizeRef.current, rippleSizeRef.current],
         width: [rippleSizeRef.current, rippleSizeRef.current],
-        transform:[
+        transform: [
           `translate(${startPoint.x}px, ${startPoint.y}px) scale(1)`,
           `translate(${endPoint.x}px, ${endPoint.y}px) scale(${rippleScaleRef.current})`,
         ],
@@ -164,7 +167,7 @@ const useMaterialRipple = (disabled = false) => {
         duration: PRESS_GROW_MS,
         easing: EASING_STANDARD,
         fill: ANIMATION_FILL,
-      }
+      },
     );
   };
 
@@ -281,7 +284,7 @@ const Ripple = React.forwardRef<HTMLDivElement, RippleProps>(
           className={cn(
             "absolute inset-0 bg-current transition-opacity duration-200 linear",
             hovered ? "opacity-[0.08]" : "opacity-0",
-            pressed && "opacity-[0.12]"
+            pressed && "opacity-[0.12]",
           )}
         />
         <div
@@ -297,7 +300,7 @@ const Ripple = React.forwardRef<HTMLDivElement, RippleProps>(
         />
       </div>
     );
-  }
+  },
 );
 Ripple.displayName = "Ripple";
 
@@ -308,80 +311,189 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default: "bg-primary text-primary-foreground shadow-sm hover:shadow",
-        destructive: "bg-destructive text-destructive-foreground shadow-sm hover:shadow",
-        outline: "bg-transparent text-foreground shadow-none border border-border hover:bg-secondary/20",
-        secondary: "bg-secondary/50 text-secondary-foreground shadow-none hover:bg-secondary/70",
+        destructive:
+          "bg-destructive text-destructive-foreground shadow-sm hover:shadow",
+        outline:
+          "bg-transparent text-foreground shadow-none border border-border hover:bg-secondary/20",
+        secondary:
+          "bg-secondary/50 text-secondary-foreground shadow-none hover:bg-secondary/70",
         ghost: "bg-transparent text-primary shadow-none hover:bg-primary/10",
         link: "text-primary underline-offset-4 hover:underline",
-        elevated: "bg-card text-card-foreground shadow-md hover:shadow-lg data-[pressed=true]:shadow-sm",
+        elevated:
+          "bg-card text-card-foreground shadow-md hover:shadow-lg data-[pressed=true]:shadow-sm",
       },
       size: {
         // Core Sizes
-        default: "py-[10px] px-[16px] gap-[8px] text-sm", 
-        sm: "py-[6px] px-[12px] gap-[8px] text-sm",       
-        lg: "py-[16px] px-[24px] gap-[8px] text-base",    
+        default: "py-[10px] px-[16px] gap-[8px] text-sm",
+        sm: "py-[6px] px-[12px] gap-[8px] text-sm",
+        lg: "py-[16px] px-[24px] gap-[8px] text-base",
         icon: "p-[8px] w-[40px] h-[40px]",
         // Expressive Scales
-        xl: "py-[32px] px-[48px] gap-[12px] text-2xl",    
-        "2xl": "py-[48px] px-[64px] gap-[16px] text-3xl", 
+        xl: "py-[32px] px-[48px] gap-[12px] text-2xl",
+        "2xl": "py-[48px] px-[64px] gap-[16px] text-3xl",
         "icon-sm": "p-[6px] w-[32px] h-[32px]",
         "icon-lg": "p-[16px] w-[56px] h-[56px]",
         "icon-xl": "p-[32px] w-[96px] h-[96px]",
         "icon-2xl": "p-[48px] w-[136px] h-[136px]",
       },
       shape: {
-        round: "", 
+        round: "",
         square: "",
-        "split-left": "",  // Automatically injected by SplitButton
+        "split-left": "", // Automatically injected by SplitButton
         "split-right": "", // Automatically injected by SplitButton
       },
     },
-    compoundVariants:[
+    compoundVariants: [
       // Nullify borders on non-outline variants to prevent stroke artifacts
-      { variant:["default", "destructive", "secondary", "ghost", "link", "elevated"], className: "border-transparent" },
+      {
+        variant: [
+          "default",
+          "destructive",
+          "secondary",
+          "ghost",
+          "link",
+          "elevated",
+        ],
+        className: "border-transparent",
+      },
       // Expressive outlined dynamic border-widths
-      { variant: "outline", size:["xl", "icon-xl"], className: "border-2" },
-      { variant: "outline", size:["2xl", "icon-2xl"], className: "border-[3px]" },
-      
+      { variant: "outline", size: ["xl", "icon-xl"], className: "border-2" },
+      {
+        variant: "outline",
+        size: ["2xl", "icon-2xl"],
+        className: "border-[3px]",
+      },
+
       // SHAPE PHYSICS: Standard "Round" Morphing (Pill -> Squish)
-      { shape: "round", size: ["sm", "icon-sm"], className: "rounded-[16px] data-[pressed=true]:rounded-[8px]" },
-      { shape: "round", size: ["default", "icon"], className: "rounded-[20px] data-[pressed=true]:rounded-[8px]" },
-      { shape: "round", size:["lg", "icon-lg"], className: "rounded-[28px] data-[pressed=true]:rounded-[12px]" },
-      { shape: "round", size: ["xl", "icon-xl"], className: "rounded-[48px] data-[pressed=true]:rounded-[16px]" },
-      { shape: "round", size: ["2xl", "icon-2xl"], className: "rounded-[68px] data-[pressed=true]:rounded-[16px]" },
+      {
+        shape: "round",
+        size: ["sm", "icon-sm"],
+        className: "rounded-[16px] data-[pressed=true]:rounded-[8px]",
+      },
+      {
+        shape: "round",
+        size: ["default", "icon"],
+        className: "rounded-[20px] data-[pressed=true]:rounded-[8px]",
+      },
+      {
+        shape: "round",
+        size: ["lg", "icon-lg"],
+        className: "rounded-[28px] data-[pressed=true]:rounded-[12px]",
+      },
+      {
+        shape: "round",
+        size: ["xl", "icon-xl"],
+        className: "rounded-[48px] data-[pressed=true]:rounded-[16px]",
+      },
+      {
+        shape: "round",
+        size: ["2xl", "icon-2xl"],
+        className: "rounded-[68px] data-[pressed=true]:rounded-[16px]",
+      },
 
       // SHAPE PHYSICS: Standard "Square" Morphing (Squish -> Pill)
-      { shape: "square", size: ["sm", "icon-sm"], className: "rounded-[12px] data-[pressed=true]:rounded-[16px]" },
-      { shape: "square", size: ["default", "icon"], className: "rounded-[12px] data-[pressed=true]:rounded-[20px]" },
-      { shape: "square", size:["lg", "icon-lg"], className: "rounded-[16px] data-[pressed=true]:rounded-[28px]" },
-      { shape: "square", size: ["xl", "icon-xl"], className: "rounded-[28px] data-[pressed=true]:rounded-[48px]" },
-      { shape: "square", size: ["2xl", "icon-2xl"], className: "rounded-[28px] data-[pressed=true]:rounded-[68px]" },
+      {
+        shape: "square",
+        size: ["sm", "icon-sm"],
+        className: "rounded-[12px] data-[pressed=true]:rounded-[16px]",
+      },
+      {
+        shape: "square",
+        size: ["default", "icon"],
+        className: "rounded-[12px] data-[pressed=true]:rounded-[20px]",
+      },
+      {
+        shape: "square",
+        size: ["lg", "icon-lg"],
+        className: "rounded-[16px] data-[pressed=true]:rounded-[28px]",
+      },
+      {
+        shape: "square",
+        size: ["xl", "icon-xl"],
+        className: "rounded-[28px] data-[pressed=true]:rounded-[48px]",
+      },
+      {
+        shape: "square",
+        size: ["2xl", "icon-2xl"],
+        className: "rounded-[28px] data-[pressed=true]:rounded-[68px]",
+      },
 
       // SPLIT-LEFT PHYSICS (Your custom tweaks implemented)
-      { shape: "split-left", size: ["sm", "icon-sm"], className: "rounded-l-[16px] rounded-r-[4px] data-[pressed=true]:rounded-l-[16px] data-[pressed=true]:rounded-r-[16px]" },
-      { shape: "split-left", size: ["default", "icon"], className: "rounded-l-[24px] rounded-r-[4px] data-[pressed=true]:rounded-l-[24px] data-[pressed=true]:rounded-r-[24px]" },
-      { shape: "split-left", size:["lg", "icon-lg"], className: "rounded-l-[28px] rounded-r-[4px] data-[pressed=true]:rounded-l-[28px] data-[pressed=true]:rounded-r-[28px]" },
-      { shape: "split-left", size:["xl", "icon-xl"], className: "rounded-l-[46px] rounded-r-[6px] data-[pressed=true]:rounded-l-[46px] data-[pressed=true]:rounded-r-[46px]" },
-      { shape: "split-left", size: ["2xl", "icon-2xl"], className: "rounded-l-[62px] rounded-r-[12px] data-[pressed=true]:rounded-l-[62px] data-[pressed=true]:rounded-r-[62px]" },
+      {
+        shape: "split-left",
+        size: ["sm", "icon-sm"],
+        className:
+          "rounded-l-[16px] rounded-r-[4px] data-[pressed=true]:rounded-l-[16px] data-[pressed=true]:rounded-r-[16px]",
+      },
+      {
+        shape: "split-left",
+        size: ["default", "icon"],
+        className:
+          "rounded-l-[24px] rounded-r-[4px] data-[pressed=true]:rounded-l-[24px] data-[pressed=true]:rounded-r-[24px]",
+      },
+      {
+        shape: "split-left",
+        size: ["lg", "icon-lg"],
+        className:
+          "rounded-l-[28px] rounded-r-[4px] data-[pressed=true]:rounded-l-[28px] data-[pressed=true]:rounded-r-[28px]",
+      },
+      {
+        shape: "split-left",
+        size: ["xl", "icon-xl"],
+        className:
+          "rounded-l-[46px] rounded-r-[6px] data-[pressed=true]:rounded-l-[46px] data-[pressed=true]:rounded-r-[46px]",
+      },
+      {
+        shape: "split-left",
+        size: ["2xl", "icon-2xl"],
+        className:
+          "rounded-l-[62px] rounded-r-[12px] data-[pressed=true]:rounded-l-[62px] data-[pressed=true]:rounded-r-[62px]",
+      },
 
       // SPLIT-RIGHT PHYSICS (Your custom tweaks mirrored for right)
-      { shape: "split-right", size: ["sm", "icon-sm"], className: "rounded-r-[16px] rounded-l-[4px] data-[pressed=true]:rounded-r-[16px] data-[pressed=true]:rounded-l-[16px]" },
-      { shape: "split-right", size:["default", "icon"], className: "rounded-r-[24px] rounded-l-[4px] data-[pressed=true]:rounded-r-[24px] data-[pressed=true]:rounded-l-[24px]" },
-      { shape: "split-right", size: ["lg", "icon-lg"], className: "rounded-r-[28px] rounded-l-[4px] data-[pressed=true]:rounded-r-[28px] data-[pressed=true]:rounded-l-[28px]" },
-      { shape: "split-right", size: ["xl", "icon-xl"], className: "rounded-r-[46px] rounded-l-[6px] data-[pressed=true]:rounded-r-[46px] data-[pressed=true]:rounded-l-[46px]" },
-      { shape: "split-right", size: ["2xl", "icon-2xl"], className: "rounded-r-[62px] rounded-l-[12px] data-[pressed=true]:rounded-r-[62px] data-[pressed=true]:rounded-l-[62px]" },
+      {
+        shape: "split-right",
+        size: ["sm", "icon-sm"],
+        className:
+          "rounded-r-[16px] rounded-l-[4px] data-[pressed=true]:rounded-r-[16px] data-[pressed=true]:rounded-l-[16px]",
+      },
+      {
+        shape: "split-right",
+        size: ["default", "icon"],
+        className:
+          "rounded-r-[24px] rounded-l-[4px] data-[pressed=true]:rounded-r-[24px] data-[pressed=true]:rounded-l-[24px]",
+      },
+      {
+        shape: "split-right",
+        size: ["lg", "icon-lg"],
+        className:
+          "rounded-r-[28px] rounded-l-[4px] data-[pressed=true]:rounded-r-[28px] data-[pressed=true]:rounded-l-[28px]",
+      },
+      {
+        shape: "split-right",
+        size: ["xl", "icon-xl"],
+        className:
+          "rounded-r-[46px] rounded-l-[6px] data-[pressed=true]:rounded-r-[46px] data-[pressed=true]:rounded-l-[46px]",
+      },
+      {
+        shape: "split-right",
+        size: ["2xl", "icon-2xl"],
+        className:
+          "rounded-r-[62px] rounded-l-[12px] data-[pressed=true]:rounded-r-[62px] data-[pressed=true]:rounded-l-[62px]",
+      },
     ],
     defaultVariants: {
       variant: "default",
       size: "default",
       shape: "round",
     },
-  }
+  },
 );
 
 // --- 7. CORE BUTTON COMPONENT ---
 export interface ButtonProps
-  extends React.ButtonHTMLAttributes<HTMLButtonElement>,
+  extends
+    React.ButtonHTMLAttributes<HTMLButtonElement>,
     VariantProps<typeof buttonVariants> {
   asChild?: boolean;
   noRipple?: boolean;
@@ -403,7 +515,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       children,
       ...props
     },
-    ref
+    ref,
   ) => {
     const isRippleLogicDisabled = props.disabled || (noRipple && noMorph);
     const { surfaceRef, rippleEffectRef, hovered, pressed, events } =
@@ -430,14 +542,16 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     };
 
     if (asChild) {
-      const child = React.Children.only(children) as React.ReactElement<{ children?: React.ReactNode }>;
+      const child = React.Children.only(children) as React.ReactElement<{
+        children?: React.ReactNode;
+      }>;
 
       return (
         <Slot ref={ref} {...componentProps}>
           {React.cloneElement(child, {
             children: (
               <>
-                {(!noRipple && variant !== "link") && (
+                {!noRipple && variant !== "link" && (
                   <Ripple
                     ref={surfaceRef}
                     rippleEffectRef={rippleEffectRef}
@@ -457,7 +571,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
 
     return (
       <button ref={ref} {...componentProps}>
-        {(!noRipple && variant !== "link") && (
+        {!noRipple && variant !== "link" && (
           <Ripple
             ref={surfaceRef}
             rippleEffectRef={rippleEffectRef}
@@ -470,41 +584,52 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         </span>
       </button>
     );
-  }
+  },
 );
 Button.displayName = "Button";
 
 // --- 8. MD3 SPLIT BUTTON / CONNECTED BUTTON GROUP ---
-const SplitButton = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
-  ({ className, children, ...props }, ref) => {
-    const childrenArray = React.Children.toArray(children);
-    
-    return (
-      <div
-        ref={ref}
-        // Flex items-stretch guarantees the child buttons evaluate to perfectly identical heights
-        className={cn("inline-flex items-stretch justify-center gap-[2px]", className)}
-        {...props}
-      >
-        {childrenArray.map((child, index) => {
-          if (!React.isValidElement(child)) return child;
-          
-          const isFirst = index === 0;
-          const isLast = index === childrenArray.length - 1;
-          
-          return React.cloneElement(child as React.ReactElement<Record<string, unknown>>, {
+const SplitButton = React.forwardRef<
+  HTMLDivElement,
+  React.HTMLAttributes<HTMLDivElement>
+>(({ className, children, ...props }, ref) => {
+  const childrenArray = React.Children.toArray(children);
+
+  return (
+    <div
+      ref={ref}
+      // Flex items-stretch guarantees the child buttons evaluate to perfectly identical heights
+      className={cn(
+        "inline-flex items-stretch justify-center gap-[2px]",
+        className,
+      )}
+      {...props}
+    >
+      {childrenArray.map((child, index) => {
+        if (!React.isValidElement(child)) return child;
+
+        const isFirst = index === 0;
+        const isLast = index === childrenArray.length - 1;
+
+        return React.cloneElement(
+          child as React.ReactElement<Record<string, unknown>>,
+          {
             // Automatically inject the isolated Split Button physics
             shape: isFirst ? "split-left" : isLast ? "split-right" : "square",
             // Allow the button to naturally stretch to the identical container height
-            className: cn((child as React.ReactElement<Record<string, unknown>>).props.className as string | undefined, "!h-auto self-stretch")
-          });
-        })}
-      </div>
-    );
-  }
-);
+            className: cn(
+              (child as React.ReactElement<Record<string, unknown>>).props
+                .className as string | undefined,
+              "!h-auto self-stretch",
+            ),
+          },
+        );
+      })}
+    </div>
+  );
+});
 SplitButton.displayName = "SplitButton";
 
-export { Button, SplitButton }
+export { Button, SplitButton };
 // eslint-disable-next-line react-refresh/only-export-components
 export { buttonVariants };
