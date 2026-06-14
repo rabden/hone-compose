@@ -1,12 +1,18 @@
 name: opencode pr review
 
+concurrency:
+  group: pr-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 on:
   pull_request:
     types: [opened, synchronize]
 
 jobs:
   review:
-    if: github.repository == 'rabden/hone-compose'
+    if: |
+      github.repository == 'rabden/hone-compose' &&
+      github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -18,20 +24,7 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
 
-      - name: Debounce — wait 30 minutes for new commits to settle
-        run: |
-          sleep 1800
-          CURRENT_HEAD=$(gh pr view ${{ github.event.pull_request.number }} \
-            --json headRefOid --jq .headRefOid 2>/dev/null || echo "")
-          if [ -n "$CURRENT_HEAD" ] && [ "$CURRENT_HEAD" != "${{ github.event.pull_request.head.sha }}" ]; then
-            echo "New commits detected during debounce. Skipping — a newer run will trigger."
-            exit 0
-          fi
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-
-      - uses: anomalyco/opencode/github@latest
+      - uses: anomalyco/opencode/github@v1.17.6
         env:
           OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
         with:
