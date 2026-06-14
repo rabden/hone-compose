@@ -328,36 +328,37 @@ The Options page gives you full control:
 
 ## 🚀 Quick Start
 
-### 1. Install
+### 🖥️ For Developers
 
 ```bash
-git clone https://github.com/rabden/hone-extension.git
+git clone https://github.com/rabden/hone-compose.git
 cd hone
 npm install
-```
-
-### 2. Build
-
-```bash
 npm run build
 ```
 
 Outputs to `dist/`.
 
-### 3. Load in Chrome
+### 📦 For Everyone Else
 
-1. Open `chrome://extensions/`
-2. Enable **Developer mode** (top-right)
-3. Click **Load unpacked** (top-left)
-4. Select the `dist/` directory
+[![Download Latest Release](https://img.shields.io/badge/Download-v0.1.0-blue?style=for-the-badge&logo=github)](https://github.com/rabden/hone-compose/archive/refs/tags/v0.1.0.zip)
 
-### 4. Add an API key
+1. **Download** the zip file by clicking the button above
+2. **Extract** the zip somewhere on your computer
+3. Open Chrome and go to `chrome://extensions/`
+4. Enable **Developer mode** (toggle in the top-right corner)
+5. Click **Load unpacked** (top-left)
+6. Select the extracted `hone-compose-0.1.0/dist/` folder
+
+That's it — Hone is now installed.
+
+### 🔑 Add an API key
 
 - Click the Hone icon in the toolbar, then **Open settings**
 - Go to **API Providers**, pick your provider, paste your key
-- Or grab a free key from [openrouter.ai](https://openrouter.ai) and select **OpenRouter Free**
+- Or grab a free key from [console.groq.com](https://console.groq.com) and select **Groq** — it's our preferred provider (much faster than the alternatives)
 
-### 5. Use it
+### ✍️ Use it
 
 Focus any text input on any webpage. Press `Alt+Shift+D` (default) or click the purple sparkle dot. Pick an action — your text transforms in-place.
 
