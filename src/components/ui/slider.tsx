@@ -248,7 +248,6 @@ const [_focusedIndex, setFocusedIndex] = React.useState<number | null>(null);
     return (
       <div
         ref={(node) => {
-            // @ts-expect-error - MutableRefObject<HTMLDivElement | null> assignment
             containerRef.current = node;
             if (typeof ref === "function") ref(node); else if (ref) ref.current = node;
         }}
