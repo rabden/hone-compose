@@ -198,7 +198,7 @@ const [_focusedIndex, setFocusedIndex] = React.useState<number | null>(null);
     }
 
     const isCentered = centered && localValues.length === 1;
-    let segments: Array<{ active: boolean, start: number, end: number, leftGap: number, rightGap: number }> = [];
+    let segments: Array<{ active: boolean, start: number, end: number, leftGap: number, rightGap: number }>;
 
     if (isCentered) {
       const FIXED_GAP = HANDLE_PADDING; 
@@ -248,7 +248,7 @@ const [_focusedIndex, setFocusedIndex] = React.useState<number | null>(null);
     return (
       <div
         ref={(node) => {
-            // @ts-ignore
+            // @ts-expect-error - MutableRefObject<HTMLDivElement | null> assignment
             containerRef.current = node;
             if (typeof ref === "function") ref(node); else if (ref) ref.current = node;
         }}
@@ -259,9 +259,9 @@ const [_focusedIndex, setFocusedIndex] = React.useState<number | null>(null);
         )}
         style={{ height: `${currentSize.thumbH}px` }}
         onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove as any}
-        onPointerUp={handlePointerUp as any}
-        onPointerCancel={handlePointerUp as any}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
         {...props}
       >
         <div 
