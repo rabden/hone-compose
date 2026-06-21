@@ -81,4 +81,3 @@ function Badge({
 }
 
 export { Badge, BadgeGroup }
-export { badgeVariants }

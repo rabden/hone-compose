@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback, useRef } from "react";
+import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -336,16 +336,7 @@ export default function ActionsStudioTab({
     [actionConfigs, setActionConfigs, triggerSaveStatus],
   );
 
-  // Fetch marketplace when switching to marketplace view
-  useEffect(() => {
-    if (
-      viewMode === "marketplace" &&
-      !marketplaceRegistry &&
-      !marketplaceLoading
-    ) {
-      void fetchMarketplace();
-    }
-  }, [viewMode, marketplaceRegistry, marketplaceLoading, fetchMarketplace]);
+  // Marketplace is already fetched in handleOpenMarketplace when switching to marketplace view
 
   if (viewMode === "marketplace") {
     const filteredActions =

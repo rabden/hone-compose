@@ -211,7 +211,7 @@ export default function Options() {
   useEffect(() => {
     contentRef.current?.scrollTo(0, 0);
   }, [activeTab]);
-  const [initialLoadComplete, setInitialLoadComplete] = useState(false);
+  const initialLoadComplete = useRef(false);
 
   // Fetch initial settings from local storage
   useEffect(() => {
@@ -339,7 +339,7 @@ export default function Options() {
       });
     loadCustomActions().then(setCustomActions);
     loadAllActionConfigs().then(setActionConfigs);
-    setInitialLoadComplete(true);
+      initialLoadComplete.current = true;
   }, []);
 
   // Realtime history updates — listen for messages from service worker + visibility change
@@ -372,7 +372,7 @@ export default function Options() {
 
   // Auto-save provider settings on change
   useEffect(() => {
-    if (!initialLoadComplete) return;
+    if (!initialLoadComplete.current) return;
     chrome.storage.local
       .set({
         activeProvider,
@@ -394,7 +394,6 @@ export default function Options() {
       })
       .catch(console.error);
   }, [
-    initialLoadComplete,
     activeProvider,
     openaiKey,
     openaiModel,
@@ -415,7 +414,7 @@ export default function Options() {
 
   // Auto-save shortcut & appearance settings on change
   useEffect(() => {
-    if (!initialLoadComplete) return;
+    if (!initialLoadComplete.current) return;
     chrome.storage.local
       .set({
         shortcutKey,
@@ -437,7 +436,6 @@ export default function Options() {
       })
       .catch(console.error);
   }, [
-    initialLoadComplete,
     shortcutKey,
     shortcutCtrl,
     shortcutAlt,
