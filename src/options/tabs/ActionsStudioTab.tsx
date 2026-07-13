@@ -456,7 +456,7 @@ export default function ActionsStudioTab({
             open={marketplaceDetailOpen}
             onOpenChange={setMarketplaceDetailOpen}
           >
-            <DialogContent className="max-w-lg w-full" onOpened={() => {}}>
+            <DialogContent className="max-w-lg w-full min-w-[min(500px,95vw)]" onOpened={() => {}}>
               {selectedMarketplaceAction && (
                 <>
                   <DialogTitle>
@@ -1578,7 +1578,7 @@ export default function ActionsStudioTab({
       </div>
 
       <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <DialogContent className="max-w-sm w-full" onOpened={() => {}}>
+        <DialogContent className="max-w-sm w-full min-w-[min(380px,95vw)]" onOpened={() => {}}>
           <DialogTitle>
             <div className="flex items-center gap-2">
               <span className="text-sm font-light text-foreground">
@@ -1755,7 +1755,7 @@ function MarketplaceActionCard({
         width: `calc((100% - ${gap * 2}px) / 3)`,
       }}
       className={cn(
-        "relative flex flex-col transition-all duration-200 overflow-hidden group border cursor-pointer select-none",
+        "relative flex flex-col transition-all duration-200 overflow-hidden group border cursor-default select-none",
         rounded,
         "bg-background hover:bg-background/50 hover:shadow-sm active:scale-[0.98] border-transparent",
       )}
@@ -1910,7 +1910,7 @@ function ActionCardGrid({
               width: `calc((100% - ${gap * (columns - 1)}px) / ${columns})`,
             }}
             className={cn(
-              "relative flex flex-col text-left transition-all duration-200 cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring/20 overflow-hidden group border select-none",
+              "relative flex flex-col text-left transition-all duration-200 cursor-default outline-none focus-visible:ring-2 focus-visible:ring-ring/20 overflow-hidden group border select-none",
               rounded,
               "bg-background hover:bg-background/50 hover:shadow-sm active:scale-[0.98] border-transparent",
             )}

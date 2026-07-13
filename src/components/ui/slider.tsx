@@ -404,10 +404,10 @@ const [_focusedIndex, setFocusedIndex] = React.useState<number | null>(null);
                       }}
                     />
 
-                    {showTooltip && (
+                      {showTooltip && (
                       <div 
                         className={cn(
-                          "absolute bottom-full mb-2 origin-bottom",
+                          "absolute bottom-full mb-2 origin-bottom left-1/2 -translate-x-1/2",
                           "flex items-center justify-center min-w-[44px] h-[36px] px-3",
                           "bg-primary text-primary-foreground text-sm font-bold rounded-full shadow-lg pointer-events-none",
                           isThisDragging 

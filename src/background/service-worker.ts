@@ -136,8 +136,9 @@ async function callAIProvider(
   text: string,
   url: string,
   signal?: AbortSignal,
+  extraParams?: Record<string, string>,
 ): Promise<{ text: string; fallbackUsed?: string }> {
-  const result = await callAIProviderRaw(actionId, text, url, signal);
+  const result = await callAIProviderRaw(actionId, text, url, signal, extraParams);
   return {
     text: cleanAiResponse(result.text),
     fallbackUsed: result.fallbackUsed,
@@ -429,6 +430,7 @@ async function callAIProviderRaw(
   text: string,
   url: string,
   signal?: AbortSignal,
+  extraParams?: Record<string, string>,
 ): Promise<{ text: string; provider: string; model: string; fallbackUsed?: string }> {
   const rawSettings = await chrome.storage.local.get([
     'activeProvider',
@@ -452,7 +454,15 @@ async function callAIProviderRaw(
   const registry = await getRegistry();
 
   const primaryProvider = settings.activeProvider || 'openrouter';
-  const { system, user: prompt } = buildSystemPrompt(registry.buildPrompt(actionId, text));
+  const { system, user: rawPrompt } = buildSystemPrompt(registry.buildPrompt(actionId, text));
+
+  // Inject any extra parameters into the user prompt (e.g., {{grade_level}})
+  let prompt = rawPrompt;
+  if (extraParams) {
+    for (const [key, val] of Object.entries(extraParams)) {
+      prompt = prompt.replaceAll(`{{${key}}}`, val);
+    }
+  }
 
   const runProvider = async (p: string): Promise<{ text: string; model: string }> => {
     switch (p) {
@@ -714,14 +724,14 @@ chrome.runtime.onMessage.addListener((message: Record<string, unknown>, sender: 
   }
 
   if (message.type === 'PROCESS_TEXT') {
-    const { action, text, requestId } = message;
+    const { action, text, requestId, extraParams } = message;
     const url = sender.tab?.url || 'unknown webpage';
 
     activeAIAbort?.abort();
     const controller = new AbortController();
     activeAIAbort = controller;
 
-    callAIProvider(action as string, text as string, url, controller.signal)
+    callAIProvider(action as string, text as string, url, controller.signal, extraParams as Record<string, string>)
       .then((res) => {
         sendResponse({ success: true, text: res.text, fallbackUsed: res.fallbackUsed, requestId });
       })

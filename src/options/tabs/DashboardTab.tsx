@@ -4,11 +4,11 @@ import {
   Keyboard,
   History,
   Check,
-  Info,
+  Eye,
+  EyeOff,
   AlertCircle,
   Wand2,
   PanelLeftIcon,
-  ArrowRight,
   ArrowUpRight,
 } from "lucide-react";
 import { Ripple } from "@/components/ui/ripple";
@@ -174,7 +174,7 @@ export default function DashboardTab({
         >
           <Ripple />
           <span className="inline-flex items-center gap-1.5 relative z-10 pointer-events-none">
-            <Info className="size-3.5" />
+            {hideDot ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
             {hideDot ? "Dot: Hidden" : "Dot: Visible"}
           </span>
         </Tag>
@@ -185,7 +185,7 @@ export default function DashboardTab({
         {/* Engine Card - Tall */}
         <button
           onClick={() => setActiveTab("api")}
-          className="group md:col-span-1 md:row-span-2 relative flex flex-col justify-between p-6 text-left cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring/20 overflow-hidden bg-background rounded-md rounded-tl-3xl rounded-bl-3xl transition-colors duration-200 hover:bg-background/50 select-none"
+          className="group md:col-span-1 md:row-span-2 relative flex flex-col justify-between p-6 text-left cursor-default outline-none focus-visible:ring-2 focus-visible:ring-ring/20 overflow-hidden bg-background rounded-md rounded-tl-3xl rounded-bl-3xl transition-colors duration-200 hover:bg-background/50 select-none"
         >
           <Ripple />
           <div className="relative z-10 pointer-events-none space-y-4 flex flex-col flex-1">
@@ -239,13 +239,12 @@ export default function DashboardTab({
               </span>
             </div>
           </div>
-          <ArrowRight className="absolute top-6 right-6 size-4 text-muted-foreground/20 group-hover:text-muted-foreground/40 transition-colors duration-200" />
         </button>
 
         {/* Shortcut + Visibility Cards - Stack */}
         <button
           onClick={() => setActiveTab("shortcut")}
-          className="group relative flex flex-col justify-between p-6 text-left cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring/20 overflow-hidden bg-background rounded-md transition-colors duration-200 hover:bg-background/50 select-none"
+          className="group relative flex flex-col justify-between p-6 text-left cursor-default outline-none focus-visible:ring-2 focus-visible:ring-ring/20 overflow-hidden bg-background rounded-md transition-colors duration-200 hover:bg-background/50 select-none"
         >
           <Ripple />
           <div className="relative z-10 pointer-events-none space-y-3">
@@ -261,12 +260,11 @@ export default function DashboardTab({
               </span>
             </div>
           </div>
-          <ArrowRight className="absolute top-6 right-6 size-3.5 text-muted-foreground/20 group-hover:text-muted-foreground/40 transition-colors duration-200" />
         </button>
 
         <button
           onClick={() => setActiveTab("shortcut")}
-          className="group relative flex items-start justify-between p-6 text-left cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring/20 overflow-hidden bg-background rounded-md rounded-tr-3xl transition-colors duration-200 hover:bg-background/50 select-none"
+          className="group relative flex items-start justify-between p-6 text-left cursor-default outline-none focus-visible:ring-2 focus-visible:ring-ring/20 overflow-hidden bg-background rounded-md rounded-tr-3xl transition-colors duration-200 hover:bg-background/50 select-none"
         >
           <Ripple />
           <div className="relative z-10 pointer-events-none space-y-3">
@@ -282,13 +280,12 @@ export default function DashboardTab({
               </span>
             </div>
           </div>
-          <ArrowRight className="absolute top-6 right-6 size-3.5 text-muted-foreground/20 group-hover:text-muted-foreground/40 transition-colors duration-200" />
         </button>
 
         {/* Rewrites Card */}
         <button
           onClick={() => setActiveTab("history")}
-          className="group relative flex flex-col justify-between p-6 text-left cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring/20 overflow-hidden bg-background rounded-md transition-colors duration-200 hover:bg-background/50 select-none"
+          className="group relative flex flex-col justify-between p-6 text-left cursor-default outline-none focus-visible:ring-2 focus-visible:ring-ring/20 overflow-hidden bg-background rounded-md transition-colors duration-200 hover:bg-background/50 select-none"
         >
           <Ripple />
           <div className="relative z-10 pointer-events-none space-y-3">
@@ -304,13 +301,12 @@ export default function DashboardTab({
               </span>
             </div>
           </div>
-          <ArrowRight className="absolute top-6 right-6 size-3.5 text-muted-foreground/20 group-hover:text-muted-foreground/40 transition-colors duration-200" />
         </button>
 
         {/* Actions Count Card */}
         <button
           onClick={() => setActiveTab("actions")}
-          className="group relative flex flex-col justify-between p-6 text-left cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring/20 overflow-hidden bg-background rounded-md rounded-br-3xl transition-colors duration-200 hover:bg-background/50 select-none"
+          className="group relative flex flex-col justify-between p-6 text-left cursor-default outline-none focus-visible:ring-2 focus-visible:ring-ring/20 overflow-hidden bg-background rounded-md rounded-br-3xl transition-colors duration-200 hover:bg-background/50 select-none"
         >
           <Ripple />
           <div className="relative z-10 pointer-events-none space-y-3">
@@ -330,7 +326,6 @@ export default function DashboardTab({
               </span>
             </div>
           </div>
-          <ArrowRight className="absolute top-6 right-6 size-3.5 text-muted-foreground/20 group-hover:text-muted-foreground/40 transition-colors duration-200" />
         </button>
       </div>
 
@@ -363,8 +358,6 @@ export default function DashboardTab({
           onItemClick={() => setActiveTab("history")}
           getActionName={getActionName}
           limit={5}
-          showOriginalText
-          showTimeOnly
           emptyTitle="No transformations yet"
           emptyDescription="Start using Hone to build your history"
         />

@@ -180,11 +180,33 @@ export async function loadAllActionConfigs(): Promise<CustomAction[]> {
     configs = configs.filter((c) => c.id !== "fix_spelling_local");
     await chrome.storage.local.set({ [ACTION_CONFIGS_KEY]: configs });
   }
-  const hasBuiltins = configs.some((c) => c.type === "builtin");
-  if (!hasBuiltins) {
-    const merged = [...BUILTIN_ACTION_DEFAULTS, ...configs];
-    await chrome.storage.local.set({ [ACTION_CONFIGS_KEY]: merged });
-    return merged;
+  // ponytail: Sync builtin templates/prompts and append missing builtins.
+  let changed = false;
+  const builtinIds = new Set(configs.filter((c) => c.type === "builtin").map((c) => c.id));
+  
+  configs = configs.map((c) => {
+    if (c.type === "builtin") {
+      const def = BUILTIN_ACTION_DEFAULTS.find((d) => d.id === c.id);
+      if (def && (c.promptTemplate !== def.promptTemplate || c.systemPrompt !== def.systemPrompt)) {
+        changed = true;
+        return {
+          ...c,
+          promptTemplate: def.promptTemplate,
+          systemPrompt: def.systemPrompt,
+        };
+      }
+    }
+    return c;
+  });
+
+  const missing = BUILTIN_ACTION_DEFAULTS.filter((d) => !builtinIds.has(d.id));
+  if (missing.length) {
+    configs = [...configs, ...missing];
+    changed = true;
+  }
+
+  if (changed) {
+    await chrome.storage.local.set({ [ACTION_CONFIGS_KEY]: configs });
   }
   return configs;
 }

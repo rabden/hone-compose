@@ -83,6 +83,7 @@ export default function App({
     action: string;
     actionLabel: string;
     override?: InferredSelection;
+    extraParams?: Record<string, string>;
   } | null>(null);
 
   // New Generalized Card & Settings states
@@ -99,6 +100,10 @@ export default function App({
   const [localDiff, setLocalDiff] = useState<DiffToken[] | null>(null);
   const [revealMenuOverride, setRevealMenuOverride] = useState<boolean>(false);
   const [harperHasErrors, setHarperHasErrors] = useState<boolean>(false);
+  
+  // Accordion expansion states (lifted to allow unified keyboard navigation)
+  const [toneExpanded, setToneExpanded] = useState<boolean>(false);
+  const [lengthExpanded, setLengthExpanded] = useState<boolean>(false);
 
   const menuRef = useRef<HTMLDivElement>(null);
   const registryRef = useRef<ActionRegistry | null>(null);
@@ -141,6 +146,8 @@ export default function App({
   } | null>(null);
   const grammarCheckCacheRef = useRef<Map<string, string>>(new Map());
 
+  const [pendingActionOverride, setPendingActionOverride] = useState<{ actionId: string; override?: InferredSelection } | null>(null);
+
   const clearCardState = useCallback(() => {
     setCardResultText("");
     setCardDiff(null);
@@ -155,6 +162,7 @@ export default function App({
     setLoadingActionId(null);
     loadingActionIdRef.current = null;
     setIsHarperLoading(false);
+    setPendingActionOverride(null); // Clear grade picker when resetting card state
   }, []);
 
   // Sync refs synchronously
@@ -629,7 +637,7 @@ export default function App({
 
   // ── AI action dispatcher ──
   const executeAIAction = useCallback(
-    (action: string, overrideInference?: InferredSelection) => {
+    (action: string, overrideInference?: InferredSelection, extraParams?: Record<string, string>) => {
       const ctx = activeContextRef.current;
       const adapter = ctx?.adapter;
       if (!adapter) {
@@ -646,6 +654,7 @@ export default function App({
 
       setActionConfirm(null);
       setRevealMenuOverride(false);
+      setPendingActionOverride(null); // Clear grade picker or any pending override when starting a new action
       suppressKeysUntilRef.current = performance.now() + 250;
 
       const handler = registryRef.current?.get(action);
@@ -682,7 +691,7 @@ export default function App({
         const requestId = ++aiRequestIdRef.current;
 
         chrome.runtime.sendMessage(
-          { type: "PROCESS_TEXT", action, text: span.text, requestId },
+          { type: "PROCESS_TEXT", action, text: span.text, requestId, extraParams },
           async (response: {
             success: boolean;
             text?: string;
@@ -754,7 +763,7 @@ export default function App({
 
         const requestId = ++aiRequestIdRef.current;
         chrome.runtime.sendMessage(
-          { type: "PROCESS_TEXT", action, text: span.text, requestId },
+          { type: "PROCESS_TEXT", action, text: span.text, requestId, extraParams },
           (response: {
             success: boolean;
             text?: string;
@@ -795,7 +804,12 @@ export default function App({
   );
 
   const triggerAIAction = useCallback(
-    (action: string, overrideInference?: InferredSelection) => {
+    (action: string, overrideInference?: InferredSelection, extraParams?: Record<string, string>) => {
+      if (action === "tone_reading_level" && !extraParams?.grade_level) {
+        setPendingActionOverride({ actionId: action, override: overrideInference });
+        return;
+      }
+      
       if (isAiProcessingRef.current || loadingActionIdRef.current) {
         const handler = registryRef.current?.get(action);
         setIsMenuOpen(true);
@@ -803,13 +817,14 @@ export default function App({
           action,
           actionLabel: handler?.name ?? action,
           override: overrideInference,
+          extraParams,
         });
         setRevealMenuOverride(false);
         return;
       }
-      executeAIAction(action, overrideInference);
+      executeAIAction(action, overrideInference, extraParams);
     },
-    [executeAIAction],
+    [executeAIAction, setPendingActionOverride],
   );
 
   const confirmAbortAndRun = useCallback(() => {
@@ -824,8 +839,7 @@ export default function App({
       setIsAiProcessing(false);
       setProcessingSpan(null);
       setLoadingActionId(null);
-      loadingActionIdRef.current = null;
-      executeAIAction(pending.action, pending.override);
+      executeAIAction(pending.action, pending.override, pending.extraParams);
     });
   }, [actionConfirm, executeAIAction]);
 
@@ -946,7 +960,9 @@ export default function App({
       // 3. Escape key handler when menu is open
       if (e.key === "Escape" && isMenuOpen) {
         e.preventDefault();
-        if (actionConfirm) {
+        if (pendingActionOverride) {
+          setPendingActionOverride(null);
+        } else if (actionConfirm) {
           cancelActionConfirm();
         } else if (loadingActionIdRef.current) {
           setActionConfirm({
@@ -978,7 +994,7 @@ export default function App({
 
     window.addEventListener("keydown", handleKeyDown, true);
     return () => window.removeEventListener("keydown", handleKeyDown, true);
-  }, [shortcut, dropdownShortcut, isMenuOpen, openAssistant, actionConfirm, isAiProcessing, revealMenuOverride, cancelActionConfirm, handleCancelCard]);
+  }, [shortcut, dropdownShortcut, isMenuOpen, openAssistant, actionConfirm, isAiProcessing, revealMenuOverride, cancelActionConfirm, handleCancelCard, pendingActionOverride]);
 
   // ── Chrome command shortcuts (manifest commands) ──
   useEffect(() => {
@@ -1014,11 +1030,12 @@ export default function App({
   // Don't collapse to card-only mode for automatic grammar checking
   // (fix_spelling_local for Harper.js, fix_spelling_auto for AI), even during loading state
   const isCardOnly =
-    !revealMenuOverride &&
-    cardActionId !== "fix_spelling_local" &&
-    cardActionId !== "fix_spelling_auto" &&
-    loadingActionId !== "fix_spelling_auto" &&
-    (!!actionConfirm || hasNonLocalCardResult || !!loadingActionId);
+    pendingActionOverride?.actionId === "tone_reading_level" ||
+    (!revealMenuOverride &&
+      cardActionId !== "fix_spelling_local" &&
+      cardActionId !== "fix_spelling_auto" &&
+      loadingActionId !== "fix_spelling_auto" &&
+      (!!actionConfirm || hasNonLocalCardResult || !!loadingActionId));
 
   // ── Focus tracking ──
   useEffect(() => {
@@ -1207,15 +1224,34 @@ export default function App({
   const customActions = useMemo(() => actions.filter((a) => a.category === "custom"), [actions]);
   const toneActions = useMemo(() => actions.filter((a) => a.category === "tone"), [actions]);
   const lengthActions = useMemo(() => actions.filter((a) => a.category === "length"), [actions]);
-  const PRIMARY_ACTION_COUNT = primaryActions.length;
-  const CUSTOM_ACTION_COUNT = customActions.length;
-  const TONE_ACTION_COUNT = toneActions.length;
-  const LENGTH_ACTION_COUNT = lengthActions.length;
-  const customActionStartIdx = PRIMARY_ACTION_COUNT;
-  const toneActionStartIdx = PRIMARY_ACTION_COUNT + CUSTOM_ACTION_COUNT;
-  const lengthActionStartIdx = toneActionStartIdx + TONE_ACTION_COUNT;
-  const actionItemCount =
-    lengthActionStartIdx + LENGTH_ACTION_COUNT;
+  // ── Menu keyboard-nav items (primary → custom → tone accordion → tone actions → length accordion → length actions) ──
+  const menuItems = useMemo(() => {
+    const items: (
+      | { type: "action"; action: ActionHandler }
+      | { type: "accordion"; id: "tone" | "length"; label: string }
+    )[] = [];
+
+    primaryActions.forEach(a => items.push({ type: "action", action: a }));
+    customActions.forEach(a => items.push({ type: "action", action: a }));
+    
+    if (toneActions.length > 0) {
+      items.push({ type: "accordion", id: "tone", label: "Tone" });
+      if (toneExpanded) {
+        toneActions.forEach(a => items.push({ type: "action", action: a }));
+      }
+    }
+    
+    if (lengthActions.length > 0) {
+      items.push({ type: "accordion", id: "length", label: "Length" });
+      if (lengthExpanded) {
+        lengthActions.forEach(a => items.push({ type: "action", action: a }));
+      }
+    }
+
+    return items;
+  }, [primaryActions, customActions, toneActions, lengthActions, toneExpanded, lengthExpanded]);
+
+  const actionItemCount = menuItems.length;
 
   useEffect(() => {
     isMenuOpenRef.current = isMenuOpen;
@@ -1264,28 +1300,30 @@ export default function App({
     return () => clearTimeout(timeout);
   }, [isMenuOpen, actionItemCount]);
 
-  const flatActionList = useMemo(
-    () => [...primaryActions, ...customActions, ...toneActions, ...lengthActions],
-    [primaryActions, customActions, toneActions, lengthActions],
-  );
-
   const activateMenuActionAtIndex = useCallback(
     (idx: number) => {
+      const item = menuItems[idx];
+      if (!item) return;
+
+      if (item.type === "accordion") {
+        if (item.id === "tone") setToneExpanded(prev => !prev);
+        if (item.id === "length") setLengthExpanded(prev => !prev);
+        return;
+      }
+
       const override: InferredSelection | undefined =
         inferenceOptions && selectedInferenceLevel
           ? (inferenceOptions[selectedInferenceLevel] as InferredSelection | undefined)
           : undefined;
 
-      const actionId = flatActionList[idx]?.id ?? null;
-      if (actionId) {
-        suppressKeysUntilRef.current = performance.now() + 250;
-        triggerAIAction(actionId, override);
-      }
+      const actionId = item.action.id;
+      suppressKeysUntilRef.current = performance.now() + 250;
+      triggerAIAction(actionId, override);
     },
     [
+      menuItems,
       inferenceOptions,
       selectedInferenceLevel,
-      flatActionList,
       triggerAIAction,
     ],
   );
@@ -1302,6 +1340,7 @@ export default function App({
     harperHasErrors ||
     !!loadingActionId ||
     !!actionConfirm ||
+    pendingActionOverride?.actionId === "tone_reading_level" ||
     (!!cardActionId && cardActionId !== "fix_spelling_local" && cardActionId !== "fix_spelling_auto");
 
   // ── Capture keyboard so Enter/Space never reach the field behind ──
@@ -1406,6 +1445,16 @@ export default function App({
         }
       }
 
+      if (pendingActionOverride) {
+        // let slider handle arrows, but consume typing
+        if (!["ArrowDown", "ArrowUp", "ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) {
+          if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+            consumeKeyboardEvent(e);
+          }
+        }
+        return;
+      }
+
       if (actionItemCount === 0) return;
 
       switch (e.key) {
@@ -1465,6 +1514,7 @@ export default function App({
     canApplyCard,
     isHarperLoading,
     loadingActionId,
+    pendingActionOverride,
   ]);
 
   const handleShadowEnter = () => {
@@ -1607,13 +1657,17 @@ export default function App({
           quickShortcut={shortcut}
 
           actions={actions}
+          menuItems={menuItems}
           focusedActionIdx={focusedActionIdx}
           onFocusAction={setFocusedActionIdx}
+          pendingActionOverride={pendingActionOverride}
+          onCancelPending={() => setPendingActionOverride(null)}
           onTriggerAction={triggerAIAction}
           hasAdapter={!!activeContext?.adapter}
-          customActionStartIdx={customActionStartIdx}
-          toneActionStartIdx={toneActionStartIdx}
-          lengthActionStartIdx={lengthActionStartIdx}
+          toneExpanded={toneExpanded}
+          onSetToneExpanded={setToneExpanded}
+          lengthExpanded={lengthExpanded}
+          onSetLengthExpanded={setLengthExpanded}
           getInferenceOverride={getInferenceOverride}
           cardResultText={cardResultText}
           cardDiff={cardDiff}

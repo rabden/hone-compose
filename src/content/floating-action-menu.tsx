@@ -1,6 +1,9 @@
 import { type RefObject, type ReactNode, useRef, useState, useEffect, useMemo } from "react";
 import {
   CornerDownLeft,
+  ChevronRight,
+  Palette,
+  Ruler,
 } from "lucide-react";
 import { HoneLogo } from "@/components/hone-logo";
 import type { InferredSelection } from "./adapters";
@@ -8,7 +11,12 @@ import { renderActionIcon } from "@/lib/action-icons";
 import type { ActionHandler } from "./actions";
 import { Button } from "@/components/ui/material-design-3-button";
 import { DotmSquare12 } from "@/components/ui/dotm-square-12";
+import { Slider } from "@/components/ui/slider";
 import { cn } from "@/lib/utils";
+
+export type MenuItem =
+  | { type: "action"; action: ActionHandler }
+  | { type: "accordion"; id: "tone" | "length"; label?: string };
 
 interface ShortcutBadge {
   key: string;
@@ -27,16 +35,18 @@ export interface FloatingActionMenuProps {
   shortcut: ShortcutBadge | null;
   quickShortcut: ShortcutBadge | null;
   actions: ActionHandler[];
+  menuItems: MenuItem[];
   focusedActionIdx: number;
   onFocusAction: (idx: number) => void;
-  onTriggerAction: (actionId: string, override?: InferredSelection) => void;
+  onTriggerAction: (actionId: string, override?: InferredSelection, extraParams?: Record<string, string>) => void;
   hasAdapter: boolean;
-  primaryActionStartIdx?: number;
-  customActionStartIdx: number;
-  toneActionStartIdx: number;
-  lengthActionStartIdx: number;
+  // Accordion expanded states (lifted to parent)
   onMouseDownCapture: (e: React.MouseEvent) => void;
   onMouseDown: (e: React.MouseEvent) => void;
+  toneExpanded: boolean;
+  onSetToneExpanded: (val: boolean) => void;
+  lengthExpanded: boolean;
+  onSetLengthExpanded: (val: boolean) => void;
   getInferenceOverride: () => InferredSelection | undefined;
 
   // New Generalized Card Props
@@ -57,6 +67,8 @@ export interface FloatingActionMenuProps {
   onCancelConfirm?: () => void;
   isCardOnly: boolean;
   showCard?: boolean;
+  pendingActionOverride?: { actionId: string; override?: InferredSelection } | null;
+  onCancelPending?: () => void;
 }
 
 function formatShortcut(s: ShortcutBadge) {
@@ -77,13 +89,15 @@ export function FloatingActionMenu({
   shortcut,
   quickShortcut,
   actions,
+  menuItems,
   focusedActionIdx,
   onFocusAction,
   onTriggerAction,
   hasAdapter,
-  customActionStartIdx,
-  toneActionStartIdx,
-  lengthActionStartIdx,
+  toneExpanded,
+  onSetToneExpanded,
+  lengthExpanded,
+  onSetLengthExpanded,
   onMouseDownCapture,
   onMouseDown,
   getInferenceOverride,
@@ -99,6 +113,8 @@ export function FloatingActionMenu({
   onCancelCard,
   isCardOnly,
   showCard = true,
+  pendingActionOverride = null,
+  onCancelPending,
 }: FloatingActionMenuProps) {
   const override = getInferenceOverride();
   const cardRef = useRef<HTMLDivElement>(null);
@@ -107,6 +123,7 @@ export function FloatingActionMenu({
 
   const [observedHeight, setObservedHeight] = useState<number | null>(null);
   const leftColHeight: number | null = isCardOnly ? null : observedHeight;
+  const isGradePicker = pendingActionOverride?.actionId === "tone_reading_level";
 
   useEffect(() => {
     if (isCardOnly) return;
@@ -131,7 +148,27 @@ export function FloatingActionMenu({
   const customActions = useMemo(() => actions.filter((a) => a.category === "custom"), [actions]);
   const toneActions = useMemo(() => actions.filter((a) => a.category === "tone"), [actions]);
   const lengthActions = useMemo(() => actions.filter((a) => a.category === "length"), [actions]);
-  const hasToneOrLength = toneActions.length > 0 || lengthActions.length > 0;
+
+  const [gradeValue, setGradeValue] = useState([6]);
+
+  const handleTriggerAction = (id: string, ov?: InferredSelection) => {
+    onTriggerAction(id, ov);
+  };
+
+  const handleGradeSubmit = () => {
+    onTriggerAction("tone_reading_level", pendingActionOverride?.override || override, { grade_level: String(gradeValue[0]) });
+    onCancelPending?.();
+  };
+
+  const getFocusIdx = (type: "action" | "accordion", id: string) => {
+    return menuItems.findIndex(
+      (item) =>
+        item.type === type &&
+        (type === "action"
+          ? (item as { type: "action"; action: ActionHandler }).action.id === id
+          : (item as { type: "accordion"; id: "tone" | "length" }).id === id)
+    );
+  };
 
   return (
     <div
@@ -188,7 +225,7 @@ export function FloatingActionMenu({
           <>
             {primaryActions.length > 0 && (
               <div className="flex flex-col gap-0.5 px-0.5">
-                {primaryActions.map((item, i) => (
+                {primaryActions.map((item: ActionHandler, i: number) => (
                   <MenuRow
                     key={item.id}
                     idx={i}
@@ -209,8 +246,8 @@ export function FloatingActionMenu({
 
             {customActions.length > 0 && (
               <div className="flex flex-col gap-0.5 px-0.5">
-                {customActions.map((ca, i) => {
-                  const idx = customActionStartIdx + i;
+                {customActions.map((ca: ActionHandler) => {
+                  const idx = getFocusIdx("action", ca.id);
                   const actionShortcut =
                     quickShortcut?.action === ca.id ? quickShortcut : ca.shortcut;
                   return (
@@ -233,74 +270,128 @@ export function FloatingActionMenu({
               </div>
             )}
 
-            {hasToneOrLength && (
-              <>
-                <div className="flex items-center gap-2 px-2 py-0.5">
-                  <div className="flex-1 h-px bg-border/60" />
-                  <span className="text-[9px] font-medium uppercase tracking-wider text-muted-foreground/60">
-                    Change Tone or length
-                  </span>
-                  <div className="flex-1 h-px bg-border/60" />
-                </div>
-                <div className="grid grid-cols-2 gap-1 px-1">
-                  {toneActions.map((item, i) => {
-                    const idx = toneActionStartIdx + i;
-                    const isFocused = focusedActionIdx === idx;
-                    const isLoading = loadingActionId === item.id;
-                    return (
-                      <button
-                        key={item.id}
-                        type="button"
-                        data-action-idx={idx}
-                        data-focused={isFocused ? "true" : undefined}
-                        className="hone-tone-btn"
-                        onMouseEnter={() => onFocusAction(idx)}
-                        onClick={() => onTriggerAction(item.id, override)}
-                      >
-                        {isLoading ? (
-                          <DotmSquare12 />
-                        ) : (
-                          renderActionIcon(item.icon, { size: 12, color: item.type === "builtin" ? undefined : (item.color || "var(--foreground)") })
+            {(toneActions.length > 0 || lengthActions.length > 0) && (
+              <div className="flex flex-col gap-0.5 px-0.5">
+                {toneActions.length > 0 && (
+                  <div className="flex flex-col">
+                    <button
+                      type="button"
+                      data-action-idx={getFocusIdx("accordion", "tone")}
+                      data-focused={focusedActionIdx === getFocusIdx("accordion", "tone") ? "true" : undefined}
+                      className="hone-menu-item flex items-center justify-between transition-colors"
+                      onMouseEnter={() => onFocusAction(getFocusIdx("accordion", "tone"))}
+                      onClick={() => onSetToneExpanded(!toneExpanded)}
+                    >
+                      <span className="flex items-center gap-2 pointer-events-none">
+                        <Palette className="w-3.5 h-3.5 text-foreground/80" />
+                        Tone
+                      </span>
+                      <ChevronRight
+                        className={cn(
+                          "w-3.5 h-3.5 text-muted-foreground transition-transform duration-200 pointer-events-none",
+                          toneExpanded && "rotate-90"
                         )}
-                        <span className="flex-1 truncate text-left">{item.name}</span>
-                        {isFocused && !isLoading && (
-                          <span className="hone-kbd shrink-0 flex items-center justify-center p-0.5 border-foreground/20 bg-foreground/10 text-foreground scale-90">
-                            <CornerDownLeft className="size-2.5 text-foreground" strokeWidth={3} />
-                          </span>
+                      />
+                    </button>
+                    
+                    <div
+                      className={cn(
+                        "grid grid-cols-2 gap-1 overflow-hidden transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]",
+                        toneExpanded ? "max-h-[120px] opacity-100 mt-1" : "max-h-0 opacity-0"
+                      )}
+                    >
+                      {toneActions.map((item: ActionHandler) => {
+                        const idx = getFocusIdx("action", item.id);
+                        const isFocused = focusedActionIdx === idx;
+                        const isLoading = loadingActionId === item.id;
+                        return (
+                          <button
+                            key={item.id}
+                            type="button"
+                            data-action-idx={idx}
+                            data-focused={isFocused ? "true" : undefined}
+                            className="hone-tone-btn"
+                            onMouseEnter={() => onFocusAction(idx)}
+                            onClick={() => handleTriggerAction(item.id, override)}
+                          >
+                            {isLoading ? (
+                              <DotmSquare12 />
+                            ) : (
+                              renderActionIcon(item.icon, { size: 12, color: item.type === "builtin" ? undefined : (item.color || "var(--foreground)") })
+                            )}
+                            <span className="flex-1 truncate text-left">{item.name}</span>
+                            {isFocused && !isLoading && (
+                              <span className="hone-kbd shrink-0 flex items-center justify-center p-0.5 border-foreground/20 bg-foreground/10 text-foreground scale-90">
+                                <CornerDownLeft className="size-2.5 text-foreground" strokeWidth={3} />
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {lengthActions.length > 0 && (
+                  <div className="flex flex-col mt-0.5">
+                    <button
+                      type="button"
+                      data-action-idx={getFocusIdx("accordion", "length")}
+                      data-focused={focusedActionIdx === getFocusIdx("accordion", "length") ? "true" : undefined}
+                      className="hone-menu-item flex items-center justify-between transition-colors"
+                      onMouseEnter={() => onFocusAction(getFocusIdx("accordion", "length"))}
+                      onClick={() => onSetLengthExpanded(!lengthExpanded)}
+                    >
+                      <span className="flex items-center gap-2 pointer-events-none">
+                        <Ruler className="w-3.5 h-3.5 text-foreground/80" />
+                        Length
+                      </span>
+                      <ChevronRight
+                        className={cn(
+                          "w-3.5 h-3.5 text-muted-foreground transition-transform duration-200 pointer-events-none",
+                          lengthExpanded && "rotate-90"
                         )}
-                      </button>
-                    );
-                  })}
-                  {lengthActions.map((item, i) => {
-                    const idx = lengthActionStartIdx + i;
-                    const isFocused = focusedActionIdx === idx;
-                    const isLoading = loadingActionId === item.id;
-                    return (
-                      <button
-                        key={item.id}
-                        type="button"
-                        data-action-idx={idx}
-                        data-focused={isFocused ? "true" : undefined}
-                        className="hone-tone-btn"
-                        onMouseEnter={() => onFocusAction(idx)}
-                        onClick={() => onTriggerAction(item.id, override)}
-                      >
-                        {isLoading ? (
-                          <DotmSquare12 />
-                        ) : (
-                          renderActionIcon(item.icon, { size: 12, color: item.type === "builtin" ? undefined : (item.color || "var(--foreground)") })
-                        )}
-                        <span className="flex-1 truncate text-left">{item.name}</span>
-                        {isFocused && !isLoading && (
-                          <span className="hone-kbd shrink-0 flex items-center justify-center p-0.5 border-foreground/20 bg-foreground/10 text-foreground scale-90">
-                            <CornerDownLeft className="size-2.5 text-foreground" strokeWidth={3} />
-                          </span>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              </>
+                      />
+                    </button>
+                    
+                    <div
+                      className={cn(
+                        "grid grid-cols-2 gap-1 overflow-hidden transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]",
+                        lengthExpanded ? "max-h-[60px] opacity-100 mt-1" : "max-h-0 opacity-0"
+                      )}
+                    >
+                      {lengthActions.map((item: ActionHandler) => {
+                        const idx = getFocusIdx("action", item.id);
+                        const isFocused = focusedActionIdx === idx;
+                        const isLoading = loadingActionId === item.id;
+                        return (
+                          <button
+                            key={item.id}
+                            type="button"
+                            data-action-idx={idx}
+                            data-focused={isFocused ? "true" : undefined}
+                            className="hone-tone-btn"
+                            onMouseEnter={() => onFocusAction(idx)}
+                            onClick={() => handleTriggerAction(item.id, override)}
+                          >
+                            {isLoading ? (
+                              <DotmSquare12 />
+                            ) : (
+                              renderActionIcon(item.icon, { size: 12, color: item.type === "builtin" ? undefined : (item.color || "var(--foreground)") })
+                            )}
+                            <span className="flex-1 truncate text-left">{item.name}</span>
+                            {isFocused && !isLoading && (
+                              <span className="hone-kbd shrink-0 flex items-center justify-center p-0.5 border-foreground/20 bg-foreground/10 text-foreground scale-90">
+                                <CornerDownLeft className="size-2.5 text-foreground" strokeWidth={3} />
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
             )}
           </>
         ) : (
@@ -331,7 +422,55 @@ export function FloatingActionMenu({
               "min-width 0.3s cubic-bezier(0.4, 0, 0.2, 1), max-width 0.3s cubic-bezier(0.4, 0, 0.2, 1), max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
           }}
         >
-          {confirmState ? (
+          {isGradePicker ? (
+            <div className="flex-1 flex flex-col justify-between h-full p-3 select-none animate-in fade-in duration-300">
+              <div className="flex flex-col gap-2">
+                <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">
+                  Target Grade Level
+                </span>
+                <p className="text-xs text-muted-foreground/75 leading-relaxed">
+                  Choose the reading grade level to rewrite the text to (Grade 1 to 12).
+                </p>
+                <div className="pt-8 pb-4 px-2">
+                  <Slider
+                    min={1}
+                    max={12}
+                    step={1}
+                    value={gradeValue}
+                    onValueChange={setGradeValue}
+                    showTooltip
+                    formatLabel={String}
+                  />
+                </div>
+                <p className="text-xs font-semibold text-foreground text-center mt-1">
+                  Currently targeting: <span className="text-primary font-bold">Grade {gradeValue[0]}</span>
+                </p>
+              </div>
+              <div className="flex items-center justify-end gap-1.5 pt-2 mt-auto">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  noMorph
+                  className="h-6 rounded-full px-2.5 text-[10px] font-medium gap-1 [&_svg]:size-3"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={onCancelPending}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  variant="default"
+                  noMorph
+                  className="h-6 rounded-full px-2.5 text-[10px] font-medium gap-1 [&_svg]:size-3 select-none cursor-pointer"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={handleGradeSubmit}
+                >
+                  <CornerDownLeft className="size-2.5" strokeWidth={3} />
+                  Apply
+                </Button>
+              </div>
+            </div>
+          ) : confirmState ? (
             <div className="flex-1 flex flex-col justify-between h-full p-3">
               <p className="text-xs leading-relaxed text-foreground font-medium">
                 {confirmState.action === "cancel_generation"

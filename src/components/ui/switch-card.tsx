@@ -51,7 +51,7 @@ export function SwitchCard({
       onPointerUp={() => setIsPressed(false)}
       onPointerLeave={() => setIsPressed(false)}
       className={cn(
-        "relative flex items-center justify-between w-full bg-background hover:bg-background/50 p-4 cursor-pointer transition-colors duration-200 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring/20 overflow-hidden select-none rounded-3xl",
+        "relative flex items-center justify-between w-full bg-background hover:bg-background/50 p-4 cursor-default transition-colors duration-200 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring/20 overflow-hidden select-none rounded-3xl",
         className,
       )}
     >

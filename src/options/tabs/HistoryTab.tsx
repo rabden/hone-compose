@@ -169,7 +169,7 @@ export default function HistoryTab({
         open={historyDialogOpen}
         onOpenChange={setHistoryDialogOpen}
       >
-        <DialogContent className="max-w-2xl w-full">
+        <DialogContent className="max-w-2xl w-full min-w-[min(500px,95vw)]">
           {selectedHistoryItem && (
             <>
               <DialogTitle>
@@ -289,7 +289,7 @@ export default function HistoryTab({
         open={clearAllDialogOpen}
         onOpenChange={setClearAllDialogOpen}
       >
-        <DialogContent className="max-w-sm w-full">
+        <DialogContent className="max-w-sm w-full min-w-[min(380px,95vw)]">
           <DialogTitle>
             <div className="flex items-center gap-2">
               <span className="text-sm font-light text-foreground">

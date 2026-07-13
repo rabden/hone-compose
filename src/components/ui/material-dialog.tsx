@@ -145,7 +145,7 @@ export function DialogTrigger({ children }: { children: React.ReactNode }) {
     if (!context) throw new Error("DialogTrigger must be used within a Dialog");
 
     return (
-        <div onClick={() => context.onOpenChange(true)} className="contents cursor-pointer">
+        <div onClick={() => context.onOpenChange(true)} className="contents cursor-default">
             {children}
         </div>
     );

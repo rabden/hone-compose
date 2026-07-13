@@ -67,7 +67,7 @@ export function HistoryList({
           type="button"
           onClick={() => onItemClick(item)}
           className={cn(
-            "relative flex items-center gap-4 px-5 cursor-pointer transition-colors duration-200 text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/20 overflow-hidden select-none py-4 bg-background hover:bg-background/50",
+            "relative flex items-center gap-4 px-5 cursor-default transition-colors duration-200 text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/20 overflow-hidden select-none py-4 bg-background hover:bg-background/50",
             totalItems === 1 && "rounded-3xl",
             totalItems > 1 && i === 0 && "rounded-t-3xl rounded-b-md",
             totalItems > 1 &&

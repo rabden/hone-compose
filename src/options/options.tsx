@@ -624,7 +624,6 @@ export default function Options() {
                                 activeTab === item.value
                                   ? "h-5 opacity-100 scale-y-100"
                                   : "h-5 opacity-0 scale-y-0",
-                                "group-data-[collapsible=icon]:hidden",
                               )}
                             />
                             <SidebarMenuButton
@@ -643,7 +642,7 @@ export default function Options() {
                                     : "text-muted-foreground/50",
                                 )}
                               />
-                              <span className="text-sm group-data-[collapsible=icon]:hidden relative z-10 pointer-events-none">
+                              <span className="text-sm whitespace-nowrap relative z-10 pointer-events-none">
                                 {item.label}
                               </span>
                             </SidebarMenuButton>

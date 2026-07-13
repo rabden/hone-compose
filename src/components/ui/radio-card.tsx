@@ -30,7 +30,7 @@ export function RadioCardGroup({
               type="button"
               onClick={() => onValueChange(opt.value)}
               className={cn(
-                "relative flex items-center gap-3 p-3.5 rounded-3xl text-left transition-all duration-300 cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring/20 overflow-hidden group select-none",
+                "relative flex items-center gap-3 p-3.5 rounded-3xl text-left transition-all duration-300 cursor-default outline-none focus-visible:ring-2 focus-visible:ring-ring/20 overflow-hidden group select-none",
                 isActive
                   ? "bg-background/20 border border-foreground/30 text-foreground"
                   : "bg-background text-muted-foreground hover:bg-background/50 hover:text-foreground",
@@ -125,7 +125,7 @@ export function RadioCardGroupGrouped({
             type="button"
             onClick={() => onValueChange(opt.value)}
             className={cn(
-              "relative flex items-center gap-3 p-3.5 border text-left transition-all duration-300 cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring/20 overflow-hidden group select-none",
+              "relative flex items-center gap-3 p-3.5 border text-left transition-all duration-300 cursor-default outline-none focus-visible:ring-2 focus-visible:ring-ring/20 overflow-hidden group select-none",
               rounded,
               isActive
                 ? "bg-background/20 border-foreground/30 text-foreground"
