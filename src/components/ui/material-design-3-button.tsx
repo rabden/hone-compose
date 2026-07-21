@@ -306,7 +306,7 @@ Ripple.displayName = "Ripple";
 
 // --- 6. MD3 EXPRESSIVE BUTTON VARIANTS (SHADCN API ALIGNED) ---
 const buttonVariants = cva(
-  "group relative inline-flex items-center justify-center whitespace-nowrap font-medium tracking-[0.01em] transition-[background-color,color,box-shadow,border-radius] duration-300 ease-[cubic-bezier(0.2,0.8,0.2,1.2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-[0.38] disabled:shadow-none overflow-hidden select-none [&_svg]:transition-transform [&_svg]:duration-300 [&_svg]:ease-[cubic-bezier(0.2,0.8,0.2,1.2)] data-[pressed=true]:[&_svg]:scale-[0.90]",
+  "group relative inline-flex items-center justify-center whitespace-nowrap font-medium tracking-[0.01em] transition-[background-color,color,box-shadow,border-radius,transform] duration-300 ease-[cubic-bezier(0.2,0.8,0.2,1.2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-[0.38] disabled:shadow-none overflow-hidden select-none [&_svg]:transition-[transform,filter] [&_svg]:duration-300 [&_svg]:ease-[cubic-bezier(0.2,0.8,0.2,1.2)] data-[pressed=true]:[&_svg]:scale-[0.90]",
   {
     variants: {
       variant: {
@@ -481,6 +481,13 @@ const buttonVariants = cva(
         className:
           "rounded-r-[62px] rounded-l-[12px] data-[pressed=true]:rounded-r-[62px] data-[pressed=true]:rounded-l-[62px]",
       },
+
+      // ICON VARIANT PHYSICS: subtle whole-button depress + soft icon blur
+      {
+        size: ["icon", "icon-sm", "icon-lg", "icon-xl", "icon-2xl"],
+        className:
+          "data-[pressed=true]:scale-[0.97] data-[pressed=true]:[&_svg]:blur-[0.5px]",
+      },
     ],
     defaultVariants: {
       variant: "default",
@@ -617,11 +624,11 @@ const SplitButton = React.forwardRef<
             // Automatically inject the isolated Split Button physics
             shape: isFirst ? "split-left" : isLast ? "split-right" : "square",
             // Allow the button to naturally stretch to the identical container height
-            className: cn(
-              (child as React.ReactElement<Record<string, unknown>>).props
-                .className as string | undefined,
-              "!h-auto self-stretch",
-            ),
+              className: cn(
+                (child as React.ReactElement<Record<string, unknown>>).props
+                  .className as string | undefined,
+                "!h-auto self-stretch",
+              ),
           },
         );
       })}

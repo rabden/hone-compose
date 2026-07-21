@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils";
+import { useState, useRef } from "react";
 import { Ripple } from "@/components/ui/ripple";
 
 export interface RadioCardOption {
@@ -20,6 +21,20 @@ export function RadioCardGroup({
   onValueChange,
   className,
 }: RadioCardGroupProps) {
+  const [pressedId, setPressedId] = useState<string | null>(null);
+  const pressTimerRef = useRef<number | null>(null);
+  const startPress = (id: string) => {
+    if (pressTimerRef.current !== null) {
+      window.clearTimeout(pressTimerRef.current);
+      pressTimerRef.current = null;
+    }
+    setPressedId(id);
+  };
+  const endPress = () => {
+    if (pressTimerRef.current !== null) window.clearTimeout(pressTimerRef.current);
+    pressTimerRef.current = window.setTimeout(() => setPressedId(null), 180);
+  };
+
   return (
     <div className={cn("grid gap-0.5", className)}>
       {options.map((opt) => {
@@ -29,10 +44,16 @@ export function RadioCardGroup({
               key={opt.value}
               type="button"
               onClick={() => onValueChange(opt.value)}
+              onPointerDown={() => startPress(opt.value)}
+              onPointerUp={endPress}
+              onPointerLeave={endPress}
+              data-pressed={pressedId === opt.value || isActive}
+              data-active={isActive}
               className={cn(
-                "relative flex items-center gap-3 p-3.5 rounded-3xl text-left transition-all duration-300 cursor-default outline-none focus-visible:ring-2 focus-visible:ring-ring/20 overflow-hidden group select-none",
+                "relative flex items-center gap-3 p-3.5 rounded-3xl text-left transition-[background-color,color,border-radius] duration-[600ms] ease-out cursor-default outline-none focus-visible:ring-2 focus-visible:ring-ring/20 overflow-hidden group select-none border border-transparent",
+                "data-[pressed=true]:duration-[600ms] data-[pressed=true]:delay-100 data-[pressed=true]:ease-[cubic-bezier(0.2,0.8,0.2,1.2)] data-[pressed=true]:rounded-[36px]",
                 isActive
-                  ? "bg-background/20 border border-foreground/30 text-foreground"
+                  ? "bg-background text-foreground"
                   : "bg-background text-muted-foreground hover:bg-background/50 hover:text-foreground",
               )}
           >
@@ -93,6 +114,20 @@ export function RadioCardGroupGrouped({
   const totalRows = Math.ceil(options.length / columns);
   const itemsInLastRow = options.length - (totalRows - 1) * columns;
 
+  const [pressedId, setPressedId] = useState<string | null>(null);
+  const pressTimerRef = useRef<number | null>(null);
+  const startPress = (id: string) => {
+    if (pressTimerRef.current !== null) {
+      window.clearTimeout(pressTimerRef.current);
+      pressTimerRef.current = null;
+    }
+    setPressedId(id);
+  };
+  const endPress = () => {
+    if (pressTimerRef.current !== null) window.clearTimeout(pressTimerRef.current);
+    pressTimerRef.current = window.setTimeout(() => setPressedId(null), 180);
+  };
+
   return (
     <div
       className={cn("grid gap-0.5", className)}
@@ -124,12 +159,18 @@ export function RadioCardGroupGrouped({
             key={opt.value}
             type="button"
             onClick={() => onValueChange(opt.value)}
+            onPointerDown={() => startPress(opt.value)}
+            onPointerUp={endPress}
+            onPointerLeave={endPress}
+            data-pressed={pressedId === opt.value || isActive}
+            data-active={isActive}
             className={cn(
-              "relative flex items-center gap-3 p-3.5 border text-left transition-all duration-300 cursor-default outline-none focus-visible:ring-2 focus-visible:ring-ring/20 overflow-hidden group select-none",
+              "relative flex items-center gap-3 p-3.5 border border-transparent text-left transition-[background-color,color,border-radius] duration-[600ms] ease-out cursor-default outline-none focus-visible:ring-2 focus-visible:ring-ring/20 overflow-hidden group select-none",
               rounded,
+              "data-[pressed=true]:duration-[600ms] data-[pressed=true]:delay-100 data-[pressed=true]:ease-[cubic-bezier(0.2,0.8,0.2,1.2)] data-[pressed=true]:rounded-[36px]",
               isActive
-                ? "bg-background/20 border-foreground/30 text-foreground"
-                : "bg-background border-transparent text-muted-foreground hover:bg-background/50 hover:text-foreground",
+                ? "bg-background text-foreground"
+                : "bg-background text-muted-foreground hover:bg-background/50 hover:text-foreground",
             )}
           >
             <div className="absolute inset-0 bg-gradient-to-br from-foreground/2 to-transparent pointer-events-none" />

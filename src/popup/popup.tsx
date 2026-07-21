@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
-import { Settings } from "lucide-react";
+import { HugeiconsIcon } from "@/components/ui/hugeicons";
+import { Settings03Icon } from "@hugeicons/core-free-icons";
 import { Badge } from "@/components/ui/badge";
 import { Button as MaterialDesign3Button } from "@/components/ui/material-design-3-button";
 import { SwitchCard } from "@/components/ui/switch-card";
@@ -333,7 +334,7 @@ export default function Popup() {
             onClick={openOptions}
             className="w-full shrink-0"
           >
-            <Settings className="w-3.5 h-3.5" />
+            <HugeiconsIcon icon={Settings03Icon} className="w-3.5 h-3.5" />
             Open settings
           </MaterialDesign3Button>
         </div>

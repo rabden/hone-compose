@@ -1430,7 +1430,7 @@ export default function App({
       }
 
       // ── Normal Menu Keydown handling (isCardOnly is false) ──
-      if (e.ctrlKey && e.key === "Enter" && canApplyCard) {
+      if (e.altKey && e.key === "Enter" && canApplyCard) {
         consumeKeyboardEvent(e);
         handleApplyCard();
         return;

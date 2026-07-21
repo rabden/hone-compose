@@ -5,8 +5,15 @@ import { ExpandingSearchDock } from "@/components/ui/expanding-search-dock";
 import type { ExpandingSearchDockHandle } from "@/components/ui/expanding-search-dock";
 import { TagGroup, Tag } from "@/components/ui/tag";
 import { Badge } from "@/components/ui/badge";
-import { Trash2, Copy, Check, Search } from "lucide-react";
+import { Check } from "lucide-react";
 import { Ripple } from "@/components/ui/ripple";
+import { HugeiconsIcon } from "@/components/ui/hugeicons";
+import {
+  WasteIcon,
+  Cancel02Icon,
+  Search01Icon,
+  ClipboardCopyIcon,
+} from "@hugeicons/core-free-icons";
 import { HistoryList } from "@/components/history-list";
 import {
   Dialog,
@@ -101,7 +108,7 @@ export default function HistoryTab({
                 aria-label="Search history"
               >
                 <Ripple />
-                <Search className="w-3.5 h-3.5 text-muted-foreground relative z-10 pointer-events-none" />
+                <HugeiconsIcon icon={Search01Icon} className="w-3.5 h-3.5 text-muted-foreground relative z-10 pointer-events-none" />
               </button>
             </div>
             {history.length > 0 && (
@@ -111,7 +118,7 @@ export default function HistoryTab({
                 shape="round"
                 onClick={() => setClearAllDialogOpen(true)}
               >
-                <Trash2 className="w-3.5 h-3.5" />
+                <HugeiconsIcon icon={WasteIcon} className="w-3.5 h-3.5" />
                 Clear All
               </MaterialDesign3Button>
             )}
@@ -146,7 +153,7 @@ export default function HistoryTab({
                   shape="round"
                   onClick={() => setClearAllDialogOpen(true)}
                 >
-                  <Trash2 className="w-3.5 h-3.5" />
+                  <HugeiconsIcon icon={WasteIcon} className="w-3.5 h-3.5" />
                   Clear All
                 </MaterialDesign3Button>
               )}
@@ -255,7 +262,7 @@ export default function HistoryTab({
                       setSelectedHistoryItem(null);
                     }}
                   >
-                    <Trash2 className="w-3.5 h-3.5" />
+                    <HugeiconsIcon icon={WasteIcon} className="w-3.5 h-3.5" />
                     Delete
                   </MaterialDesign3Button>
                   <MaterialDesign3Button
@@ -272,7 +279,7 @@ export default function HistoryTab({
                     {copiedId === selectedHistoryItem.id ? (
                       <Check className="w-3.5 h-3.5" />
                     ) : (
-                      <Copy className="w-3.5 h-3.5" />
+                      <HugeiconsIcon icon={ClipboardCopyIcon} className="w-3.5 h-3.5" />
                     )}
                     {copiedId === selectedHistoryItem.id
                       ? "Copied"
@@ -309,6 +316,7 @@ export default function HistoryTab({
                 shape="round"
                 onClick={() => setClearAllDialogOpen(false)}
               >
+                <HugeiconsIcon icon={Cancel02Icon} className="w-3.5 h-3.5" />
                 Cancel
               </MaterialDesign3Button>
               <MaterialDesign3Button
@@ -317,7 +325,7 @@ export default function HistoryTab({
                 shape="round"
                 onClick={handleClearAllHistory}
               >
-                <Trash2 className="w-3.5 h-3.5" />
+                <HugeiconsIcon icon={WasteIcon} className="w-3.5 h-3.5" />
                 Clear All
               </MaterialDesign3Button>
             </div>

@@ -39,16 +39,34 @@ function Tag({
 }: TagProps) {
   const interactive = variant === "interactive";
   const Comp = interactive ? "button" : "span";
+  const [pressed, setPressed] = React.useState(false);
+  const pressTimerRef = React.useRef<number | null>(null);
+
+  const startPress = () => {
+    if (pressTimerRef.current !== null) {
+      window.clearTimeout(pressTimerRef.current);
+      pressTimerRef.current = null;
+    }
+    setPressed(true);
+  };
+  const endPress = () => {
+    if (pressTimerRef.current !== null) window.clearTimeout(pressTimerRef.current);
+    pressTimerRef.current = window.setTimeout(() => setPressed(false), 180);
+  };
 
   return (
     <Comp
       type={interactive ? "button" : undefined}
+      onPointerDown={interactive ? startPress : undefined}
+      onPointerUp={interactive ? endPress : undefined}
+      onPointerLeave={interactive ? endPress : undefined}
+      data-pressed={interactive ? pressed : undefined}
       className={cn(
         "inline-flex items-center gap-1.5 px-3.5 py-2 text-[10px] font-medium overflow-hidden relative rounded-md",
         isFirst && "rounded-l-3xl",
         isLast && "rounded-r-3xl",
         interactive
-          ? "bg-background hover:bg-background transition-colors duration-200 cursor-default outline-none text-foreground select-none"
+          ? "bg-background transition-[background-color,border-radius] duration-300 ease-[cubic-bezier(0.2,0.8,0.2,1.2)] cursor-default outline-none text-foreground select-none data-[pressed=true]:rounded-[36px]"
           : "bg-background text-foreground/80 select-none",
         className,
       )}

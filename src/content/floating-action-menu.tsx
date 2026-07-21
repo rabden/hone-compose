@@ -619,7 +619,7 @@ export function FloatingActionMenu({
                           backgroundColor: "color-mix(in oklch, var(--primary-foreground) 10%, transparent)",
                         }}
                       >
-                        Ctrl
+                        Alt
                       </span>
                     )}
                     <span

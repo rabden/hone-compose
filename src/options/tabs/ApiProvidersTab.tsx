@@ -8,7 +8,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { RadioCardGroupGrouped } from "@/components/ui/radio-card";
-import { Info } from "lucide-react";
+import { HugeiconsIcon } from "@/components/ui/hugeicons";
+import { BadgeInfoIcon } from "@hugeicons/core-free-icons";
 
 const OPENROUTER_FREE_MODELS = [
   { id: "google/gemma-4-31b-it:free", label: "Gemma 4 31B" },
@@ -353,7 +354,7 @@ export default function ApiProvidersTab({
             <div className="md:col-span-3">
               {activeProvider === "openrouter" && (
                 <div className="flex gap-3 text-xs text-muted-foreground leading-relaxed px-4 py-3 rounded-lg bg-foreground/[0.02] border border-border/30 animate-in fade-in duration-200">
-                  <Info className="w-4 h-4 shrink-0 text-foreground/40 mt-0.5" />
+                  <HugeiconsIcon icon={BadgeInfoIcon} className="w-4 h-4 shrink-0 text-foreground/40 mt-0.5" />
                   <div>
                     A free OpenRouter API key is required (create one at{" "}
                     <strong className="text-foreground/80">
@@ -372,7 +373,7 @@ export default function ApiProvidersTab({
               )}
               {activeProvider === "openrouter_paid" && (
                 <div className="flex gap-3 text-xs text-muted-foreground leading-relaxed px-4 py-3 rounded-lg bg-foreground/[0.02] border border-border/30 animate-in fade-in duration-200">
-                  <Info className="w-4 h-4 shrink-0 text-foreground/40 mt-0.5" />
+                  <HugeiconsIcon icon={BadgeInfoIcon} className="w-4 h-4 shrink-0 text-foreground/40 mt-0.5" />
                   <div>
                     Enter any model identifier available on{" "}
                     <strong className="text-foreground/80">
@@ -385,7 +386,7 @@ export default function ApiProvidersTab({
               )}
               {activeProvider === "google_ai_studio" && (
                 <div className="flex gap-3 text-xs text-muted-foreground leading-relaxed px-4 py-3 rounded-lg bg-foreground/[0.02] border border-border/30 animate-in fade-in duration-200">
-                  <Info className="w-4 h-4 shrink-0 text-foreground/40 mt-0.5" />
+                  <HugeiconsIcon icon={BadgeInfoIcon} className="w-4 h-4 shrink-0 text-foreground/40 mt-0.5" />
                   <div>
                     Uses{" "}
                     <strong className="text-foreground/80">
@@ -405,7 +406,7 @@ export default function ApiProvidersTab({
               )}
               {activeProvider === "groq" && (
                 <div className="flex gap-3 text-xs text-muted-foreground leading-relaxed px-4 py-3 rounded-lg bg-foreground/[0.02] border border-border/30 animate-in fade-in duration-200">
-                  <Info className="w-4 h-4 shrink-0 text-foreground/40 mt-0.5" />
+                  <HugeiconsIcon icon={BadgeInfoIcon} className="w-4 h-4 shrink-0 text-foreground/40 mt-0.5" />
                   <div>
                     Uses OpenAI-compatible{" "}
                     <strong className="text-foreground/80">api.groq.com</strong>{" "}

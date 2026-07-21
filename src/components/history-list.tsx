@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils";
+import { useState, useRef } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Ripple } from "@/components/ui/ripple";
 import { History } from "lucide-react";
@@ -40,6 +41,20 @@ export function HistoryList({
   const displayItems = limit ? items.slice(0, limit) : items;
   const totalItems = displayItems.length;
 
+  const [pressedId, setPressedId] = useState<string | null>(null);
+  const pressTimerRef = useRef<number | null>(null);
+  const startPress = (id: string) => {
+    if (pressTimerRef.current !== null) {
+      window.clearTimeout(pressTimerRef.current);
+      pressTimerRef.current = null;
+    }
+    setPressedId(id);
+  };
+  const endPress = () => {
+    if (pressTimerRef.current !== null) window.clearTimeout(pressTimerRef.current);
+    pressTimerRef.current = window.setTimeout(() => setPressedId(null), 180);
+  };
+
   if (totalItems === 0) {
     return (
       <div
@@ -66,8 +81,13 @@ export function HistoryList({
           key={item.id}
           type="button"
           onClick={() => onItemClick(item)}
+          onPointerDown={() => startPress(item.id)}
+          onPointerUp={endPress}
+          onPointerLeave={endPress}
+          data-pressed={pressedId === item.id}
           className={cn(
-            "relative flex items-center gap-4 px-5 cursor-default transition-colors duration-200 text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/20 overflow-hidden select-none py-4 bg-background hover:bg-background/50",
+            "relative flex items-center gap-4 px-5 cursor-default transition-[background-color,border-radius] duration-[600ms] ease-out text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/20 overflow-hidden select-none py-4 bg-background hover:bg-background/50",
+            "data-[pressed=true]:duration-[600ms] data-[pressed=true]:delay-100 data-[pressed=true]:ease-[cubic-bezier(0.2,0.8,0.2,1.2)] data-[pressed=true]:rounded-[36px]",
             totalItems === 1 && "rounded-3xl",
             totalItems > 1 && i === 0 && "rounded-t-3xl rounded-b-md",
             totalItems > 1 &&

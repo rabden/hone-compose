@@ -1,16 +1,17 @@
 import { useMemo } from "react";
+import { AlertCircle } from "lucide-react";
+import { HugeiconsIcon } from "@/components/ui/hugeicons";
 import {
-  Key,
-  Keyboard,
-  History,
-  Check,
-  Eye,
-  EyeOff,
-  AlertCircle,
-  Wand2,
+  Tick01Icon,
+  EyeIcon,
+  EyeOffIcon,
+  ArrowUpRight01Icon,
+  KeyIcon,
+  KeyboardIcon,
   PanelLeftIcon,
-  ArrowUpRight,
-} from "lucide-react";
+  HistoryIcon,
+  AiGenerativeIcon,
+} from "@hugeicons/core-free-icons";
 import { Ripple } from "@/components/ui/ripple";
 import { BUILTIN_SHORTCUT_ACTIONS } from "@/lib/shortcuts";
 import { getActionLabel } from "@/lib/shortcuts";
@@ -139,7 +140,7 @@ export default function DashboardTab({
           <Ripple />
           <span className="inline-flex items-center gap-1.5 relative z-10 pointer-events-none">
             {hasKey ? (
-              <Check className="size-3.5 stroke-[2]" />
+              <HugeiconsIcon icon={Tick01Icon} className="size-3.5" />
             ) : (
               <AlertCircle className="size-3.5" />
             )}
@@ -157,7 +158,7 @@ export default function DashboardTab({
           <Ripple />
           <span className="inline-flex items-center gap-1.5 relative z-10 pointer-events-none">
             {dropdownShortcutKey ? (
-              <Check className="size-3.5 stroke-[2]" />
+              <HugeiconsIcon icon={Tick01Icon} className="size-3.5" />
             ) : (
               <AlertCircle className="size-3.5" />
             )}
@@ -174,7 +175,11 @@ export default function DashboardTab({
         >
           <Ripple />
           <span className="inline-flex items-center gap-1.5 relative z-10 pointer-events-none">
-            {hideDot ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
+            {hideDot ? (
+              <HugeiconsIcon icon={EyeOffIcon} className="size-3.5" />
+            ) : (
+              <HugeiconsIcon icon={EyeIcon} className="size-3.5" />
+            )}
             {hideDot ? "Dot: Hidden" : "Dot: Visible"}
           </span>
         </Tag>
@@ -190,7 +195,7 @@ export default function DashboardTab({
           <Ripple />
           <div className="relative z-10 pointer-events-none space-y-4 flex flex-col flex-1">
             <div className="p-3 rounded-lg bg-foreground/6 w-fit">
-              <Key className="size-5 text-foreground/60" />
+              <HugeiconsIcon icon={KeyIcon} className="size-5 text-foreground/60" />
             </div>
             <div className="space-y-2 flex-1">
               <span className="text-[9px] font-semibold text-muted-foreground/70 uppercase tracking-wider block">
@@ -249,7 +254,7 @@ export default function DashboardTab({
           <Ripple />
           <div className="relative z-10 pointer-events-none space-y-3">
             <div className="p-2.5 rounded-lg bg-foreground/6 w-fit">
-              <Keyboard className="size-4 text-foreground/60" />
+              <HugeiconsIcon icon={KeyboardIcon} className="size-4 text-foreground/60" />
             </div>
             <div>
               <span className="text-[9px] font-semibold text-muted-foreground/70 uppercase tracking-wider block mb-1">
@@ -269,7 +274,7 @@ export default function DashboardTab({
           <Ripple />
           <div className="relative z-10 pointer-events-none space-y-3">
             <div className="p-2.5 rounded-lg bg-foreground/6 w-fit">
-              <PanelLeftIcon className="size-4 text-foreground/60" />
+              <HugeiconsIcon icon={PanelLeftIcon} className="size-4 text-foreground/60" />
             </div>
             <div>
               <span className="text-[9px] font-semibold text-muted-foreground/70 uppercase tracking-wider block mb-1">
@@ -290,7 +295,7 @@ export default function DashboardTab({
           <Ripple />
           <div className="relative z-10 pointer-events-none space-y-3">
             <div className="p-2.5 rounded-lg bg-foreground/6 w-fit">
-              <History className="size-4 text-foreground/60" />
+              <HugeiconsIcon icon={HistoryIcon} className="size-4 text-foreground/60" />
             </div>
             <div>
               <span className="text-[9px] font-semibold text-muted-foreground/70 uppercase tracking-wider block mb-1">
@@ -311,7 +316,7 @@ export default function DashboardTab({
           <Ripple />
           <div className="relative z-10 pointer-events-none space-y-3">
             <div className="p-2.5 rounded-lg bg-foreground/6 w-fit">
-              <Wand2 className="size-4 text-foreground/60" />
+              <HugeiconsIcon icon={AiGenerativeIcon} className="size-4 text-foreground/60" />
             </div>
             <div>
               <span className="text-[9px] font-semibold text-muted-foreground/70 uppercase tracking-wider block mb-1">
@@ -347,8 +352,8 @@ export default function DashboardTab({
               shape="round"
               onClick={() => setActiveTab("history")}
             >
-              View all
-              <ArrowUpRight className="size-3.5" />
+               View all
+              <HugeiconsIcon icon={ArrowUpRight01Icon} className="size-3.5" />
             </Button>
           )}
         </div>

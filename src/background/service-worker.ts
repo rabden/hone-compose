@@ -1,6 +1,7 @@
 import { GoogleGenAI, ThinkingLevel } from '@google/genai';
 import { ActionRegistry } from '../content/actions';
 import type { PromptPayload } from '../content/actions';
+import { checkGrammarAndSpelling, getLinter } from './grammar-worker';
 
 import { addHistoryEntry, saveActionConfig } from '../content/storage';
 import type { CustomAction } from '../content/storage';
@@ -755,6 +756,29 @@ chrome.runtime.onMessage.addListener((message: Record<string, unknown>, sender: 
         }
       });
 
+    return true;
+  }
+
+  if (message.type === 'CHECK_GRAMMAR') {
+    const text = message.text as string;
+    checkGrammarAndSpelling(text)
+      .then((corrected) => {
+        sendResponse({ success: true, text: corrected });
+      })
+      .catch((err) => {
+        console.error("Grammar check failed in background:", err);
+        sendResponse({ success: false, error: err instanceof Error ? err.message : String(err) });
+      });
+    return true;
+  }
+
+  if (message.type === 'WARMUP_LINTER') {
+    getLinter()
+      .then(() => sendResponse({ success: true }))
+      .catch((err) => {
+        console.error("Warmup linter failed in background:", err);
+        sendResponse({ success: false, error: err instanceof Error ? err.message : String(err) });
+      });
     return true;
   }
 });

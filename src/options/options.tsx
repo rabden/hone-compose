@@ -1,16 +1,17 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { cn } from "@/lib/utils";
+import { Check, AlertCircle } from "lucide-react";
+import { HugeiconsIcon } from "@/components/ui/hugeicons";
 import {
-  Key,
-  Keyboard,
-  History,
-  Check,
-  AlertCircle,
-  Wand2,
-  PanelLeftIcon,
-  Palette,
-  LayoutDashboard,
-} from "lucide-react";
+  LayoutAlignRightIcon,
+  LayoutAlignLeftIcon,
+  DashboardCircleIcon,
+  ConnectIcon,
+  CommandIcon,
+  Settings05Icon,
+  HistoryIcon,
+  AiGenerativeIcon,
+} from "@hugeicons/core-free-icons";
 import {
   SidebarProvider,
   Sidebar,
@@ -100,7 +101,8 @@ function SidebarToggleInHeader() {
       title={isCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
       className="text-muted-foreground"
     >
-      <PanelLeftIcon
+      <HugeiconsIcon
+        icon={isCollapsed ? LayoutAlignRightIcon : LayoutAlignLeftIcon}
         className={cn(
           "size-4 transition-transform duration-200 ease-[cubic-bezier(0.16,1,0.3,1)]",
           isCollapsed && "rotate-180",
@@ -574,12 +576,12 @@ export default function Options() {
     getActionLabel(actionCode, customActions);
 
   const NAV_ITEMS = [
-    { value: "dashboard", label: "Dashboard", icon: LayoutDashboard },
-    { value: "api", label: "API Providers", icon: Key },
-    { value: "shortcut", label: "Key Bindings", icon: Keyboard },
-    { value: "customizations", label: "Customizations", icon: Palette },
-    { value: "history", label: "Rewrite History", icon: History },
-    { value: "actions", label: "Actions Studio", icon: Wand2 },
+    { value: "dashboard", label: "Dashboard", icon: DashboardCircleIcon },
+    { value: "api", label: "API Providers", icon: ConnectIcon },
+    { value: "shortcut", label: "Key Bindings", icon: CommandIcon },
+    { value: "customizations", label: "Customizations", icon: Settings05Icon },
+    { value: "history", label: "Rewrite History", icon: HistoryIcon },
+    { value: "actions", label: "Actions Studio", icon: AiGenerativeIcon },
   ] as const;
 
   return (
@@ -634,7 +636,8 @@ export default function Options() {
                               style={{ animationDelay: `${index * 40}ms` }}
                             >
                               <Ripple />
-                              <Icon
+                              <HugeiconsIcon
+                                icon={Icon}
                                 className={cn(
                                   "size-4 shrink-0 transition-colors duration-150 ease-[cubic-bezier(0.16,1,0.3,1)] relative z-10 pointer-events-none",
                                   activeTab === item.value

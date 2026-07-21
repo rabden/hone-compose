@@ -9,7 +9,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Keyboard, ShieldAlert } from "lucide-react";
+import { HugeiconsIcon } from "@/components/ui/hugeicons";
+import { CommandIcon, BadgeInfoIcon } from "@hugeicons/core-free-icons";
 import { BUILTIN_SHORTCUT_ACTIONS, getActionLabel } from "@/lib/shortcuts";
 import type { CustomAction } from "../../content/storage";
 
@@ -152,7 +153,7 @@ export default function KeyBindingsTab({
                   setIsRecordingKey(true);
                 }}
               >
-                <Keyboard className="w-3.5 h-3.5" />
+                <HugeiconsIcon icon={CommandIcon} className="w-3.5 h-3.5" />
                 Record
               </MaterialDesign3Button>
             </div>
@@ -244,7 +245,7 @@ export default function KeyBindingsTab({
             </Select>
 
             <div className="flex gap-3 text-xs text-muted-foreground leading-relaxed px-4 py-3 rounded-lg bg-foreground/[0.02] border border-border/30 mt-4 animate-in fade-in duration-200">
-              <ShieldAlert className="w-4 h-4 shrink-0 text-foreground/40 mt-0.5" />
+              <HugeiconsIcon icon={BadgeInfoIcon} className="w-4 h-4 shrink-0 text-foreground/40 mt-0.5" />
               <div>
                 <strong className="text-foreground/80">Pro Tip:</strong>{" "}
                 Pressing this combination while focusing on any input or
@@ -293,7 +294,7 @@ export default function KeyBindingsTab({
                   setIsRecordingDropdownKey(true);
                 }}
               >
-                <Keyboard className="w-3.5 h-3.5" />
+                <HugeiconsIcon icon={CommandIcon} className="w-3.5 h-3.5" />
                 Record
               </MaterialDesign3Button>
             </div>
