@@ -141,7 +141,7 @@ export default function Options() {
   const [openrouterPaidModel, setOpenrouterPaidModel] = useState("");
   const [googleAiStudioKey, setGoogleAiStudioKey] = useState("");
   const [googleAiStudioModel, setGoogleAiStudioModel] =
-    useState("gemma-3-27b-it");
+    useState("gemma-4-31b-it");
   const [groqKey, setGroqKey] = useState("");
   const [groqModel, setGroqModel] = useState("groq/compound-mini");
 

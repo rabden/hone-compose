@@ -290,7 +290,7 @@ export default function ApiProvidersTab({
                         ? "claude-sonnet-4-6"
                         : activeProvider === "groq"
                           ? "groq/compound-mini"
-                          : "gemma-3-27b-it"
+                          : "gemma-4-31b-it"
                 }
                 className="bg-background border border-border/60 rounded-lg text-xs h-9 font-mono w-full"
               />

@@ -669,6 +669,13 @@ async function handleInstallAction(sourceId: string, path: string): Promise<{ su
   }
 }
 
+// Trigger onboarding tab on extension install
+chrome.runtime.onInstalled.addListener((details) => {
+  if (details.reason === 'install') {
+    chrome.tabs.create({ url: chrome.runtime.getURL('onboarding.html') });
+  }
+});
+
 // Listen for keyboard shortcuts from Chrome manifest.json commands
 // These are more reliable than content script keyboard listeners
 // Works even when websites intercept keys (Gmail, Notion, etc.)
