@@ -7,6 +7,7 @@ import { SwitchCard } from "@/components/ui/switch-card";
 import { HoneLogo } from "@/components/hone-logo";
 import { formatShortcutCombo, getActionLabel } from "@/lib/shortcuts";
 import { loadCustomActions } from "../content/storage";
+import { getProviderLabel, getDefaultModel } from "../providers";
 
 interface ManifestCommand {
   name: string;
@@ -16,7 +17,7 @@ interface ManifestCommand {
 
 export default function Popup() {
   const [provider, setProvider] = useState("openrouter");
-  const [model, setModel] = useState("google/gemma-4-26b-a4b-it:free");
+  const [model, setModel] = useState("anthropic/claude-sonnet-4-6");
   const [hideDot, setHideDot] = useState(false);
   const [menuShortcut, setMenuShortcut] = useState<string | null>(null);
   const [quickShortcut, setQuickShortcut] = useState<string | null>(null);
@@ -29,11 +30,9 @@ export default function Popup() {
     chrome.storage.local.get(
       [
         "activeProvider",
-        "openaiModel",
-        "anthropicModel",
-        "geminiModel",
+        "openaiCompatibleModel",
+        "anthropicShapeModel",
         "openrouterModel",
-        "openrouterPaidModel",
         "googleAiStudioModel",
         "groqModel",
         "shortcutKey",
@@ -52,21 +51,24 @@ export default function Popup() {
       async (res: Record<string, unknown>) => {
         const active = (res.activeProvider as string) || "openrouter";
         setProvider(active);
-
-        if (active === "openai")
-          setModel((res.openaiModel as string) || "gpt-5-mini");
-        else if (active === "anthropic")
-          setModel((res.anthropicModel as string) || "claude-sonnet-4-6");
-        else if (active === "groq")
-          setModel((res.groqModel as string) || "groq/compound-mini");
-        else if (active === "openrouter_paid")
-          setModel((res.openrouterPaidModel as string) || "custom model");
-        else if (active === "google_ai_studio")
-          setModel((res.googleAiStudioModel as string) || "gemma-4-26b-a4b-it");
-        else
-          setModel(
-            (res.openrouterModel as string) || "google/gemma-4-26b-a4b-it:free",
-          );
+        setModel(
+          ((): string => {
+            switch (active) {
+              case "openai_compatible":
+                return (res.openaiCompatibleModel as string) || getDefaultModel("openai_compatible");
+              case "anthropic_shape":
+                return (res.anthropicShapeModel as string) || getDefaultModel("anthropic_shape");
+              case "groq":
+                return (res.groqModel as string) || getDefaultModel("groq");
+              case "google_ai_studio":
+                return (res.googleAiStudioModel as string) || getDefaultModel("google_ai_studio");
+              case "openrouter":
+                return (res.openrouterModel as string) || getDefaultModel("openrouter");
+              default:
+                return getDefaultModel("openrouter");
+            }
+          })(),
+        );
 
         setMenuShortcut(
           formatShortcutCombo({
@@ -130,17 +132,7 @@ export default function Popup() {
     chrome.runtime.openOptionsPage();
   };
 
-  const getProviderName = (prov: string) => {
-    const names: Record<string, string> = {
-      groq: "Groq",
-      google_ai_studio: "Google AI Studio",
-      openrouter: "OpenRouter Free",
-      openrouter_paid: "OpenRouter Paid",
-      openai: "OpenAI",
-      anthropic: "Anthropic Claude",
-    };
-    return names[prov] || prov;
-  };
+  const getProviderName = (prov: string) => getProviderLabel(prov);
 
   return (
     <div className="w-[560px] bg-card text-foreground select-none p-5 flex flex-col gap-4 font-sans antialiased">

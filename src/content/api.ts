@@ -45,7 +45,7 @@ export async function request<T = unknown>(
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     const controller = new AbortController();
-    let timeoutId: NodeJS.Timeout | null = null;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
     try {
       // Setup timeout
@@ -129,7 +129,7 @@ export async function* streamRequest(
   } = options;
 
   const controller = new AbortController();
-  let timeoutId: NodeJS.Timeout | null = null;
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
   try {
     // Setup timeout

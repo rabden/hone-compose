@@ -19,6 +19,7 @@ import { TagGroup, Tag } from "@/components/ui/tag";
 import { Button } from "@/components/ui/material-design-3-button";
 import { HistoryList } from "@/components/history-list";
 import type { CustomAction } from "../../content/storage";
+import { getProviderLabel, isProviderConfigured } from "../../providers";
 
 interface HistoryItem {
   id: string;
@@ -35,17 +36,17 @@ interface DashboardTabProps {
   setActiveTab: (tab: "dashboard" | "api" | "shortcut" | "history" | "actions" | "customizations") => void;
   activeProvider: string;
   openrouterKey: string;
-  openrouterPaidKey: string;
-  openaiKey: string;
-  anthropicKey: string;
+  openaiCompatibleKey: string;
+  anthropicShapeKey: string;
   googleAiStudioKey: string;
   groqKey: string;
-  openaiModel: string;
-  anthropicModel: string;
+  deepseekKey: string;
+  openaiCompatibleModel: string;
+  anthropicShapeModel: string;
   openrouterModel: string;
-  openrouterPaidModel: string;
   googleAiStudioModel: string;
   groqModel: string;
+  deepseekModel: string;
   dropdownShortcutKey: string;
   dropdownShortcutCtrl: boolean;
   dropdownShortcutAlt: boolean;
@@ -60,17 +61,17 @@ export default function DashboardTab({
   setActiveTab,
   activeProvider,
   openrouterKey,
-  openrouterPaidKey,
-  openaiKey,
-  anthropicKey,
+  openaiCompatibleKey,
+  anthropicShapeKey,
   googleAiStudioKey,
   groqKey,
-  openaiModel,
-  anthropicModel,
+  deepseekKey,
+  openaiCompatibleModel,
+  anthropicShapeModel,
   openrouterModel,
-  openrouterPaidModel,
   googleAiStudioModel,
   groqModel,
+  deepseekModel,
   dropdownShortcutKey,
   dropdownShortcutCtrl,
   dropdownShortcutAlt,
@@ -95,20 +96,22 @@ export default function DashboardTab({
 
   const hasKey = useMemo(
     () =>
-      (activeProvider === "openrouter" && openrouterKey.trim()) ||
-      (activeProvider === "openrouter_paid" && openrouterPaidKey.trim()) ||
-      (activeProvider === "openai" && openaiKey.trim()) ||
-      (activeProvider === "anthropic" && anthropicKey.trim()) ||
-      (activeProvider === "google_ai_studio" && googleAiStudioKey.trim()) ||
-      (activeProvider === "groq" && groqKey.trim()),
+      isProviderConfigured(activeProvider, {
+        openrouterKey,
+        openaiCompatibleKey,
+        anthropicShapeKey,
+        googleAiStudioKey,
+        groqKey,
+        deepseekKey,
+      }),
     [
       activeProvider,
       openrouterKey,
-      openrouterPaidKey,
-      openaiKey,
-      anthropicKey,
+      openaiCompatibleKey,
+      anthropicShapeKey,
       googleAiStudioKey,
       groqKey,
+      deepseekKey,
     ],
   );
 
@@ -202,12 +205,7 @@ export default function DashboardTab({
                 Active Engine
               </span>
               <span className="text-lg font-light text-foreground leading-tight block">
-                {activeProvider === "openai" && "OpenAI"}
-                {activeProvider === "anthropic" && "Claude"}
-                {activeProvider === "openrouter" && "OpenRouter Free"}
-                {activeProvider === "openrouter_paid" && "OpenRouter Paid"}
-                {activeProvider === "google_ai_studio" && "AI Studio"}
-                {activeProvider === "groq" && "Groq"}
+                {getProviderLabel(activeProvider)}
               </span>
             </div>
             <div className="space-y-1 pt-3 border-t border-border/20">
@@ -216,31 +214,29 @@ export default function DashboardTab({
               </span>
               <span
                 className="text-[10px] font-mono text-foreground/70 truncate block"
-                title={
-                  activeProvider === "openai"
-                    ? openaiModel
-                    : activeProvider === "anthropic"
-                      ? anthropicModel
-                      : activeProvider === "openrouter"
-                        ? openrouterModel || "gemma-4"
-                        : activeProvider === "openrouter_paid"
-                          ? openrouterPaidModel
-                          : activeProvider === "groq"
-                            ? groqModel
-                            : googleAiStudioModel
-                }
+                title={(() => {
+                  switch (activeProvider) {
+                    case "openai_compatible": return openaiCompatibleModel;
+                    case "anthropic_shape": return anthropicShapeModel;
+                    case "openrouter": return openrouterModel;
+                    case "groq": return groqModel;
+                    case "deepseek": return deepseekModel;
+                    case "google_ai_studio": return googleAiStudioModel;
+                    default: return "";
+                  }
+                })()}
               >
-                {activeProvider === "openai"
-                  ? openaiModel
-                  : activeProvider === "anthropic"
-                    ? anthropicModel
-                    : activeProvider === "openrouter"
-                      ? openrouterModel || "gemma-4"
-                      : activeProvider === "openrouter_paid"
-                        ? openrouterPaidModel
-                        : activeProvider === "groq"
-                          ? groqModel
-                          : googleAiStudioModel}
+                {(() => {
+                  switch (activeProvider) {
+                    case "openai_compatible": return openaiCompatibleModel;
+                    case "anthropic_shape": return anthropicShapeModel;
+                    case "openrouter": return openrouterModel;
+                    case "groq": return groqModel;
+                    case "deepseek": return deepseekModel;
+                    case "google_ai_studio": return googleAiStudioModel;
+                    default: return "";
+                  }
+                })()}
               </span>
             </div>
           </div>

@@ -125,25 +125,24 @@ export default function Options() {
   const [testLoading, setTestLoading] = useState(false);
 
   // Provider & settings state
-  const [activeProvider, setActiveProvider] = useState("openai");
-  const [openaiKey, setOpenaiKey] = useState("");
-  const [openaiModel, setOpenaiModel] = useState("gpt-5-mini");
-  const [openaiEndpoint, setOpenaiEndpoint] = useState("");
-  const [anthropicKey, setAnthropicKey] = useState("");
-  const [anthropicModel, setAnthropicModel] = useState(
+  const [activeProvider, setActiveProvider] = useState("openrouter");
+  const [openaiCompatibleKey, setOpenaiCompatibleKey] = useState("");
+  const [openaiCompatibleModel, setOpenaiCompatibleModel] = useState("gpt-5-mini");
+  const [openaiCompatibleBaseUrl, setOpenaiCompatibleBaseUrl] = useState("");
+  const [anthropicShapeKey, setAnthropicShapeKey] = useState("");
+  const [anthropicShapeModel, setAnthropicShapeModel] = useState(
     "claude-sonnet-4-6",
   );
-  const [geminiKey, setGeminiKey] = useState("");
-  const [geminiModel, setGeminiModel] = useState("gemini-2.0-flash");
+  const [anthropicShapeBaseUrl, setAnthropicShapeBaseUrl] = useState("");
   const [openrouterKey, setOpenrouterKey] = useState("");
   const [openrouterModel, setOpenrouterModel] = useState("");
-  const [openrouterPaidKey, setOpenrouterPaidKey] = useState("");
-  const [openrouterPaidModel, setOpenrouterPaidModel] = useState("");
   const [googleAiStudioKey, setGoogleAiStudioKey] = useState("");
   const [googleAiStudioModel, setGoogleAiStudioModel] =
     useState("gemma-4-31b-it");
   const [groqKey, setGroqKey] = useState("");
   const [groqModel, setGroqModel] = useState("groq/compound-mini");
+  const [deepseekKey, setDeepseekKey] = useState("");
+  const [deepseekModel, setDeepseekModel] = useState("deepseek-chat");
 
   // Shortcut states
   const [shortcutKey, setShortcutKey] = useState("");
@@ -220,21 +219,20 @@ export default function Options() {
     chrome.storage.local
       .get([
         "activeProvider",
-        "openaiKey",
-        "openaiModel",
-        "openaiEndpoint",
-        "anthropicKey",
-        "anthropicModel",
-        "geminiKey",
-        "geminiModel",
+        "openaiCompatibleKey",
+        "openaiCompatibleModel",
+        "openaiCompatibleBaseUrl",
+        "anthropicShapeKey",
+        "anthropicShapeModel",
+        "anthropicShapeBaseUrl",
         "openrouterKey",
         "openrouterModel",
-        "openrouterPaidKey",
-        "openrouterPaidModel",
         "googleAiStudioKey",
         "googleAiStudioModel",
         "groqKey",
         "groqModel",
+        "deepseekKey",
+        "deepseekModel",
         "shortcutKey",
         "shortcutCtrl",
         "shortcutAlt",
@@ -257,22 +255,16 @@ export default function Options() {
         const r = res as Record<string, string | undefined>;
         if (r.activeProvider) setActiveProvider(r.activeProvider);
 
-        if (r.openaiKey) setOpenaiKey(r.openaiKey);
-        if (r.openaiModel) setOpenaiModel(r.openaiModel);
-        if (r.openaiEndpoint) setOpenaiEndpoint(r.openaiEndpoint);
+        if (r.openaiCompatibleKey) setOpenaiCompatibleKey(r.openaiCompatibleKey);
+        if (r.openaiCompatibleModel) setOpenaiCompatibleModel(r.openaiCompatibleModel);
+        if (r.openaiCompatibleBaseUrl) setOpenaiCompatibleBaseUrl(r.openaiCompatibleBaseUrl);
 
-        if (r.anthropicKey) setAnthropicKey(r.anthropicKey);
-        if (r.anthropicModel) setAnthropicModel(r.anthropicModel);
-
-        if (r.geminiKey) setGeminiKey(r.geminiKey);
-        if (r.geminiModel) setGeminiModel(r.geminiModel);
+        if (r.anthropicShapeKey) setAnthropicShapeKey(r.anthropicShapeKey);
+        if (r.anthropicShapeModel) setAnthropicShapeModel(r.anthropicShapeModel);
+        if (r.anthropicShapeBaseUrl) setAnthropicShapeBaseUrl(r.anthropicShapeBaseUrl);
 
         if (r.openrouterKey) setOpenrouterKey(r.openrouterKey);
         if (r.openrouterModel) setOpenrouterModel(r.openrouterModel);
-
-        if (r.openrouterPaidKey) setOpenrouterPaidKey(r.openrouterPaidKey);
-        if (r.openrouterPaidModel)
-          setOpenrouterPaidModel(r.openrouterPaidModel);
 
         if (r.googleAiStudioKey) setGoogleAiStudioKey(r.googleAiStudioKey);
         if (r.googleAiStudioModel)
@@ -280,6 +272,9 @@ export default function Options() {
 
         if (r.groqKey) setGroqKey(r.groqKey);
         if (r.groqModel) setGroqModel(r.groqModel);
+
+        if (r.deepseekKey) setDeepseekKey(r.deepseekKey);
+        if (r.deepseekModel) setDeepseekModel(r.deepseekModel);
 
         if (r.shortcutKey) setShortcutKey(r.shortcutKey);
         setShortcutCtrl(!!res.shortcutCtrl);
@@ -378,40 +373,38 @@ export default function Options() {
     chrome.storage.local
       .set({
         activeProvider,
-        openaiKey,
-        openaiModel,
-        openaiEndpoint,
-        anthropicKey,
-        anthropicModel,
-        geminiKey,
-        geminiModel,
+        openaiCompatibleKey,
+        openaiCompatibleModel,
+        openaiCompatibleBaseUrl,
+        anthropicShapeKey,
+        anthropicShapeModel,
+        anthropicShapeBaseUrl,
         openrouterKey,
         openrouterModel,
-        openrouterPaidKey,
-        openrouterPaidModel,
         googleAiStudioKey,
         googleAiStudioModel,
         groqKey,
         groqModel,
+        deepseekKey,
+        deepseekModel,
       })
       .catch(console.error);
   }, [
     activeProvider,
-    openaiKey,
-    openaiModel,
-    openaiEndpoint,
-    anthropicKey,
-    anthropicModel,
-    geminiKey,
-    geminiModel,
+    openaiCompatibleKey,
+    openaiCompatibleModel,
+    openaiCompatibleBaseUrl,
+    anthropicShapeKey,
+    anthropicShapeModel,
+    anthropicShapeBaseUrl,
     openrouterKey,
     openrouterModel,
-    openrouterPaidKey,
-    openrouterPaidModel,
     googleAiStudioKey,
     googleAiStudioModel,
     groqKey,
     groqModel,
+    deepseekKey,
+    deepseekModel,
   ]);
 
   // Auto-save shortcut & appearance settings on change
@@ -680,17 +673,17 @@ export default function Options() {
                     setActiveTab={setActiveTab}
                     activeProvider={activeProvider}
                     openrouterKey={openrouterKey}
-                    openrouterPaidKey={openrouterPaidKey}
-                    openaiKey={openaiKey}
-                    anthropicKey={anthropicKey}
+                    openaiCompatibleKey={openaiCompatibleKey}
+                    anthropicShapeKey={anthropicShapeKey}
                     googleAiStudioKey={googleAiStudioKey}
                     groqKey={groqKey}
-                    openaiModel={openaiModel}
-                    anthropicModel={anthropicModel}
+                    openaiCompatibleModel={openaiCompatibleModel}
+                    anthropicShapeModel={anthropicShapeModel}
                     openrouterModel={openrouterModel}
-                    openrouterPaidModel={openrouterPaidModel}
                     googleAiStudioModel={googleAiStudioModel}
                     groqModel={groqModel}
+                    deepseekKey={deepseekKey}
+                    deepseekModel={deepseekModel}
                     dropdownShortcutKey={dropdownShortcutKey}
                     dropdownShortcutCtrl={dropdownShortcutCtrl}
                     dropdownShortcutAlt={dropdownShortcutAlt}
@@ -706,24 +699,22 @@ export default function Options() {
                   <ApiProvidersTab
                     activeProvider={activeProvider}
                     setActiveProvider={setActiveProvider}
-                    openaiKey={openaiKey}
-                    setOpenaiKey={setOpenaiKey}
-                    openaiModel={openaiModel}
-                    setOpenaiModel={setOpenaiModel}
-                    openaiEndpoint={openaiEndpoint}
-                    setOpenaiEndpoint={setOpenaiEndpoint}
-                    anthropicKey={anthropicKey}
-                    setAnthropicKey={setAnthropicKey}
-                    anthropicModel={anthropicModel}
-                    setAnthropicModel={setAnthropicModel}
+                    openaiCompatibleKey={openaiCompatibleKey}
+                    setOpenaiCompatibleKey={setOpenaiCompatibleKey}
+                    openaiCompatibleModel={openaiCompatibleModel}
+                    setOpenaiCompatibleModel={setOpenaiCompatibleModel}
+                    openaiCompatibleBaseUrl={openaiCompatibleBaseUrl}
+                    setOpenaiCompatibleBaseUrl={setOpenaiCompatibleBaseUrl}
+                    anthropicShapeKey={anthropicShapeKey}
+                    setAnthropicShapeKey={setAnthropicShapeKey}
+                    anthropicShapeModel={anthropicShapeModel}
+                    setAnthropicShapeModel={setAnthropicShapeModel}
+                    anthropicShapeBaseUrl={anthropicShapeBaseUrl}
+                    setAnthropicShapeBaseUrl={setAnthropicShapeBaseUrl}
                     openrouterKey={openrouterKey}
                     setOpenrouterKey={setOpenrouterKey}
                     openrouterModel={openrouterModel}
                     setOpenrouterModel={setOpenrouterModel}
-                    openrouterPaidKey={openrouterPaidKey}
-                    setOpenrouterPaidKey={setOpenrouterPaidKey}
-                    openrouterPaidModel={openrouterPaidModel}
-                    setOpenrouterPaidModel={setOpenrouterPaidModel}
                     googleAiStudioKey={googleAiStudioKey}
                     setGoogleAiStudioKey={setGoogleAiStudioKey}
                     googleAiStudioModel={googleAiStudioModel}
@@ -732,6 +723,10 @@ export default function Options() {
                     setGroqKey={setGroqKey}
                     groqModel={groqModel}
                     setGroqModel={setGroqModel}
+                    deepseekKey={deepseekKey}
+                    setDeepseekKey={setDeepseekKey}
+                    deepseekModel={deepseekModel}
+                    setDeepseekModel={setDeepseekModel}
                   />
                 )}
 

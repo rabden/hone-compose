@@ -569,12 +569,12 @@ export default function App({
 
         if (response.fallbackUsed) {
           const providerNames: Record<string, string> = {
-            openai: "OpenAI",
-            anthropic: "Anthropic",
-            gemini: "Gemini",
+            openai_compatible: "OpenAI Compatible",
+            anthropic_shape: "Anthropic Shape",
             google_ai_studio: "AI Studio",
-            openrouter_paid: "OpenRouter",
-            openrouter: "OpenRouter Free"
+            openrouter: "OpenRouter",
+            groq: "Groq",
+            deepseek: "DeepSeek",
           };
           const name = providerNames[response.fallbackUsed] || response.fallbackUsed;
           showToast(`Done! (Fell back to ${name})`, "success");

@@ -24,15 +24,7 @@ import { HoneLogo } from "@/components/hone-logo";
 import { Ripple } from "@/components/ui/ripple";
 import { getRounded } from "@/options/tabs/actionstudio/getRounded";
 import usingExtensionGif from "@/assets/using-extension.gif";
-
-const PROVIDERS = [
-  { id: "groq", label: "Groq", desc: "Ultra-fast open models", getKeyUrl: "https://console.groq.com/keys" },
-  { id: "google_ai_studio", label: "Google AI Studio", desc: "Gemma via GenAI SDK", getKeyUrl: "https://aistudio.google.com/app/apikey" },
-  { id: "openrouter", label: "OpenRouter Free", desc: "Auto-cycling free models", getKeyUrl: "https://openrouter.ai/keys" },
-  { id: "openrouter_paid", label: "OpenRouter Paid", desc: "Custom model identifier", getKeyUrl: "https://openrouter.ai/keys" },
-  { id: "openai", label: "OpenAI Capable", desc: "GPT-4o, GPT-5, Custom Endpoints", getKeyUrl: "https://platform.openai.com/api-keys" },
-  { id: "anthropic", label: "Anthropic Claude", desc: "Claude Sonnet & Opus", getKeyUrl: "https://console.anthropic.com/settings/keys" },
-];
+import { PROVIDERS, getDefaultModel } from "../providers";
 
 export default function Onboarding() {
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
@@ -58,47 +50,35 @@ export default function Onboarding() {
     setActiveProvider(providerId);
     setTestStatus("idle");
     setTestMessage("");
-
-    switch (providerId) {
-      case "groq":
-        setModel("groq/compound-mini");
-        break;
-      case "google_ai_studio":
-        setModel("gemma-4-31b-it");
-        break;
-      case "openrouter":
-        setModel("google/gemma-4-31b-it:free");
-        break;
-      case "openrouter_paid":
-        setModel("anthropic/claude-3.5-sonnet");
-        break;
-      case "openai":
-        setModel("gpt-4o-mini");
-        break;
-      case "anthropic":
-        setModel("claude-3-5-sonnet-20241022");
-        break;
-    }
+    setModel(getDefaultModel(providerId));
+    setEndpoint("");
   };
 
   // Load any existing provider settings if user had partial config
   useEffect(() => {
     if (typeof chrome !== "undefined" && chrome.storage?.local) {
-      chrome.storage.local.get(["activeProvider", "groqKey", "googleAiStudioKey", "openrouterKey", "openaiKey", "anthropicKey"], (res: Record<string, unknown>) => {
+      chrome.storage.local.get(["activeProvider", "groqKey", "googleAiStudioKey", "openrouterKey", "openaiCompatibleKey", "anthropicShapeKey", "openaiCompatibleBaseUrl", "anthropicShapeBaseUrl"], (res: Record<string, unknown>) => {
         const activeProv = typeof res.activeProvider === "string" ? res.activeProvider : undefined;
         if (activeProv) {
           setActiveProvider(activeProv);
+          setModel(getDefaultModel(activeProv));
         }
         const keyMap: Record<string, string | undefined> = {
           groq: typeof res.groqKey === "string" ? res.groqKey : undefined,
           google_ai_studio: typeof res.googleAiStudioKey === "string" ? res.googleAiStudioKey : undefined,
           openrouter: typeof res.openrouterKey === "string" ? res.openrouterKey : undefined,
-          openai: typeof res.openaiKey === "string" ? res.openaiKey : undefined,
-          anthropic: typeof res.anthropicKey === "string" ? res.anthropicKey : undefined,
+          openai_compatible: typeof res.openaiCompatibleKey === "string" ? res.openaiCompatibleKey : undefined,
+          anthropic_shape: typeof res.anthropicShapeKey === "string" ? res.anthropicShapeKey : undefined,
         };
         const currentKey = keyMap[activeProv || "groq"];
         if (currentKey) {
           setApiKey(currentKey);
+        }
+        // Load existing base URL if present
+        if (activeProv === "openai_compatible" && res.openaiCompatibleBaseUrl) {
+          setEndpoint(res.openaiCompatibleBaseUrl as string);
+        } else if (activeProv === "anthropic_shape" && res.anthropicShapeBaseUrl) {
+          setEndpoint(res.anthropicShapeBaseUrl as string);
         }
       });
     }
@@ -121,16 +101,14 @@ export default function Onboarding() {
     } else if (activeProvider === "openrouter") {
       storagePayload.openrouterKey = apiKey;
       storagePayload.openrouterModel = model;
-    } else if (activeProvider === "openrouter_paid") {
-      storagePayload.openrouterPaidKey = apiKey;
-      storagePayload.openrouterPaidModel = model;
-    } else if (activeProvider === "openai") {
-      storagePayload.openaiKey = apiKey;
-      storagePayload.openaiModel = model;
-      if (endpoint) storagePayload.openaiEndpoint = endpoint;
-    } else if (activeProvider === "anthropic") {
-      storagePayload.anthropicKey = apiKey;
-      storagePayload.anthropicModel = model;
+    } else if (activeProvider === "openai_compatible") {
+      storagePayload.openaiCompatibleKey = apiKey;
+      storagePayload.openaiCompatibleModel = model;
+      if (endpoint) storagePayload.openaiCompatibleBaseUrl = endpoint;
+    } else if (activeProvider === "anthropic_shape") {
+      storagePayload.anthropicShapeKey = apiKey;
+      storagePayload.anthropicShapeModel = model;
+      if (endpoint) storagePayload.anthropicShapeBaseUrl = endpoint;
     }
 
     await chrome.storage.local.set(storagePayload);
@@ -472,9 +450,9 @@ export default function Onboarding() {
                               ? "gsk_..."
                               : activeProvider === "google_ai_studio"
                               ? "AIzaSy..."
-                              : activeProvider.startsWith("openrouter")
+                              : activeProvider === "openrouter"
                               ? "sk-or-v1-..."
-                              : activeProvider === "openai"
+                              : activeProvider === "openai_compatible"
                               ? "sk-proj-..."
                               : "sk-ant-..."
                           }
@@ -494,14 +472,27 @@ export default function Onboarding() {
                       </div>
                     </div>
 
-                    {activeProvider === "openai" && (
+                    {activeProvider === "openai_compatible" && (
                       <div className="flex flex-col gap-1">
-                        <Label className="text-[10px] font-medium text-muted-foreground">Custom Base Endpoint (Optional)</Label>
+                        <Label className="text-[10px] font-medium text-muted-foreground">Custom Base URL (Optional)</Label>
                         <Input
                           type="text"
                           value={endpoint}
                           onChange={(e) => setEndpoint(e.target.value)}
                           placeholder="https://api.openai.com/v1"
+                          className="bg-background border border-border/60 rounded-lg text-xs h-8 font-mono"
+                        />
+                      </div>
+                    )}
+
+                    {activeProvider === "anthropic_shape" && (
+                      <div className="flex flex-col gap-1">
+                        <Label className="text-[10px] font-medium text-muted-foreground">Custom Base URL (Optional)</Label>
+                        <Input
+                          type="text"
+                          value={endpoint}
+                          onChange={(e) => setEndpoint(e.target.value)}
+                          placeholder="https://api.anthropic.com/v1"
                           className="bg-background border border-border/60 rounded-lg text-xs h-8 font-mono"
                         />
                       </div>
