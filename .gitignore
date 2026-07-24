@@ -29,3 +29,6 @@ dist-ssr
 .devin/workflows/
 .codex/
 .agents/
+.opencode/
+.cortexkit/
+.impeccable/
