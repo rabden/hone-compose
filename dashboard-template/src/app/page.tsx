@@ -8,8 +8,6 @@ export default function DashboardPage() {
   const s = useOptionsState();
   return (
     <>
-      <ComponentGallery />
-      <div className="h-10 shrink-0" aria-hidden="true" />
       <DashboardTab
         setActiveTab={s.setActiveTab}
         activeProvider={s.activeProvider}
@@ -34,6 +32,7 @@ export default function DashboardPage() {
         history={s.history}
         customActions={s.customActions}
       />
+      <ComponentGallery />
     </>
   );
 }
