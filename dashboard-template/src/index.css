@@ -8,6 +8,13 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* Hide web components until their definitions load, so an un-upgraded
+   md-dialog/md-menu never flashes its raw light-DOM content on screen. */
+md-dialog:not(:defined),
+md-menu:not(:defined) {
+    display: none;
+}
+
 /* Material Web 3 Overrides */
 md-dialog {
     --md-dialog-container-color: transparent;

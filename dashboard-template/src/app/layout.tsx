@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Script from "next/script";
 import "../index.css";
+import { MaterialRegistry } from "@/components/material-registry";
 import { OptionsStateProvider } from "@/options/options-context";
 import OptionsShell from "@/options/options-shell";
 
@@ -19,6 +20,7 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body className="min-h-screen">
         <Script src="/theme-init.js" strategy="beforeInteractive" />
+        <MaterialRegistry />
         <OptionsStateProvider>
           <OptionsShell>{children}</OptionsShell>
         </OptionsStateProvider>
