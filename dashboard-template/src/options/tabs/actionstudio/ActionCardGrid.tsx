@@ -8,17 +8,17 @@ import { getRounded } from "./getRounded";
 interface ActionCardGridProps {
   actions: CustomAction[];
   onActionClick: (action: CustomAction) => void;
+  columns?: number;
 }
 
-export function ActionCardGrid({ actions, onActionClick }: ActionCardGridProps) {
+export function ActionCardGrid({ actions, onActionClick, columns = 3 }: ActionCardGridProps) {
   const [pressedId, setPressedId] = useState<string | null>(null);
-  const columns = 3;
   const gap = 2;
 
   return (
     <div className="flex flex-wrap" style={{ gap: `${gap}px` }}>
       {actions.map((action, index) => {
-        const rounded = getRounded(index, actions.length);
+        const rounded = getRounded(index, actions.length, columns);
         const actionColor = action.color || "#8B5CF6";
         const isBuiltin = action.type === "builtin";
 

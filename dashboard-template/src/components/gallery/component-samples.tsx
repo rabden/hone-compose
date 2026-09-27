@@ -275,13 +275,7 @@ const SAMPLE_ACTIONS: CustomAction[] = [
 ];
 
 function ActionCardGridSample() {
-  return (
-    // Vertical stack: the shipped grid lays tiles out in 3 columns; the
-    // sample overrides tile width so each action card takes the full row.
-    <div className="w-full [&_button]:!w-full">
-      <ActionCardGrid actions={SAMPLE_ACTIONS} onActionClick={() => {}} />
-    </div>
-  );
+  return <ActionCardGrid actions={SAMPLE_ACTIONS} onActionClick={() => {}} columns={1} />;
 }
 
 export interface ComponentFamily {
