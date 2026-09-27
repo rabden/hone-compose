@@ -22,6 +22,7 @@ import {
   onHistoryUpdated,
 } from "../content/storage";
 import { loadSettings, saveSettings, removeSettingKeys } from "@/lib/settings-store";
+import { seedAppHistory } from "@/lib/history-seed-backend";
 import { getActionLabel } from "@/lib/shortcuts";
 
 /** Stand-in for the extension's manifest version lookup in the standalone app. */
@@ -263,7 +264,11 @@ function useOptionsStateValue() {
             : 1000,
         );
 
-        getHistory().then(async (existingDBHistory) => {
+        // Seed the once-only sample history before the first read so an
+        // empty store still renders content on first load.
+        seedAppHistory()
+          .then(() => getHistory())
+          .then(async (existingDBHistory) => {
           let finalHistory = existingDBHistory;
           if (res.history && Array.isArray(res.history) && res.history.length > 0) {
             for (const item of res.history) {
