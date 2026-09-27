@@ -17,13 +17,15 @@ import {
 import { DotmSquare12 } from "@/components/ui/dotm-square-12";
 import { ExpandingSearchDock } from "@/components/ui/expanding-search-dock";
 import { Ripple } from "@/components/ui/ripple";
-import { RadioCardGroup } from "@/components/ui/radio-card";
-import { SwitchCard } from "@/components/ui/switch-card";
+import { RadioCardGroupGrouped } from "@/components/ui/radio-card";
+import { SwitchCardGroup } from "@/components/ui/switch-card";
 import { ModernDropdown } from "@/components/ui/modern-dropdown";
 import { TagGroup, Tag } from "@/components/ui/tag";
 import { BadgeGroup, Badge } from "@/components/ui/badge";
 import { ActionIconSelect } from "@/components/action-icon-select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ActionCardGrid } from "@/options/tabs/actionstudio/ActionCardGrid";
+import type { CustomAction } from "@/content/storage";
 
 function ButtonVariantsSample() {
   return (
@@ -81,19 +83,15 @@ function DotMatrixSample() {
   return (
     <div className="flex flex-col items-center gap-2">
       <DotmSquare12 size={26} dotSize={2.2} />
-      <span className="text-[10px] text-muted-foreground/60">
-        5×5 animated dot matrix
-      </span>
     </div>
   );
 }
 
 function SearchDockSample() {
-  const [query, setQuery] = useState("");
   return (
     <ExpandingSearchDock
       placeholder="Search the gallery…"
-      onSearch={setQuery}
+      onSearch={() => {}}
     />
   );
 }
@@ -115,28 +113,55 @@ function RippleSample() {
 function RadioCardSample() {
   const [value, setValue] = useState("balanced");
   return (
-    <RadioCardGroup
-      className="grid-cols-1 w-full"
+    <RadioCardGroupGrouped
+      className="w-full"
       value={value}
       onValueChange={setValue}
+      columns={1}
       options={[
-        { value: "precise", label: "Precise" },
-        { value: "balanced", label: "Balanced" },
-        { value: "creative", label: "Creative" },
+        {
+          value: "precise",
+          label: "Precise",
+          description: "Stay close to the original",
+        },
+        {
+          value: "balanced",
+          label: "Balanced",
+          description: "Light rewriting only",
+        },
+        {
+          value: "creative",
+          label: "Creative",
+          description: "Freer interpretation",
+        },
       ]}
     />
   );
 }
 
 function SwitchCardSample() {
-  const [checked, setChecked] = useState(true);
+  const [hideDot, setHideDot] = useState(false);
+  const [previewInCard, setPreviewInCard] = useState(true);
   return (
-    <SwitchCard
+    <SwitchCardGroup
       className="w-full"
-      label="Preview in card"
-      description="Render rewrites inside a floating card"
-      checked={checked}
-      onCheckedChange={setChecked}
+      items={[
+        {
+          id: "hide-dot",
+          label: "Hide Trigger Dot",
+          description:
+            "Completely hide the white trigger dot from webpage inputs.",
+          checked: hideDot,
+          onCheckedChange: setHideDot,
+        },
+        {
+          id: "preview-in-card",
+          label: "Preview AI results in card",
+          description: "Show rewrites in a floating card before applying.",
+          checked: previewInCard,
+          onCheckedChange: setPreviewInCard,
+        },
+      ]}
     />
   );
 }
@@ -208,12 +233,60 @@ function SkeletonSample() {
   );
 }
 
+const SAMPLE_ACTIONS: CustomAction[] = [
+  {
+    id: "fix_spelling",
+    name: "Fix spelling & grammar",
+    description: "Fix typos and grammar mistakes",
+    icon: "Check",
+    color: "#8B5CF6",
+    promptTemplate: "Fix the spelling and grammar:\n\n{{input}}",
+    replaceMode: "replace",
+    enabled: true,
+    createdAt: 0,
+    type: "builtin",
+  },
+  {
+    id: "improve",
+    name: "Improve writing",
+    description: "Upgrade clarity, flow and tone",
+    icon: "Feather",
+    color: "#10B981",
+    promptTemplate: "Improve this writing:\n\n{{input}}",
+    replaceMode: "replace",
+    enabled: true,
+    createdAt: 0,
+    type: "builtin",
+  },
+  {
+    id: "explain-simple",
+    name: "Explain Simply",
+    description: "Rewrite as a plain-language explanation",
+    icon: "Lightbulb",
+    color: "#F59E0B",
+    promptTemplate: "Explain in plain language:\n\n{{input}}",
+    replaceMode: "replace",
+    enabled: true,
+    createdAt: 0,
+    type: "marketplace",
+    sourceId: "explain-simple",
+    version: "1.0.0",
+  },
+];
+
+function ActionCardGridSample() {
+  return (
+    // Vertical stack: the shipped grid lays tiles out in 3 columns; the
+    // sample overrides tile width so each action card takes the full row.
+    <div className="w-full [&_button]:!w-full">
+      <ActionCardGrid actions={SAMPLE_ACTIONS} onActionClick={() => {}} />
+    </div>
+  );
+}
+
 export interface ComponentFamily {
   id: string;
   name: string;
-  description: string;
-  /** Source module under src/ this family is implemented in. */
-  source: string;
   sample: () => ReactNode;
 }
 
@@ -221,105 +294,71 @@ export const COMPONENT_FAMILIES: ComponentFamily[] = [
   {
     id: "md3-button",
     name: "Material Design 3 Button",
-    description:
-      "MD3-styled button with state-layer ripple, press morphing and a split-button variant.",
-    source: "src/components/ui/material-design-3-button.tsx",
     sample: () => <ButtonVariantsSample />,
   },
   {
     id: "md3-switch",
     name: "Material Design 3 Switch",
-    description:
-      "Spring-eased M3 switch with an audio-haptic engine and destructive variant.",
-    source: "src/components/ui/material-design-3-switch.tsx",
     sample: () => <SwitchSample />,
   },
   {
     id: "material-dialog",
     name: "Material Dialog",
-    description:
-      "Thin React wrapper around Material Web's md-dialog with scrim and Esc handling.",
-    source: "src/components/ui/material-dialog.tsx",
     sample: () => <DialogSample />,
   },
   {
     id: "dotmatrix-loader",
     name: "Dot-Matrix Loader",
-    description:
-      "Animated 5×5 dot-matrix spinner driven by a pure animation-resolver core.",
-    source: "src/components/ui/dotm-square-12.tsx",
     sample: () => <DotMatrixSample />,
   },
   {
     id: "expanding-search-dock",
     name: "Expanding Search Dock",
-    description:
-      "Framer-motion search pill that springs open from an icon button on demand.",
-    source: "src/components/ui/expanding-search-dock.tsx",
     sample: () => <SearchDockSample />,
   },
   {
     id: "ripple",
     name: "Ripple",
-    description:
-      "Material Web md-ripple wrapper adding press ripples to any surface.",
-    source: "src/components/ui/ripple.tsx",
     sample: () => <RippleSample />,
   },
   {
     id: "radio-card",
     name: "Radio Card Group",
-    description:
-      "Selectable cards with squircle press morphing and a built-in radio indicator.",
-    source: "src/components/ui/radio-card.tsx",
     sample: () => <RadioCardSample />,
   },
   {
     id: "switch-card",
-    name: "Switch Card",
-    description:
-      "Whole-card toggle row combining the M3 switch with label and description.",
-    source: "src/components/ui/switch-card.tsx",
+    name: "Switch Card Group",
     sample: () => <SwitchCardSample />,
   },
   {
     id: "modern-dropdown",
     name: "Modern Dropdown",
-    description:
-      "Pill-shaped select anchored to a Material Web menu with avatar support.",
-    source: "src/components/ui/modern-dropdown.tsx",
     sample: () => <DropdownSample />,
   },
   {
     id: "tag",
     name: "Tag & Tag Group",
-    description:
-      "Segmented status pills with press-to-round morphing; the dashboard's status strip.",
-    source: "src/components/ui/tag.tsx",
     sample: () => <TagSample />,
   },
   {
     id: "badge",
     name: "Badge & Badge Group",
-    description:
-      "Compact labeled badges in five variants for counts, states and updates.",
-    source: "src/components/ui/badge.tsx",
     sample: () => <BadgeSample />,
   },
   {
     id: "action-icon-select",
     name: "Action Icon Select",
-    description:
-      "Searchable popover picker over the 48-icon action icon set with live preview.",
-    source: "src/components/action-icon-select.tsx",
     sample: () => <ActionIconSelectSample />,
   },
   {
     id: "skeleton",
     name: "Skeleton",
-    description:
-      "Pulse shimmer placeholder used across every async loading surface.",
-    source: "src/components/ui/skeleton.tsx",
     sample: () => <SkeletonSample />,
+  },
+  {
+    id: "action-card-grid",
+    name: "Action Card Grid",
+    sample: () => <ActionCardGridSample />,
   },
 ];
