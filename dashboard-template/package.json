@@ -1,7 +1,9 @@
 {
   "name": "hone-dashboard-template",
-  "version": "0.1.2",
+  "version": "1.0.0",
   "private": true,
+  "description": "Standalone settings-dashboard template for browser extensions and web apps (Next.js 15 + React 19 + Tailwind CSS v4)",
+  "license": "UNLICENSED",
   "scripts": {
     "dev": "next dev",
     "build": "next build",

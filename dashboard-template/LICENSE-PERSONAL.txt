@@ -1,0 +1,60 @@
+HONE — NEXT.JS SETTINGS DASHBOARD TEMPLATE
+PERSONAL LICENSE — v1.0.0
+Producer / copyright holder: Hossain Jahed (easemize@gmail.com)
+Product: "Hone — Settings Dashboard Template" source code, styles,
+assets and documentation (the "Template").
+
+THIS IS THE PERSONAL LICENSE. It applies to you if you purchased the
+"Personal" variant. Agencies, teams, client work and multiple projects
+require the Agency License (see LICENSE-AGENCY.txt).
+
+By downloading or using the Template you accept the terms below.
+
+────────────────────────────────────────────────────────────────────────
+1. GRANT
+────────────────────────────────────────────────────────────────────────
+You may:
+  • Use the Template in one (1) end product — a single site, app or
+    browser-extension settings/options UI that you personally own, on
+    one production domain or one extension listing, plus its
+    staging/preview copies.
+  • Modify the Template freely within that end product.
+  • Keep a private backup copy.
+
+────────────────────────────────────────────────────────────────────────
+2. RESTRICTIONS
+────────────────────────────────────────────────────────────────────────
+You may NOT:
+  • Use the Template in client, agency or paid work-for-hire projects
+    (that requires the Agency License).
+  • Use the Template in more than one end product (buy one license per
+    additional product, or upgrade to the Agency License).
+  • Resell, sublicense, redistribute, repackage or give away the
+    Template or derivative works of it as a template, theme,
+    boilerplate, starter kit or component library — modified or not.
+  • Publish the Template source in public repositories, code galleries
+    or AI-training datasets.
+  • Use the Template to create a product that competes with the
+    Template (e.g. another settings-dashboard template).
+
+────────────────────────────────────────────────────────────────────────
+3. GENERAL
+────────────────────────────────────────────────────────────────────────
+• Third-party code: the Template depends on open-source software
+  (Next.js, React, Tailwind CSS, Radix UI, Material Web, Hugeicons
+  free icons, lucide-react, Motion and others) under their own
+  licenses, which are unaffected by this agreement.
+• Demo content: the "Hone" brand name, copy, provider names and demo
+  rewrite-history entries included as demo content may be used with
+  your purchase of this Template; replace them if you rebrand your
+  end product.
+• Ownership: you do not acquire ownership of the Template, only a
+  license as set out above.
+• Warranty: THE TEMPLATE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY
+  KIND, EXPRESS OR IMPLIED. IN NO EVENT SHALL THE PRODUCER BE LIABLE
+  FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY ARISING FROM THE USE OF
+  THE TEMPLATE.
+• Term: perpetual, worldwide, non-exclusive, non-transferable
+  (contact the producer for team seats or transfer arrangements).
+
+Questions, upgrades to Agency, or white-labeling: easemize@gmail.com
