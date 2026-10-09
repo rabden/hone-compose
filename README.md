@@ -11,6 +11,7 @@
   [![Radix UI](https://img.shields.io/badge/Radix_UI-161618?style=for-the-badge&logo=radix-ui&logoColor=white)](https://www.radix-ui.com)
   [![Lucide](https://img.shields.io/badge/Lucide-F56565?style=for-the-badge&logo=lucide&logoColor=white)](https://lucide.dev)
   [![Material Web](https://img.shields.io/badge/Material_Web-6750A4?style=for-the-badge&logo=materialdesign&logoColor=white)](https://material-web.dev)
+  [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/rabden/hone-compose)
 
   **Hone is a professional-grade browser extension that brings modern LLM capabilities directly into any text box, editor, or textarea on the web.**
 </div>
