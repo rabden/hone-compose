@@ -68,6 +68,9 @@ export interface Config {
   googleAiStudioModel?: string;
   provider?: string;
 
+  // Provider fallback — try other configured providers when the active one fails
+  enableProviderFallback?: boolean;
+
   // Note: History is NOT stored here, use IndexedDB instead
 }
 
@@ -91,6 +94,7 @@ const CONFIG_KEYS: (keyof Config)[] = [
   'googleAiStudioKey',
   'googleAiStudioModel',
   'provider',
+  'enableProviderFallback',
 ];
 
 /**

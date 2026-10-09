@@ -9,6 +9,7 @@ import {
   setDomSelectionByOffsets,
 } from "./plain-text-dom";
 import { isXHost, resolveEditorRoot } from "./editor-detection";
+import { isSensitiveField } from "./sensitive-fields";
 import {
   notifyEditorChange,
   replaceInContentEditable,
@@ -893,8 +894,11 @@ export function createAdapter(element: Element | null): EditableAdapter | null {
     return new NativeInputAdapter(element as HTMLTextAreaElement);
   }
   if (tag === 'input') {
+    // Secrets never leave the page: Hone must not adapt password, payment,
+    // or one-time-code fields (dot, menu, and shortcuts stay fully disabled).
+    if (isSensitiveField(element)) return null;
     const type = (element as HTMLInputElement).type?.toLowerCase() || 'text';
-    if (['text', 'search', 'url', 'tel', 'email', 'password'].includes(type)) {
+    if (['text', 'search', 'url', 'tel', 'email'].includes(type)) {
       return new NativeInputAdapter(element as HTMLInputElement);
     }
   }
@@ -978,6 +982,9 @@ export function resolveActiveContext(): ActiveContext | null {
       const editableEl = container?.nodeType === Node.ELEMENT_NODE
         ? (container as Element).closest('textarea, input, [contenteditable], [contenteditable=""]')
         : container?.parentElement?.closest('textarea, input, [contenteditable], [contenteditable=""]');
+
+      // Secrets never leave the page: ignore selections inside sensitive inputs
+      if (editableEl && isSensitiveField(editableEl)) return null;
 
       const adapter = editableEl ? createAdapter(editableEl) : null;
 

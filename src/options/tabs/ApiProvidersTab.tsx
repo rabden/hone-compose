@@ -3,6 +3,7 @@ import { Input } from "@/components/ui/input";
 import { RadioCardGroupGrouped } from "@/components/ui/radio-card";
 import { HugeiconsIcon } from "@/components/ui/hugeicons";
 import { BadgeInfoIcon } from "@hugeicons/core-free-icons";
+import { AlertCircle } from "lucide-react";
 import { PROVIDERS, getProvider } from "../../providers";
 
 interface ApiProvidersTabProps {
@@ -95,6 +96,15 @@ export default function ApiProvidersTab(props: ApiProvidersTabProps) {
       default: return "";
     }
   };
+
+  // A non-empty base URL that differs from the official default means the
+  // API key will be sent somewhere the provider registry can't vouch for.
+  const usesCustomEndpoint =
+    !!cfg?.supportsBaseUrl &&
+    (() => {
+      const url = getBaseUrl().trim();
+      return url.length > 0 && url !== cfg.baseUrlPlaceholder;
+    })();
 
   const setBaseUrl = (v: string) => {
     switch (activeProvider) {
@@ -198,7 +208,7 @@ export default function ApiProvidersTab(props: ApiProvidersTabProps) {
                     {cfg.baseUrlDesc}
                   </p>
                 </div>
-                <div className="md:col-span-2">
+                <div className="md:col-span-2 flex flex-col gap-2">
                   <Input
                     type="text"
                     value={getBaseUrl()}
@@ -206,6 +216,16 @@ export default function ApiProvidersTab(props: ApiProvidersTabProps) {
                     placeholder={cfg.baseUrlPlaceholder}
                     className="w-full bg-background border border-border/60 rounded-lg text-xs h-9 font-mono"
                   />
+                  {usesCustomEndpoint && (
+                    <div className="flex gap-2 items-start text-[11px] leading-normal text-amber-600 dark:text-amber-500">
+                      <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-px" />
+                      <span>
+                        Your API key will be sent to this address. Only use
+                        endpoints you trust — Hone can&apos;t verify
+                        third-party or local endpoints.
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
             )}

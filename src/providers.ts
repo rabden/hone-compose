@@ -54,7 +54,7 @@ export const PROVIDERS: ProviderConfig[] = [
   {
     id: "deepseek",
     label: "DeepSeek",
-    desc: "DeepSeek V3 & R1 reasoning models",
+    desc: "cheap chinese models",
     defaultModel: "deepseek-chat",
     keyPlaceholder: "sk-...",
     modelPlaceholder: "deepseek-chat",

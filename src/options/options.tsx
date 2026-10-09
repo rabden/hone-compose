@@ -162,6 +162,7 @@ export default function Options() {
   // Appearance settings state
   const [hideDot, setHideDot] = useState(false);
   const [previewInCard, setPreviewInCard] = useState(true);
+  const [enableProviderFallback, setEnableProviderFallback] = useState(true);
   const [autoSpellcheckMode, setAutoSpellcheckMode] =
     useState<AutoSpellcheckMode>("browser_only");
   const [autoSpellcheckWordThreshold, setAutoSpellcheckWordThreshold] =
@@ -246,6 +247,7 @@ export default function Options() {
         "dropdownShortcutMeta",
         "hideDot",
         "previewInCard",
+        "enableProviderFallback",
         "autoSpellcheckMode",
         "autoSpellcheckWordThreshold",
         "historyLimit",
@@ -300,6 +302,7 @@ export default function Options() {
 
         setHideDot(!!res.hideDot);
         setPreviewInCard(res.previewInCard !== undefined ? !!res.previewInCard : true);
+        setEnableProviderFallback(res.enableProviderFallback !== false);
         setAutoSpellcheckMode(
           res.autoSpellcheckMode === "disabled" ||
           res.autoSpellcheckMode === "browser_only" ||
@@ -425,6 +428,7 @@ export default function Options() {
         dropdownShortcutMeta,
         hideDot,
         previewInCard,
+        enableProviderFallback,
         autoSpellcheckMode,
         autoSpellcheckWordThreshold,
         historyLimit,
@@ -444,6 +448,7 @@ export default function Options() {
     dropdownShortcutMeta,
     hideDot,
     previewInCard,
+    enableProviderFallback,
     autoSpellcheckMode,
     autoSpellcheckWordThreshold,
     historyLimit,
@@ -768,6 +773,8 @@ export default function Options() {
                     setHideDot={setHideDot}
                     previewInCard={previewInCard}
                     setPreviewInCard={setPreviewInCard}
+                    enableProviderFallback={enableProviderFallback}
+                    setEnableProviderFallback={setEnableProviderFallback}
                     autoSpellcheckMode={autoSpellcheckMode}
                     setAutoSpellcheckMode={setAutoSpellcheckMode}
                     autoSpellcheckWordThreshold={autoSpellcheckWordThreshold}

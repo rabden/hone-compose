@@ -9,6 +9,8 @@ interface CustomizationsTabProps {
   setHideDot: (val: boolean) => void;
   previewInCard: boolean;
   setPreviewInCard: (val: boolean) => void;
+  enableProviderFallback: boolean;
+  setEnableProviderFallback: (val: boolean) => void;
   autoSpellcheckMode: AutoSpellcheckMode;
   setAutoSpellcheckMode: (val: AutoSpellcheckMode) => void;
   autoSpellcheckWordThreshold: number;
@@ -22,6 +24,8 @@ export default function CustomizationsTab({
   setHideDot,
   previewInCard,
   setPreviewInCard,
+  enableProviderFallback,
+  setEnableProviderFallback,
   autoSpellcheckMode,
   setAutoSpellcheckMode,
   autoSpellcheckWordThreshold,
@@ -71,6 +75,34 @@ export default function CustomizationsTab({
                     "When enabled, selecting an action generates the response inside the right-hand preview card, keeping the menu open. You can then review and apply it manually. When disabled, the menu closes immediately and applies the result directly.",
                   checked: previewInCard,
                   onCheckedChange: (checked: boolean) => setPreviewInCard(checked),
+                },
+              ]}
+            />
+          </div>
+        </div>
+
+        {/* Provider Fallback Row */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 py-6 border-b border-border/30">
+          <div className="pr-4">
+            <Label className="text-xs font-semibold text-foreground">
+              Provider Fallback
+            </Label>
+            <p className="text-[10px] text-muted-foreground/70 mt-1 leading-normal">
+              Control whether your text may be sent to your other configured
+              AI providers when the active one fails.
+            </p>
+          </div>
+          <div className="md:col-span-2">
+            <SwitchCardGroup
+              items={[
+                {
+                  id: "provider-fallback",
+                  label: "Try other providers when the active one fails",
+                  description:
+                    "If the active AI provider fails, Hone can retry the same text with your other configured providers until one succeeds, and tells you when it did. Disable to keep all text strictly with the active provider.",
+                  checked: enableProviderFallback,
+                  onCheckedChange: (checked: boolean) =>
+                    setEnableProviderFallback(checked),
                 },
               ]}
             />

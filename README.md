@@ -245,6 +245,10 @@ Hone integrates **Harper.js** — a well-known, open-source grammar checker that
 - Language detection prevents unnecessary processing on non-English text
 - Smart error threshold avoids false positives on code snippets or technical content
 
+### 🔐 Privacy Guard: Secret Fields Are Off-Limits
+
+Hone never activates on password, payment, or one-time-code fields. The trigger dot, floating menu, and keyboard shortcuts are fully disabled on any input that looks like a secret (including text inputs labeled `current-password`, `cc-number`, `one-time-code`, or similar) — so your secrets can never be captured or sent to any AI provider.
+
 ### Rich-Text Editor Compatibility
 
 | Editor | Integration method |

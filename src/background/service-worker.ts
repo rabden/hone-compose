@@ -205,6 +205,30 @@ function errMsg(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
+// ── Message sender verification ──
+// Only our own extension contexts (content script, popup, options page) may
+// talk to the service worker. Web pages cannot pass this check — the manifest
+// declares no `externally_connectable`, so other origins have no way in.
+function isTrustedSender(sender: chrome.runtime.MessageSender): boolean {
+  return sender.id === chrome.runtime.id;
+}
+
+// Marketplace and other privileged operations must originate from one of our
+// own extension pages (chrome-extension://<id>/…), never from a content
+// script running inside a website.
+function isExtensionPageSender(sender: chrome.runtime.MessageSender): boolean {
+  return (
+    isTrustedSender(sender) &&
+    typeof sender.url === 'string' &&
+    sender.url.startsWith(chrome.runtime.getURL(''))
+  );
+}
+
+function respondUnauthorized(sendResponse: (response?: unknown) => void): boolean {
+  sendResponse({ success: false, error: 'Unauthorized message sender.' });
+  return false;
+}
+
 async function callAIProviderRaw(
   actionId: string,
   text: string,
@@ -214,9 +238,13 @@ async function callAIProviderRaw(
 ): Promise<{ text: string; provider: string; model: string; fallbackUsed?: string }> {
   const rawSettings = await chrome.storage.local.get([
     'activeProvider',
+    'enableProviderFallback',
     ...ALL_STORAGE_KEYS,
   ]);
   const settings = rawSettings as Record<string, string | undefined>;
+  // Boolean flag, read separately so the provider settings stay string-typed
+  const providerFallbackEnabled =
+    (rawSettings as Record<string, unknown>).enableProviderFallback !== false;
   const registry = await getRegistry();
 
   const primaryProvider = (settings.activeProvider as ProviderId) || 'openrouter';
@@ -237,6 +265,9 @@ async function callAIProviderRaw(
   } catch (primaryErr: unknown) {
     if (signal?.aborted) throw primaryErr;
     console.warn(`Primary provider ${primaryProvider} failed:`, errMsg(primaryErr));
+
+    // User opt-out: keep all text strictly with the active provider
+    if (!providerFallbackEnabled) throw primaryErr;
 
     const altProviders = ALL_PROVIDER_IDS
       .filter(p => p !== primaryProvider)
@@ -490,6 +521,9 @@ chrome.commands.onCommand.addListener((command: string) => {
 
 // Listen for messages from content scripts
 chrome.runtime.onMessage.addListener((message: Record<string, unknown>, sender: chrome.runtime.MessageSender, sendResponse: (response?: unknown) => void) => {
+  // Gate all handling: only accept messages from our own extension.
+  if (!isTrustedSender(sender)) return false;
+
   if (message.type === 'ABORT_PROCESS_TEXT') {
     activeAIAbort?.abort();
     activeAIAbort = null;
@@ -498,12 +532,14 @@ chrome.runtime.onMessage.addListener((message: Record<string, unknown>, sender: 
   }
 
   if (message.type === 'MARKETPLACE_FETCH_REGISTRY') {
+    if (!isExtensionPageSender(sender)) return respondUnauthorized(sendResponse);
     const forceRefresh = message.forceRefresh === true;
     handleFetchRegistry(forceRefresh).then(sendResponse);
     return true;
   }
 
   if (message.type === 'MARKETPLACE_INSTALL_ACTION') {
+    if (!isExtensionPageSender(sender)) return respondUnauthorized(sendResponse);
     const sourceId = message.sourceId as string;
     const path = message.path as string;
     if (!sourceId || !path) {
