@@ -3,6 +3,63 @@
 import React, { useRef, useEffect } from 'react';
 import '@material/web/menu/menu.js';
 import '@material/web/menu/menu-item.js';
+import { cn } from '@/lib/utils';
+
+// --- MATERIAL EXPRESSIVE THEME ---
+// Segmented tiles: tight inner corners, large outer corners, press morphs to a pill.
+const SPRING = 'ease-[cubic-bezier(0.2,0.8,0.2,1.2)]';
+
+const MENU_TOKENS = {
+    '--md-menu-container-color': 'var(--card)',
+    '--md-menu-container-shape': '24px',
+    '--md-menu-container-shadow-color': 'var(--foreground)',
+    '--md-menu-container-surface-tint-layer-color': 'transparent',
+    '--md-menu-container-elevation': '0',
+} as React.CSSProperties;
+
+const ITEM_TOKENS = {
+    '--md-menu-item-container-color': 'transparent',
+    '--md-menu-item-selected-container-color': 'transparent',
+    '--md-menu-item-one-line-container-height': '36px',
+    '--md-menu-item-top-space': '6px',
+    '--md-menu-item-bottom-space': '6px',
+    '--md-menu-item-leading-space': '14px',
+    '--md-menu-item-trailing-space': '14px',
+    '--md-menu-item-label-text-size': '13px',
+    '--md-menu-item-label-text-weight': '600',
+    '--md-menu-item-label-text-color': 'var(--muted-foreground)',
+    '--md-menu-item-hover-label-text-color': 'var(--foreground)',
+    '--md-menu-item-focus-label-text-color': 'var(--foreground)',
+    '--md-menu-item-pressed-label-text-color': 'var(--foreground)',
+    '--md-menu-item-selected-label-text-color': 'var(--foreground)',
+    '--md-menu-item-supporting-text-color': 'var(--muted-foreground)',
+    '--md-menu-item-leading-icon-color': 'var(--muted-foreground)',
+    '--md-menu-item-hover-leading-icon-color': 'var(--foreground)',
+    '--md-menu-item-focus-leading-icon-color': 'var(--foreground)',
+    '--md-menu-item-selected-leading-icon-color': 'var(--foreground)',
+    '--md-menu-item-trailing-icon-color': 'var(--muted-foreground)',
+    // Hover/focus background is painted on the host (bg-background); keep the state layer for press only.
+    '--md-menu-item-hover-state-layer-opacity': '0',
+    '--md-menu-item-focus-state-layer-opacity': '0',
+    '--md-menu-item-pressed-state-layer-color': 'currentColor',
+    '--md-menu-item-pressed-state-layer-opacity': '0.12',
+} as React.CSSProperties;
+
+const MENU_CLASS = cn(
+    'min-w-40 [&::part(menu-items)]:flex [&::part(menu-items)]:flex-col',
+    '[&::part(menu-items)]:gap-0.5 [&::part(menu-items)]:p-px',
+    '[&::part(menu)]:border [&::part(menu)]:border-border/20',
+);
+
+const ITEM_CLASS = cn(
+    'cursor-default select-none overflow-hidden outline-none',
+    'rounded-md first:rounded-t-3xl last:rounded-b-3xl',
+    'transition-[background-color,color,border-radius] duration-300',
+    SPRING,
+    'hover:bg-background focus:bg-background focus-visible:bg-background',
+    'active:rounded-[36px] [&[selected]]:rounded-[36px]',
+    '[&[disabled]]:pointer-events-none [&[disabled]]:opacity-40',
+);
 
 type MdMenuProps = React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement> & {
     anchor?: string;
@@ -95,6 +152,7 @@ export const Menu = React.forwardRef<HTMLElement, MenuProps>(({
     onClosing,
     onClosed,
     className,
+    style,
     ...props
 }, ref) => {
     const menuRef = useRef<HTMLElement>(null);
@@ -151,7 +209,8 @@ export const Menu = React.forwardRef<HTMLElement, MenuProps>(({
             skip-restore-focus={skipRestoreFocus || undefined}
             default-focus={defaultFocus}
             no-navigation-wrap={noNavigationWrap || undefined}
-            className={className}
+            className={cn(MENU_CLASS, className)}
+            style={{ ...MENU_TOKENS, ...style }}
             suppressHydrationWarning
             {...props}
         >
@@ -182,6 +241,7 @@ export const MenuItem = React.forwardRef<HTMLElement, MenuItemProps>(({
     keepOpen = false,
     selected = false,
     className,
+    style,
     ...props
 }, ref) => {
     return (
@@ -193,7 +253,8 @@ export const MenuItem = React.forwardRef<HTMLElement, MenuItemProps>(({
             target={target}
             keep-open={keepOpen || undefined}
             selected={selected || undefined}
-            className={className}
+            className={cn(ITEM_CLASS, className)}
+            style={{ ...ITEM_TOKENS, ...style }}
             suppressHydrationWarning
             {...props}
         >

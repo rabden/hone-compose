@@ -709,15 +709,15 @@ export function EditorView({
                           })
                         }
                       >
-                        <SelectTrigger className="h-9 w-full justify-between rounded-lg border-border/60 bg-background text-xs transition-[border-color,box-shadow] duration-200 ease-[cubic-bezier(0.16,1,0.3,1)]">
+                        <SelectTrigger className="w-full">
                           <SelectValue placeholder="Use global default" />
                         </SelectTrigger>
-                        <SelectContent className="rounded-lg border border-border bg-card shadow-md">
+                        <SelectContent>
                           {ACTION_PROVIDER_OPTIONS.map((opt) => (
                             <SelectItem
                               key={opt.value}
                               value={opt.value}
-                              className="text-xs"
+                              
                             >
                               {opt.label}
                             </SelectItem>

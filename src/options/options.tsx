@@ -63,8 +63,33 @@ interface HistoryItem {
   model: string;
 }
 
-function SidebarWhitespaceTrigger() {
-  const { state, setOpen } = useSidebar();
+// Deep-link support for callers like the popup's "last rewrite" card:
+// options.html?tab=history&historyId=<uuid> lands on Rewrite History with
+// that item's detail modal open. Unknown tabs fall back to the dashboard.
+const OPTIONS_TABS = [
+  "dashboard",
+  "api",
+  "shortcut",
+  "history",
+  "actions",
+  "customizations",
+] as const;
+
+type OptionsTab = (typeof OPTIONS_TABS)[number];
+
+function initialTabFromUrl(): OptionsTab {
+  try {
+    const tab = new URLSearchParams(window.location.search).get("tab");
+    if (tab && (OPTIONS_TABS as readonly string[]).includes(tab)) {
+      return tab as OptionsTab;
+    }
+  } catch {
+    // Non-browser context — fall through to the default.
+  }
+  return "dashboard";
+}
+
+function SidebarWhitespaceTrigger() {  const { state, setOpen } = useSidebar();
   const isCollapsed = state === "collapsed";
 
   if (!isCollapsed) {
@@ -115,7 +140,7 @@ function SidebarToggleInHeader() {
 export default function Options() {
   const [activeTab, setActiveTab] = useState<
     "dashboard" | "api" | "shortcut" | "history" | "actions" | "customizations"
-  >("dashboard");
+  >(initialTabFromUrl);
   const [customActions, setCustomActions] = useState<CustomAction[]>([]);
   const [actionConfigs, setActionConfigs] = useState<CustomAction[]>([]);
   const [editingAction, setEditingAction] = useState<CustomAction | null>(null);
@@ -335,6 +360,19 @@ export default function Options() {
           }
           const sorted = [...finalHistory].sort((a, b) => b.timestamp - a.timestamp);
           setHistory(sorted as HistoryItem[]);
+          // Popup deep-link: options.html?tab=history&historyId=<id>
+          try {
+            const historyId = new URLSearchParams(window.location.search).get("historyId");
+            if (historyId) {
+              const found = (sorted as HistoryItem[]).find((item) => item.id === historyId);
+              if (found) {
+                setSelectedHistoryItem(found);
+                setHistoryDialogOpen(true);
+              }
+            }
+          } catch {
+            // Malformed URL — stay on the list.
+          }
         }).catch((err) => console.error("Failed to load history from IndexedDB:", err));
       });
     loadCustomActions().then(setCustomActions);

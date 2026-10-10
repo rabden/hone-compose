@@ -175,19 +175,19 @@ export default function KeyBindingsTab({
               value={shortcutAction}
               onValueChange={(val) => setShortcutAction(val)}
             >
-              <SelectTrigger className="bg-background border border-border/60 rounded-lg text-xs h-9 justify-between w-full">
+              <SelectTrigger className="w-full">
                 <SelectValue placeholder="Select shortcut action..." />
               </SelectTrigger>
-              <SelectContent className="bg-card border border-border rounded-lg shadow-sm max-h-72">
+              <SelectContent className="max-h-72">
                 <SelectGroup>
-                  <SelectLabel className="text-[10px] uppercase tracking-wider text-muted-foreground px-2 py-1">
+                  <SelectLabel>
                     Built-in actions
                   </SelectLabel>
                   {BUILTIN_SHORTCUT_ACTIONS.map((action) => (
                     <SelectItem
                       key={action.id}
                       value={action.id}
-                      className="text-xs"
+                      
                     >
                       {action.label}
                     </SelectItem>
@@ -196,7 +196,7 @@ export default function KeyBindingsTab({
                 {customActions.filter((a) => a.type === "custom").length >
                   0 && (
                   <SelectGroup>
-                    <SelectLabel className="text-[10px] uppercase tracking-wider text-muted-foreground px-2 py-1">
+                    <SelectLabel>
                       Custom actions
                     </SelectLabel>
                     {customActions
@@ -205,7 +205,7 @@ export default function KeyBindingsTab({
                         <SelectItem
                           key={action.id}
                           value={action.id}
-                          className="text-xs"
+                          
                         >
                           {action.name || "Untitled action"}
                         </SelectItem>
@@ -215,7 +215,7 @@ export default function KeyBindingsTab({
                 {customActions.filter((a) => a.type === "marketplace").length >
                   0 && (
                   <SelectGroup>
-                    <SelectLabel className="text-[10px] uppercase tracking-wider text-muted-foreground px-2 py-1">
+                    <SelectLabel>
                       Marketplace actions
                     </SelectLabel>
                     {customActions
@@ -224,7 +224,7 @@ export default function KeyBindingsTab({
                         <SelectItem
                           key={action.id}
                           value={action.id}
-                          className="text-xs"
+                          
                         >
                           {action.name || "Untitled action"}
                         </SelectItem>
@@ -235,7 +235,7 @@ export default function KeyBindingsTab({
                   <SelectGroup>
                     <SelectItem
                       value={shortcutAction}
-                      className="text-xs text-muted-foreground"
+                      className="text-muted-foreground"
                     >
                       {getActionName(shortcutAction)} (unavailable)
                     </SelectItem>

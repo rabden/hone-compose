@@ -7,6 +7,9 @@ import {
   renderActionIcon,
 } from "@/lib/action-icons";
 import { cn } from "@/lib/utils";
+import { Ripple } from "@/components/ui/ripple";
+
+const SPRING = "ease-[cubic-bezier(0.2,0.8,0.2,1.2)]";
 
 interface ActionIconSelectProps {
   value?: string;
@@ -77,20 +80,21 @@ export function ActionIconSelect({
         aria-expanded={open}
         onClick={() => setOpen((prev) => !prev)}
         className={cn(
-          "flex h-9 w-full items-center justify-between gap-2 rounded-lg border border-input bg-background hover:bg-background/50 px-3",
-          "text-xs transition-colors",
-          open && "border-ring ring-3 ring-ring/50",
+          "group relative flex h-9 w-full cursor-default select-none items-center justify-between gap-2 overflow-hidden rounded-3xl bg-background px-4 outline-none",
+          "text-xs font-semibold transition-[background-color,border-radius] duration-300 hover:bg-background/50",
+          SPRING,
+          "active:rounded-[36px] focus-visible:ring-2 focus-visible:ring-ring/20",
+          open && "rounded-[36px]",
         )}
       >
-        <span className="flex min-w-0 items-center gap-2">
+        <Ripple />
+        <span className="pointer-events-none relative z-10 flex min-w-0 items-center gap-2">
           {renderActionIcon(selectedIcon, { size: 15, color: accentColor })}
-          <span className="truncate text-foreground/90 font-medium">
-            {selectedLabel}
-          </span>
+          <span className="truncate text-foreground">{selectedLabel}</span>
         </span>
         <ChevronDown
           className={cn(
-            "size-3.5 shrink-0 text-muted-foreground transition-transform duration-200 ease-out",
+            "pointer-events-none relative z-10 size-3.5 shrink-0 text-muted-foreground/60 transition-transform duration-300",
             open && "rotate-180",
           )}
           aria-hidden
@@ -101,9 +105,9 @@ export function ActionIconSelect({
         <div
           role="listbox"
           aria-label="Choose action icon"
-          className="absolute left-0 top-[calc(100%+4px)] z-50 w-full min-w-[13rem] rounded-xl border border-border bg-card p-2 shadow-lg animate-in fade-in duration-200 ease-out"
+          className="absolute left-0 top-[calc(100%+6px)] z-50 w-full min-w-[13rem] origin-top rounded-3xl border border-border/20 bg-card p-1.5 text-foreground shadow-[0px_8px_32px_rgba(0,0,0,0.12)] animate-in fade-in-0 zoom-in-90 duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)]"
         >
-          <div className="relative mb-2">
+          <div className="relative mb-1.5">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground/50 pointer-events-none" />
             <input
               ref={searchRef}
@@ -111,13 +115,13 @@ export function ActionIconSelect({
               placeholder="Search icons..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full h-8 rounded-md border border-border/60 bg-background pl-8 pr-7 text-xs outline-none placeholder:text-muted-foreground/40 focus:border-foreground/25 focus:ring-2 focus:ring-ring/30 transition-colors"
+              className="h-8 w-full rounded-3xl bg-background pl-8 pr-8 text-[11px] font-semibold text-foreground outline-none transition-colors placeholder:font-medium placeholder:text-muted-foreground/50 focus-visible:ring-2 focus-visible:ring-ring/20"
             />
             {search && (
               <button
                 type="button"
                 onClick={() => setSearch("")}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground/50 hover:text-foreground transition-colors"
+                className="absolute right-2 top-1/2 -translate-y-1/2 cursor-default rounded-full p-0.5 text-muted-foreground/60 transition-colors hover:bg-foreground/[0.08] hover:text-foreground"
               >
                 <X className="size-3" />
               </button>
@@ -126,11 +130,11 @@ export function ActionIconSelect({
 
           <div className="max-h-52 overflow-y-auto">
             {filteredIcons.length === 0 ? (
-              <div className="flex items-center justify-center py-8 text-xs text-muted-foreground/50">
+              <div className="flex items-center justify-center py-8 text-[11px] font-semibold text-muted-foreground/60">
                 No icons found
               </div>
             ) : (
-              <div className="grid grid-cols-6 gap-1">
+              <div className="grid grid-cols-6 gap-0.5">
                 {filteredIcons.map(({ name, label }) => {
                   const isSelected = selectedIcon === name;
                   return (
@@ -141,11 +145,13 @@ export function ActionIconSelect({
                       aria-selected={isSelected}
                       title={label}
                       onClick={() => handleSelect(name)}
-                       className={cn(
-                         "flex size-8 items-center justify-center rounded-lg transition-all duration-150 ease-out",
-                         "hover:bg-muted/60 active:scale-[0.92]",
-                         isSelected && "bg-foreground/[0.06]",
-                       )}
+                      className={cn(
+                        "group relative flex size-8 cursor-default select-none items-center justify-center overflow-hidden rounded-xl outline-none",
+                        "transition-[background-color,border-radius] duration-300 hover:bg-background focus-visible:bg-background",
+                        SPRING,
+                        "active:rounded-[36px]",
+                        isSelected && "rounded-[36px]",
+                      )}
                       style={
                         isSelected
                           ? {
@@ -155,10 +161,13 @@ export function ActionIconSelect({
                           : undefined
                       }
                     >
-                      {renderActionIcon(name, {
-                        size: 14,
-                        color: accentColor,
-                      })}
+                      <Ripple />
+                      <span className="pointer-events-none relative z-10 flex">
+                        {renderActionIcon(name, {
+                          size: 14,
+                          color: accentColor,
+                        })}
+                      </span>
                     </button>
                   );
                 })}
@@ -166,7 +175,7 @@ export function ActionIconSelect({
             )}
           </div>
 
-          <div className="mt-1.5 border-t border-border/40 pt-1.5 text-center text-[10px] text-muted-foreground/40">
+          <div className="mt-1.5 border-t border-border/10 pt-1.5 text-center text-[9px] font-semibold text-muted-foreground/60">
             {filteredIcons.length} of {ACTION_ICON_OPTIONS.length} icons
           </div>
         </div>
