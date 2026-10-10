@@ -888,15 +888,16 @@ export class DraftJSAdapter extends ContentEditableAdapter {}
 export function createAdapter(element: Element | null): EditableAdapter | null {
   if (!element) return null;
 
+  // Secrets never leave the page: Hone must not adapt password, payment,
+  // or one-time-code fields (dot, menu, and shortcuts stay fully disabled).
+  if (isSensitiveField(element)) return null;
+
   // Native input/textarea
   const tag = element.tagName.toLowerCase();
   if (tag === 'textarea') {
     return new NativeInputAdapter(element as HTMLTextAreaElement);
   }
   if (tag === 'input') {
-    // Secrets never leave the page: Hone must not adapt password, payment,
-    // or one-time-code fields (dot, menu, and shortcuts stay fully disabled).
-    if (isSensitiveField(element)) return null;
     const type = (element as HTMLInputElement).type?.toLowerCase() || 'text';
     if (['text', 'search', 'url', 'tel', 'email'].includes(type)) {
       return new NativeInputAdapter(element as HTMLInputElement);

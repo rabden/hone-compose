@@ -65,11 +65,11 @@ export function isSensitiveFieldDescriptor(
 }
 
 /**
- * DOM wrapper: true when the element is an <input> that looks like a secret
- * field (password, card number, OTP, or password-like labeling).
+ * DOM wrapper: true when the element (input, textarea, or contenteditable)
+ * looks like a secret field (password, card number, OTP, or password-like labeling).
  */
 export function isSensitiveField(element: Element | null): boolean {
-  if (!element || element.tagName?.toLowerCase() !== "input") return false;
+  if (!element) return false;
   const input = element as HTMLInputElement;
   return isSensitiveFieldDescriptor({
     type: input.getAttribute("type") ?? input.type,

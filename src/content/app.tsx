@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo, type MouseEvent as ReactMouseEvent } from "react";
 import {
   createAdapter,
   isEditableElement,
@@ -25,6 +25,7 @@ import { checkGrammarAndSpelling } from "./grammar-worker";
 import { browserHasSpellingErrors } from "./browser-proofreader";
 import { nspellHasSpellingErrors } from "./nspell-detector";
 import type { AutoSpellcheckMode } from "./storage";
+import { getProviderLabel } from "../providers";
 
 interface Toast {
   message: string;
@@ -56,6 +57,7 @@ export default function App({
   const [anchorRect, setAnchorRect] = useState<DOMRect | null>(null);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [toast, setToast] = useState<Toast | null>(null);
+  const toastTimerRef = useRef(0);
   const [shortcut, setShortcut] = useState<Shortcut | null>(null);
   const [dropdownShortcut, setDropdownShortcut] = useState<Shortcut>({
     key: "d",
@@ -111,7 +113,6 @@ export default function App({
   const suppressKeysUntilRef = useRef(0);
   const dotRef = useRef<HTMLButtonElement>(null);
   const isInsideShadow = useRef(false);
-  const isMenuOpenRef = useRef(false);
   const actionConfirmRef = useRef(false);
   const isAiProcessingRef = useRef(false);
   const aiRequestIdRef = useRef(0);
@@ -197,10 +198,13 @@ export default function App({
   const showToast = useCallback(
     (message: string, type: "success" | "error") => {
       setToast({ message, type });
-      setTimeout(() => setToast(null), 3000);
+      clearTimeout(toastTimerRef.current);
+      toastTimerRef.current = window.setTimeout(() => setToast(null), 3000);
     },
     [],
   );
+
+  useEffect(() => () => clearTimeout(toastTimerRef.current), []);
 
   const saveEditorFocus = useCallback(() => {
     const adapter = activeContextRef.current?.adapter;
@@ -229,7 +233,26 @@ export default function App({
     }
   }, []);
 
-
+  // Make `ctx` the active editing context and recompute the scope options for it
+  const applyContext = useCallback((ctx: ActiveContext) => {
+    activeContextRef.current = ctx;
+    setActiveContext(ctx);
+    anchorRectRef.current = ctx.rect;
+    setAnchorRect(ctx.rect);
+    if (!ctx.adapter) {
+      setInferenceOptions(null);
+      setSelectedInferenceLevel(null);
+      return;
+    }
+    try {
+      const opts = computeInferenceOptions(ctx.adapter);
+      setInferenceOptions(opts);
+      setSelectedInferenceLevel(opts.best?.level ?? null);
+    } catch {
+      setInferenceOptions(null);
+      setSelectedInferenceLevel(null);
+    }
+  }, []);
 
   const activeLevelText = useMemo(() => {
     if (!inferenceOptions || !selectedInferenceLevel) return "";
@@ -568,16 +591,7 @@ export default function App({
         lastAcceptedFieldTextRef.current = adapter.getText() || expectedText;
 
         if (response.fallbackUsed) {
-          const providerNames: Record<string, string> = {
-            openai_compatible: "OpenAI Compatible",
-            anthropic_shape: "Anthropic Shape",
-            google_ai_studio: "AI Studio",
-            openrouter: "OpenRouter",
-            groq: "Groq",
-            deepseek: "DeepSeek",
-          };
-          const name = providerNames[response.fallbackUsed] || response.fallbackUsed;
-          showToast(`Done! (Fell back to ${name})`, "success");
+          showToast(`Done! (Fell back to ${getProviderLabel(response.fallbackUsed)})`, "success");
         } else {
           showToast(`Done! (${span.level})`, "success");
         }
@@ -887,32 +901,15 @@ export default function App({
         return;
       }
 
-      activeContextRef.current = ctx;
-      setActiveContext(ctx);
-      anchorRectRef.current = ctx.rect;
-      setAnchorRect(ctx.rect);
+      applyContext(ctx);
       setIsMenuOpen(true);
-
-      if (ctx.adapter) {
-        try {
-          const opts = computeInferenceOptions(ctx.adapter);
-          setInferenceOptions(opts);
-          setSelectedInferenceLevel(opts.best?.level ?? null);
-        } catch {
-          setInferenceOptions(null);
-          setSelectedInferenceLevel(null);
-        }
-      } else {
-        setInferenceOptions(null);
-        setSelectedInferenceLevel(null);
-      }
 
       // If an immediate action was requested and we have an adapter, execute it
       if (immediateAction && ctx.adapter) {
         triggerAIAction(immediateAction);
       }
     },
-    [showToast, triggerAIAction],
+    [showToast, triggerAIAction, applyContext],
   );
 
   const getInferenceOverride = useCallback((): InferredSelection | undefined => {
@@ -1054,26 +1051,13 @@ export default function App({
 
         const adapter = createAdapter(target);
         if (adapter) {
-          const ctx: ActiveContext = {
+          // Don't close menu when user focuses a new input - let them open it in the new input
+          applyContext({
             type: "input",
             adapter,
             text: adapter.getSelection().text || adapter.getText(),
             rect: adapter.getCaretRect(),
-          };
-          activeContextRef.current = ctx;
-          setActiveContext(ctx);
-          anchorRectRef.current = ctx.rect;
-          setAnchorRect(ctx.rect);
-          // Don't close menu when user focuses a new input - let them open it in the new input
-          // setIsMenuOpen(false);
-          try {
-            const opts = computeInferenceOptions(adapter);
-            setInferenceOptions(opts);
-            setSelectedInferenceLevel(opts.best?.level ?? null);
-          } catch {
-            setInferenceOptions(null);
-            setSelectedInferenceLevel(null);
-          }
+          });
         }
       }
     };
@@ -1111,7 +1095,7 @@ export default function App({
       window.removeEventListener("focusin", onFocusIn, true);
       window.removeEventListener("focusout", onFocusOut, true);
     };
-  }, [isCardOnly]);
+  }, [isCardOnly, applyContext]);
 
   // ── Throttled rect updater ──
   const updateRect = useCallback(() => {
@@ -1252,10 +1236,6 @@ export default function App({
   }, [primaryActions, customActions, toneActions, lengthActions, toneExpanded, lengthExpanded]);
 
   const actionItemCount = menuItems.length;
-
-  useEffect(() => {
-    isMenuOpenRef.current = isMenuOpen;
-  }, [isMenuOpen]);
 
   useEffect(() => {
     actionConfirmRef.current = !!actionConfirm;
@@ -1563,6 +1543,20 @@ export default function App({
     (!!activeContext?.adapter || isAiProcessing) &&
     highlightSpan.end > highlightSpan.start;
 
+  const handleDotMouseDown = useCallback(
+    (e: ReactMouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      saveEditorFocus();
+      if (!isMenuOpen) {
+        const ctx = resolveActiveContext();
+        if (ctx) applyContext(ctx);
+      }
+      setIsMenuOpen((prev) => !prev);
+    },
+    [saveEditorFocus, isMenuOpen, applyContext],
+  );
+
   // ── Render ──
   if (
     !isAiProcessing &&
@@ -1618,31 +1612,7 @@ export default function App({
             right={window.innerWidth - elRect.right + 4}
             size={dotSize}
             loading={isAiProcessing}
-            onMouseDown={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              saveEditorFocus();
-              if (!isMenuOpen) {
-                const ctx = resolveActiveContext();
-                if (ctx) {
-                  activeContextRef.current = ctx;
-                  setActiveContext(ctx);
-                  anchorRectRef.current = ctx.rect;
-                  setAnchorRect(ctx.rect);
-                  if (ctx.adapter) {
-                    try {
-                      const opts = computeInferenceOptions(ctx.adapter);
-                      setInferenceOptions(opts);
-                      setSelectedInferenceLevel(opts.best?.level ?? null);
-                    } catch {
-                      setInferenceOptions(null);
-                      setSelectedInferenceLevel(null);
-                    }
-                  }
-                }
-              }
-              setIsMenuOpen((prev) => !prev);
-            }}
+            onMouseDown={handleDotMouseDown}
           />
         );
       })()}

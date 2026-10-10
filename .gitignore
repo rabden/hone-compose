@@ -32,3 +32,6 @@ dist-ssr
 .opencode/
 .cortexkit/
 .impeccable/
+
+# Release archives
+*.zip

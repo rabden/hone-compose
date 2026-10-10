@@ -472,10 +472,6 @@ chrome.runtime.onInstalled.addListener(async (details) => {
   if (old.openrouterPaidKey) { updates.openrouterKey = old.openrouterPaidKey; toDelete.push('openrouterPaidKey'); }
   if (old.openrouterPaidModel) { updates.openrouterModel = old.openrouterPaidModel; toDelete.push('openrouterPaidModel'); }
 
-  // Delete old free-tier openrouter keys if paid migrated over them
-  if (old.openrouterPaidKey && old.openrouterKey) { toDelete.push('openrouterKey'); }
-  if (old.openrouterPaidModel && old.openrouterModel) { toDelete.push('openrouterModel'); }
-
   // Delete legacy gemini keys
   if (old.geminiKey) toDelete.push('geminiKey');
   if (old.geminiModel) toDelete.push('geminiModel');

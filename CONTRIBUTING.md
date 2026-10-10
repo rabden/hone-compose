@@ -15,7 +15,8 @@ Pull request process
 - If your change affects public APIs or the manifest, update documentation accordingly.
 
 Testing
-- There are no automated tests currently. If you add tests, include instructions here on how to run them.
+- Run the test suite with `npm test`. Tests live in `tests/` and use Node's built-in test runner (`*.test.ts`).
+- Add tests for new pure logic where practical, such as detection heuristics and text processing.
 
 License & CLA
 - By contributing, you agree that your contributions will be licensed under the project MIT license.
