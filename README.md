@@ -113,7 +113,7 @@ Hone works wherever you type on the web. Here's what it does in plain language:
   <dd>Write freely first, then refine sentence by sentence using any Hone action — no context switching to another tab or tool.</dd>
 
   <dt><strong>🎨 Creating custom writing tools</strong></dt>
-  <dd><em>Actions Studio</em> lets you build your own AI-powered text tools. For example: create a <strong>"Summarize"</strong> action with the prompt <code>Summarize the following text into 3 bullet points: {{input}}</code>, assign it a <em>FileText</em> icon in purple, and bind it to <kbd>Alt+Shift+S</kbd>. It appears in your menu just like a built-in action — except you designed it for exactly what you need.</dd>
+  <dd><em>Actions Studio</em> lets you build your own AI-powered text tools. For example: create a <strong>"Summarize"</strong> action with the prompt <code>Summarize the following text into 3 bullet points: {{input}}</code> and assign it a <em>FileText</em> icon in purple. It appears in your menu just like a built-in action — and you can make it your Quick Action with a hotkey in Key Bindings — except you designed it for exactly what you need.</dd>
 
   <dt><strong>🔍 Reviewing before committing</strong></dt>
   <dd>Enable <em>Preview before replacing</em> on any action to see a before/after panel before applying changes to your text.</dd>
@@ -150,6 +150,9 @@ graph TD
     Engine -->|Returns result| Preview[Before/After Preview Panel]
     Preview -->|Accept| Replace[Text Replaced In-Place]
     Preview -->|Discard| User
+    User -->|Types| Underline[🔴 Live Underlines — local Harper check]
+    Underline -->|Hover / click| Card[Suggestion Card]
+    Card -->|Apply fix| Replace
 
     style User fill:none,stroke:#666,stroke-width:2
     style Trigger fill:#1e1e2e,stroke:#cba6f7,stroke-width:2
@@ -157,6 +160,8 @@ graph TD
     style Engine fill:#1e1e2e,stroke:#89b4fa,stroke-width:2
     style Preview fill:#1e1e2e,stroke:#a6e3a1,stroke-width:2
     style Replace fill:#1e1e2e,stroke:#f9e2af,stroke-width:2
+    style Underline fill:#1e1e2e,stroke:#f38ba8,stroke-width:2
+    style Card fill:#1e1e2e,stroke:#f38ba8,stroke-width:2
 ```
 
 ---
@@ -174,9 +179,11 @@ graph TD
 | **Casual tone** | Makes text conversational and easy to read |
 | **Exciting tone** | Adds enthusiasm and energy |
 | **Friendly tone** | Warms up the phrasing |
+| **Reading level** | Rewrites to a target US grade level (1–12) with an in-menu grade picker — ships disabled by default, enable it in Actions Studio |
+| **Accessible** | Plain-language rewrite for the widest comprehension — ships disabled by default |
 | **Shorter** | Condenses text to be direct and concise |
 | **Longer** | Expands text with relevant detail and descriptive depth |
-| **Custom actions** | User-defined prompts with custom icon, color, provider, model, and temperature |
+| **Custom actions** | User-defined prompts with custom icon, color, and preview mode |
 
 ### 🛠️ Actions Studio — Build Your Own Tools
 
@@ -191,13 +198,11 @@ Hone isn't limited to what we built. The **Actions Studio** is the heart of the 
 6. Save — it's now in your action menu on any website
 
 **Everything you can configure:**
-- **Prompt templates** with `{{input}}` variable — the selected text gets injected at rewrite time
+- **Prompt templates** with `{{input}}` variable — the target text gets injected at rewrite time (extra `{{variables}}` like the reading level's `{{grade_level}}` are filled at request time)
 - **System prompts** — set context/role instructions for the AI
 - **Icon picker** — choose from 100+ Lucide icons to identify your action
-- **Accent color** — pick from 8 preset colors for visual distinction
-- **Per-action provider** — override the global provider for a specific action
-- **Per-action model** — target a specific model for this action only
-- **Temperature slider** — control creativity (0.0 = deterministic, 2.0 = max creativity)
+- **Accent color** — pick from preset colors for visual distinction
+- **Per-action provider / model / temperature** — saved with the action. *Note:* requests currently route through your global provider and model setting with a fixed temperature; honoring these per-action fields at runtime is on the roadmap
 - **Preview mode** — toggle before/after review panel instead of inline replacement
 - **Enable/disable** — turn actions on/off without deleting them
 - **Test playground** — run your action against sample text directly in the options page
@@ -288,7 +293,7 @@ The Options page gives you full control:
 - **Glassmorphic MD3 design** — Material Design 3 tokens with frosted-glass surfaces
 - **Spring physics** — `cubic-bezier(0.175, 0.885, 0.32, 1.275)` for natural, bouncy micro-interactions
 - **Web Audio API haptics** — buttons and switches produce tactile audio feedback
-- **Trigger dot** — purple sparkle icon that appears when you focus any text field (toggleable)
+- **Trigger dot** — small chevron button pinned to the focused field's corner that opens the action menu (toggleable)
 
 ---
 
@@ -377,11 +382,12 @@ Focus any text input on any webpage. Press `Alt+Shift+D` (default) or click the 
 
 | Component | What it does |
 |---|---|
-| **Content Script** | Injected into every page. Renders the menu/preview UI in a Shadow DOM. Detects editor frameworks (Slate, Lexical, etc.) and adapts accordingly. |
-| **Background Worker** | Routes AI requests to the configured provider. Handles OpenRouter Free model fallback cycling. Saves rewrite history. |
+| **Content Script** | Injected into every page. Renders the menu/preview UI and suggestion cards in a Shadow DOM. Detects editor frameworks (Slate, Lexical, etc.) and adapts accordingly. |
+| **Live Proofreader** | Debounced local Harper.js linting of the focused field: red/blue underlines, hover-or-click fix cards, persistent personal dictionary and ignores. Never touches the network. |
+| **Background Worker** | Routes AI requests to the configured provider, retries with your other configured providers on failure (toggleable), serves the CSP-fallback grammar linter, handles marketplace fetch/install, and saves rewrite history. |
 | **Main World Bridge** | Runs in the page's main JavaScript context. Traverses React Fiber trees to invoke editor event handlers that are inaccessible from the isolated world. |
 | **Floating UI** | `@floating-ui/dom` for auto-positioning relative to the text caret (flip, shift, collision detection). |
-| **Transaction Engine** | Low-level framework-specific commit logic — React Fiber walking, `beforeinput` events, `execCommand` — to inject rewritten text without breaking the host editor's state. |
+| **Transaction Engine** | Low-level framework-specific commit logic — React Fiber walking, `beforeinput` events, `execCommand` (including `delete` for removals) — to inject rewritten text without breaking the host editor's state. |
 
 > [!NOTE]
 > For a deep dive into React Fiber traversal, editor adapter architecture, and file-by-file breakdown, see [architecture.md](architecture.md).

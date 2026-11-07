@@ -4,7 +4,8 @@ Getting started
 - Fork the repository and clone your fork.
 - Create a feature branch: `git checkout -b feat/your-feature`.
 - Install dependencies: `npm install`.
-- Run a development build (content script): `ENTRY=content npm run build:content` or to build everything: `npm run build`.
+- Build a single bundle: `npm run build:content` (also `build:background`, `build:bridge`, `build:pages`). Or build everything: `npm run build` — this also copies the Harper WASM binary and `manifest.json` into `dist/`.
+- After changing code, run `npx tsc -b`, `npm run lint`, and `npm test` before opening a PR.
 
 Code style
 - The project uses TypeScript and ESLint. Run `npm run lint` and fix issues before opening a PR.

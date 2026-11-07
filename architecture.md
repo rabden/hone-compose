@@ -8,16 +8,28 @@ This document contains the low-level architectural details, file tree structure,
 
 ```mermaid
 graph TD
-    User([User]) -->|Focus Field| Content[Content Script]
-    Content -->|Capture Text| Adapter[Editor Adapter]
-    User -->|Keyboard Shortcut| BG[Background Worker]
-    BG -->|Command Message| Content
-    Content -->|PROCESS_TEXT| BG
-    BG -->|AI Request| AI[AI Provider API]
-    AI -->|Rewritten Text| BG
-    BG -->|Result| Content
-    Content -->|Preview/Apply| User
-    Content -->|Transaction| Editor[Web Page Editor]
+    subgraph LiveProofreading["Live proofreading (local, no network)"]
+        User([User]) -->|Types| Field[Focused Field]
+        Field -->|debounce ~500ms| Lint[Harper WASM linter]
+        Lint -->|Issues| Underline[Red/Blue underlines]
+        Underline -->|Hover or click| Card[Suggestion card]
+        Card -->|Apply fix| Tx[Transaction Engine]
+    end
+
+    subgraph AIActions["AI actions (network)"]
+        User2([User]) -->|Focus field / shortcut| Content[Content Script]
+        Content -->|Capture Text| Adapter[Editor Adapter]
+        User2 -->|Keyboard Shortcut| BG[Background Worker]
+        BG -->|Command Message| Content
+        Content -->|PROCESS_TEXT| BG
+        BG -->|AI Request| AI[AI Provider API]
+        AI -->|Rewritten Text| BG
+        BG -->|Result| Content
+        Content -->|Preview/Apply| User2
+    end
+
+    Tx -->|Commit| Editor[Web Page Editor]
+    Content -->|Transaction| Editor
 ```
 
 ---
@@ -30,40 +42,44 @@ The project is structured into three main execution environments, coordinated vi
 Injected into every webpage. It handles UI rendering, user interaction, and editor manipulation.
 - **Shadow DOM Isolation**: The UI is encapsulated in a Shadow Root to prevent style leaks. Entry: [index.tsx](file:///disk2/desktop/extensions-A/src/content/index.tsx), UI: [app.tsx](file:///disk2/desktop/extensions-A/src/content/app.tsx).
 - **Adapter Pattern**: Abstracted interface for different editor types. See [adapters.ts](file:///disk2/desktop/extensions-A/src/content/adapters.ts).
-- **Transaction Engine**: Sophisticated logic to inject text into rich-text editors (Slate, Lexical, etc.) without breaking their internal state. See [transaction-engine.ts](file:///disk2/desktop/extensions-A/src/content/transaction-engine.ts).
+- **Transaction Engine**: Sophisticated logic to inject text into rich-text editors (Slate, Lexical, etc.) without breaking their internal state — insertions and deletions. See [transaction-engine.ts](file:///disk2/desktop/extensions-A/src/content/transaction-engine.ts).
+- **Live Proofreading**: Debounced Harper.js linting with underlines and hover/click fix cards. See [live-proofread.ts](file:///disk2/desktop/extensions-A/src/content/live-proofread.ts).
 - **Positioning**: Calculates floating UI placement relative to the text caret using Floating UI. See [positioning.ts](file:///disk2/desktop/extensions-A/src/content/positioning.ts).
 - **Word-Level Diff**: LCS-based diffing algorithm for visualizing text changes. See [word-diff.ts](file:///disk2/desktop/extensions-A/src/content/word-diff.ts).
-- **Local Grammar Checker**: Harper.js WASM integration for instant offline spelling/grammar correction. See [grammar-worker.ts](file:///disk2/desktop/extensions-A/src/content/grammar-worker.ts).
 - **Rich Editor Orchestration**: High-level replacement logic that delegates to transaction-engine. See [rich-editor-replace.ts](file:///disk2/desktop/extensions-A/src/content/rich-editor-replace.ts).
 
 ### 2. Background Service Worker (`src/background/`)
 The extension's central nervous system.
-- **AI Orchestration**: Routes prompts to OpenAI, Anthropic, Gemini, or OpenRouter. See [service-worker.ts](file:///disk2/desktop/extensions-A/src/background/service-worker.ts).
-- **Retry Strategy**: Implements a cycle-based fallback for OpenRouter Free models, attempting up to 15 different models sequentially.
-- **Global Commands**: Listens for manifest-defined keyboard shortcuts (e.g., `toggle-menu`, `fix-spelling`).
-- **Response Sanitization**: Sanitizes raw tag leakage (e.g. `</assistant>`, `</thought>`) inside service-worker before caching/display.
+- **AI Orchestration**: Routes prompts to OpenRouter, OpenAI-compatible endpoints, Anthropic, Google AI Studio, Groq, or DeepSeek via the Vercel AI SDK. See [service-worker.ts](file:///disk2/desktop/extensions-A/src/background/service-worker.ts).
+- **Smart Provider Fallback**: If the active provider fails, retries the same text with the user's other configured providers in order until one succeeds (user-opt-out via `enableProviderFallback`). Per-action `provider`/`model`/`temperature` fields are stored on actions but are **not currently read at runtime** — the global provider/model setting and a fixed temperature (0.7) are used for every request.
+- **Grammar Fallback**: Serves `LINT_TEXT` / `WARMUP_LINTER` messages with its own Harper linter for tabs whose page CSP blocks WASM, and mirrors dictionary/ignore updates (`PROOFREAD_STATE_ADDED`) so both linter instances agree.
+- **Global Commands**: Listens for the manifest-defined keyboard shortcuts (`toggle-menu` Alt+Shift+D, `improve-writing` Alt+Shift+I, `fix-spelling` Alt+Shift+G, `paraphrase` Alt+Shift+P) and relays them to the active tab as `COMMAND_TRIGGERED`.
+- **Response Sanitization**: Strips raw tag leakage (e.g. `</assistant>`, `</thought>`) from model output before saving history or returning to the content script.
+- **Marketplace**: Fetches and caches the public Actions Registry (6h TTL) and installs/validates individual action JSONs. See the [Marketplace Registry](#marketplace-registry) section.
+- **Sender Verification**: All runtime messages must come from the extension itself (`sender.id` check); marketplace messages additionally require an extension-page sender.
 
 ### 3. Extension Pages (`src/popup/` & `src/options/`)
-- **Popup**: Quick status view, active provider display, and toggle for the "Hone Dot". Entry: [main.tsx](file:///disk2/desktop/extensions-A/src/popup/main.tsx), UI: [popup.tsx](file:///disk2/desktop/extensions-A/src/popup/popup.tsx).
-- **Options**: Advanced configuration for API keys, Custom Actions, and Shortcut recording. Entry: [main.tsx](file:///disk2/desktop/extensions-A/src/options/main.tsx), UI: [options.tsx](file:///disk2/desktop/extensions-A/src/options/options.tsx).
+- **Popup**: Active provider/model picker with key-status dots, live shortcut bindings, the two most recent rewrites (copy + deep-link into history), and quick toggles for the trigger dot, AI preview card, and live proofreading. Entry: [main.tsx](file:///disk2/desktop/extensions-A/src/popup/main.tsx), UI: [popup.tsx](file:///disk2/desktop/extensions-A/src/popup/popup.tsx).
+- **Options**: Six tabs — Dashboard, API Providers, Key Bindings, Customizations (overlay visuals, live proofreading, provider fallback, history limit), Rewrite History, and Actions Studio (create/edit/test + marketplace). Entry: [main.tsx](file:///disk2/desktop/extensions-A/src/options/main.tsx), UI: [options.tsx](file:///disk2/desktop/extensions-A/src/options/options.tsx).
 
 ---
 
-## 🛠️ Key Technical Deep-Dives
+## Key Technical Deep-Dives
 
 ### **Editor Interaction (The "Nooks and Crannies")**
 Interacting with web editors is the project's biggest challenge. Hone uses a tiered approach:
-1. **Framework Detection**: [adapters.ts](file:///disk2/desktop/extensions-A/src/content/adapters.ts) identifies if an element is native, Lexical, Slate, ProseMirror, Twitter, or generic `contenteditable` via DOM fingerprinting and React Fiber inspection.
-2. **React Fiber Traversal**: To support editors like Discord (Slate) and Twitter/X (React Native Web Textareas), Hone traverses the React Fiber tree (`__reactFiber$`) in the page context (Main World) to find the internal `editor` instance or trigger event handler props (`onChange`, `onChangeText`, `onInput`) directly. See [main-world-bridge.ts](file:///disk2/desktop/extensions-A/src/content/main-world-bridge.ts) and [transaction-engine.ts](file:///disk2/desktop/extensions-A/src/content/transaction-engine.ts).
-3. **Event Simulation**: Uses `beforeinput` with `insertReplacementText` or simulated `paste` events to ensure editors record the change in their undo/redo history.
-4. **Context Snapshotting**: Before replacement, the system captures the current text span location to handle cases where the editor content may have changed between selection and application.
+1. **Framework Detection**: [editor-detection.ts](file:///disk2/desktop/extensions-A/src/content/editor-detection.ts) fingerprints the element (native, Lexical, Slate, ProseMirror, Draft.js, Twitter/X, generic `contenteditable`), and [adapters.ts](file:///disk2/desktop/extensions-A/src/content/adapters.ts) wraps it in the right `EditableAdapter` (sensitive fields are refused entirely, see [sensitive-fields.ts](file:///disk2/desktop/extensions-A/src/content/sensitive-fields.ts)).
+2. **React Fiber Traversal**: To support editors like Discord (Slate) and Twitter/X, Hone traverses the React Fiber tree (`__reactFiber$`) in the page context (Main World) to find the internal `editor` instance or trigger event handler props (`onChange`, `onChangeText`, `onInput`) directly. See [main-world-bridge.ts](file:///disk2/desktop/extensions-A/src/content/main-world-bridge.ts) and [transaction-engine.ts](file:///disk2/desktop/extensions-A/src/content/transaction-engine.ts).
+3. **Event Simulation**: Insertions use `beforeinput` with `insertReplacementText` or simulated `paste` events so editors record the change in their undo/redo history. Deletions (empty replacement, e.g. "Remove the space") use `execCommand("delete")` — `insertText` with an empty string is a guaranteed no-op in Chrome — with a `deleteByCut` beforeinput fallback.
+4. **Context Snapshotting**: Before replacement, the system captures the field text and the expected span text so the target can be re-located (near the original offset, then anywhere) if the editor changed while the AI was thinking. See `locateTextSpan` in [adapters.ts](file:///disk2/desktop/extensions-A/src/content/adapters.ts) and `locatePlainTextSpan` in [rich-editor-replace.ts](file:///disk2/desktop/extensions-A/src/content/rich-editor-replace.ts).
+5. **Verification**: Every commit is followed by a `verifyDomReplace` polling loop that re-reads the editor text and matches it against the expected result; half-applied strategies abort the chain so nothing is inserted twice.
 
 ### **Advanced UI Components**
 The project includes high-fidelity custom components designed for a native-like feel:
 - **Haptic Feedback**: Custom components like `MaterialDesign3Button` and `MaterialDesign3Switch` include a **Web Audio API** based haptic engine that generates "tactile pop" sounds and vibration-like audio cues.
 - **Physics-based Animations**: Custom ripple hooks and spring-based easing (`cubic-bezier(0.175, 0.885, 0.32, 1.275)`) provide high-quality interaction feedback.
 - **2-Column Menu Layout**: The floating action menu uses a split design with actions on the left and a preview card on the right, allowing users to review AI results before applying. See [floating-action-menu.tsx](file:///disk2/desktop/extensions-A/src/content/floating-action-menu.tsx).
-- **Dynamic Sizing**: The preview card automatically adjusts its height and width based on content and available viewport space using `useLayoutEffect` and `useEffect`.
+- **Dynamic Sizing**: The preview card matches the action column's height, observed live via a `ResizeObserver`, and widens to card-only mode when an AI result or confirm state owns the UI.
 
 ### **Live Proofreading with Harper.js (QuillBot-style)**
 Hone integrates Harper.js (a well-known open-source grammar checker) for instant, offline spelling and grammar correction **while you type**:
@@ -71,7 +87,7 @@ Hone integrates Harper.js (a well-known open-source grammar checker) for instant
 - **Issues, not corrections**: Harper's lints are converted to positioned issues with labeled fixes ([proofread-issues.ts](file:///disk2/desktop/extensions-A/src/content/proofread-issues.ts), modeled on markview's `spell::harper_issues`: spelling lints win overlaps, suggestions map to Replace/InsertAfter/Remove fixes, Markdown is stripped from messages).
 - **Debounced live loop** ([live-proofread.ts](file:///disk2/desktop/extensions-A/src/content/live-proofread.ts)): the focused field is linted ~500ms after typing settles (IME composition aware), with a per-tab lint cache so refocusing is instant. Fields over 8,000 characters are skipped.
 - **Underlines**: contenteditable spans use the **CSS Custom Highlight API** (live DOM Ranges that track edits between checks); `input`/`textarea` get wavy overlay strips measured by the mirror in `span-geometry.ts`. Red = spelling, blue = grammar (Google Docs/Word convention).
-- **Hover suggestion cards** ([suggestion-card.tsx](file:///disk2/desktop/extensions-A/src/content/suggestion-card.tsx)): hovering ~160ms over an underlined issue — or **clicking** it (click again to dismiss) — opens a floating-ui-anchored card with the issue's category, message, every Harper fix (click applies it through the full `replaceRange` transaction engine), a session Ignore, and "Add to dictionary" for spelling.
+- **Suggestion cards** ([suggestion-card.tsx](file:///disk2/desktop/extensions-A/src/content/suggestion-card.tsx)): hovering ~160ms over an underlined issue — or **clicking** it (click again to dismiss) — opens a floating-ui-anchored, options-only card: every Harper fix (click applies it through the full `replaceRange` transaction engine), plus "Add to dictionary" (spelling) and "Ignore". A window-level close arbiter keeps the card open only while the pointer is over the card or the field — geometry-based, since events leaving the shadow root are retargeted to the host.
 - **Persistent personal dictionary & ignores** ([proofread-dictionary.ts](file:///disk2/desktop/extensions-A/src/content/proofread-dictionary.ts) + [harper-lint.ts](file:///disk2/desktop/extensions-A/src/content/harper-lint.ts)): "Add to dictionary" feeds Harper's own dictionary (`importWords`), and Ignore stores Harper's stable `contextHash`; both live in `chrome.storage.local`, are filtered at lint time in both linter worlds (content + background), and survive restarts. The lint pipeline ([harper-lint.ts](file:///disk2/desktop/extensions-A/src/content/harper-lint.ts)) is shared by both worlds.
 - **Language Detection**: Uses Chrome's `chrome.i18n.detectLanguage` API plus a spelling-density guard (skip when >35% of words are flagged) so non-English text is never underlined.
 - **Privacy-First**: All processing happens locally in the browser — no text is sent to external servers for grammar checking. The `liveProofread` setting lives in the popup and the Customizations tab.
@@ -80,31 +96,35 @@ Hone integrates Harper.js (a well-known open-source grammar checker) for instant
 The [word-diff.ts](file:///disk2/desktop/extensions-A/src/content/word-diff.ts) module implements a Longest Common Subsequence (LCS) algorithm for computing word-level differences:
 - **Tokenization**: Groups words with trailing whitespace to preserve formatting during diffing.
 - **LCS Algorithm**: Dynamic programming approach to find the longest common subsequence between original and rewritten text.
-- **Performance Fallback**: For very large texts (>10,000 characters), uses a simplified diff to prevent UI freezing.
+- **Performance Fallback**: For very large texts (>800 tokens on either side), falls back to a coarse whole-text remove/add pair to avoid O(N²) time and memory.
 - **Token Merging**: Consecutive tokens of the same type (add/remove) are merged for cleaner presentation.
 - **Alternating Collapse**: Alternating add/remove runs are collapsed into single replacement blocks for intuitive diff display.
 
 ### **Inference Level System**
-When no text is explicitly selected, Hone intelligently infers the target scope:
+When an action runs, the rewrite target is resolved by `resolveReplacementSpan` ([adapters.ts](file:///disk2/desktop/extensions-A/src/content/adapters.ts)):
 - **Selection**: Explicitly highlighted text (highest priority)
-- **Sentence**: Auto-detected via regex pattern matching
-- **Paragraph**: Blank-line delimited text blocks
-- **Full Field**: Entire editor contents
-Users can cycle through these levels in the action menu to fine-tune the rewrite scope.
+- **Full Field**: Entire editor contents (default when nothing is selected)
+
+`computeInferenceOptions` also computes **sentence** (regex boundaries) and **paragraph** (blank-line blocks) spans, but no in-menu scope switcher is currently wired — `selectedInferenceLevel` always resolves to the best option (selection if present, otherwise the whole field).
 
 ---
 
-## 📂 Detailed File Tree & Responsibilities
+## Detailed File Tree & Responsibilities
 
 ```text
 src/
 ├── background/
-│   └── service-worker.ts      # [Core] AI provider routing, API fallbacks, IndexedDB/Storage history syncing, and prompt response sanitization.
+│   ├── grammar-worker.ts      # [Logic] Background Harper linter (CSP fallback): same lint pipeline, serves LINT_TEXT.
+│   └── service-worker.ts      # [Core] AI provider routing + smart fallback, grammar/marketplace messages,
+│                              #       manifest commands, response sanitization, history saving, sender checks.
 ├── components/
 │   ├── ui/                    # [UI] Radix-based primitives and custom MD3 components.
 │   │   ├── badge.tsx          # Unified badge component with variant support.
 │   │   ├── button.tsx         # Base Radix-slot button with Tailwind variants.
 │   │   ├── card.tsx           # Compound components for structured panels (Title, Description, Content, Footer).
+│   │   ├── dotm-square-12.tsx # 12px dot-matrix loading square (Dotm protocol).
+│   │   ├── expanding-search-dock.tsx # Expanding search field used by the options pages.
+│   │   ├── hugeicons.tsx      # Hugeicons react wrapper component.
 │   │   ├── input.tsx          # Styled HTML input with focus ring and invalid state handling.
 │   │   ├── label.tsx          # Accessible Radix label primitive.
 │   │   ├── material-design-3-button.tsx # Custom button with Web Audio haptics and ripple physics.
@@ -112,6 +132,7 @@ src/
 │   │   ├── material-dialog.tsx # Styled accessible dialog box primitive utilizing Radix Dialog.
 │   │   ├── menu.tsx           # Accessible cascading menu UI using Radix Dropdown Menu.
 │   │   ├── modern-dropdown.tsx # Custom dropdown list overlay with keyboard selection logic.
+│   │   ├── radio-card.tsx     # Radio-card group used for exclusive choice rows.
 │   │   ├── ripple.tsx         # Styled micro-animation background element for touch/click ripple effects.
 │   │   ├── scroll-area.tsx    # Styled scrollbar wrapper with hide-on-idle styling.
 │   │   ├── select.tsx         # Complex Radix select with viewport scrolling and portal support.
@@ -119,53 +140,95 @@ src/
 │   │   ├── sheet.tsx          # Slide-out panel element for side options drawer (Radix Dialog).
 │   │   ├── sidebar.tsx        # Accessible sidebar navigation shell with Collapsible states.
 │   │   ├── skeleton.tsx       # Loading state placeholder block element.
+│   │   ├── switch-card.tsx    # Grouped setting cards with MD3 switches and positional rounding.
 │   │   ├── switch.tsx         # Base Radix switch primitive.
 │   │   ├── tabs.tsx           # Multi-variant Radix tabs (default and line styles).
+│   │   ├── tag.tsx            # Interactive tag/pill element (ripple + selected states).
 │   │   ├── textarea.tsx       # Auto-sizing textarea with integrated focus styling.
 │   │   └── tooltip.tsx        # Radix-based hover tooltip element for auxiliary labels.
 │   ├── action-icon-select.tsx # [UI] Custom accessible icon picker with keyboard navigation.
+│   ├── history-list.tsx       # [UI] Virtualized rewrite history rows with press morphing and copy.
 │   ├── hone-logo.tsx          # [UI] SVG brand asset with sizing props.
 │   └── material-registry.tsx  # [Logic] Client-side dynamic imports for registering Material Web Components.
 ├── content/
-│   ├── actions.ts             # [Logic] ActionRegistry class. Manages built-in/custom prompts & icons.
-│   ├── adapters.ts            # [Logic] EditableAdapter interface & implementations (Native Input, ContentEditable, Slate, Lexical, ProseMirror, Twitter).
-│   │                          # Bypasses React state using execCommand and valueTracker resets. Handles boundary text inferences.
+│   ├── actions.ts             # [Logic] ActionRegistry class. Manages built-in/custom/marketplace prompts & icons.
+│   ├── adapters.ts            # [Logic] EditableAdapter interface & implementations (Native Input, ContentEditable,
+│   │                          #       Slate, Lexical, ProseMirror, Twitter, Draft.js). React valueTracker resets,
+│   │                          #       span re-location, inference options, active-context resolution.
 │   ├── api.ts                 # [Utility] Robust fetch wrapper with AbortSignal, timeouts, and streaming support.
-│   ├── app.tsx                # [Main] Root React component for the injected UI. Manages global state (menu, preview, live proofreading).
-│   │                          # Handles focus tracking, scroll/resize updates, and keyboard event interception.
-│   ├── content.css            # [Styles] Scoped styles for the Shadow DOM container.
-│   ├── floating-action-menu.tsx # [UI] 2-column floating menu with action list and preview card.
-│   ├── grammar-worker.ts      # [Logic] Harper.js WASM linter: lint text → positioned issues (local, with background CSP fallback).
-│   ├── harper-lint.ts         # [Logic] Shared lint pipeline: context hashes, persistent-ignore filtering, issue conversion.
-│   ├── live-proofread.ts      # [Logic] Live proofreading controller: debounced lint loop, CSS Highlight underlines, hover/click cards, fix application.
-│   ├── proofread-dictionary.ts # [Data] Persistent personal dictionary + ignored lint hashes (chrome.storage, synced across linter worlds).
-│   ├── proofread-issues.ts    # [Logic] Pure Harper lint → issue conversion (spelling-first overlap dedupe, labeled fixes, plain messages).
-│   ├── suggestion-card.tsx    # [UI] Hover-anchored card listing an issue's category, message, fixes and Ignore.
-│   ├── index.tsx              # [Entry] Mounts the React app into a Shadow Root with style isolation and injects main-world-bridge.js.
-│   ├── main-world-bridge.ts   # [Bridge] Standard isolated world bypass allowing direct React/Slate Fiber interactions from the main world.
-│   ├── positioning.ts         # [UI] Floating-UI integration for anchoring the menu to the text caret.
-│   ├── rich-editor-replace.ts # [Logic] High-level replacement orchestration for rich-text editors.
-│   ├── storage.ts             # [Data] Chrome Storage & IndexedDB (for History) abstraction layer.
-│   ├── transaction-engine.ts  # [Logic] Low-level framework transaction commits (Slate React Fiber bridge traversal, BeforeInput, ExecCommand, Paste).
+│   ├── app.tsx                # [Main] Root React component for the injected UI. Menu/preview/live-proofreading state,
+│   │                          #       focus tracking, keyboard interception, suggestion-card + squiggle rendering.
+│   ├── builtin-defaults.ts    # [Data] Built-in action definitions (prompts, icons, categories, enabled flags).
+│   ├── confirm-dialog.tsx     # [Stub] Reserved for confirm dialog extraction.
+│   ├── content.css            # [Styles] Scoped styles for the Shadow DOM container (incl. squiggle underlines).
+│   ├── editor-detection.ts    # [Logic] Framework fingerprinting and editor-root resolution (incl. X compose).
+│   ├── floating-action-menu.tsx # [UI] 2-column floating menu with action list, accordions and preview card.
+│   ├── grammar-worker.ts      # [Logic] Content-side Harper linter: lint → positioned issues (background CSP fallback,
+│   │                          #       dictionary/ignore entry points synced with the service worker).
+│   ├── harper-lint.ts         # [Logic] Shared lint pipeline: context hashes, persistent-ignore filtering, conversion.
+│   ├── highlight-shimmer.tsx  # [UI] Loading shimmer overlay for the AI-processing span.
+│   ├── index.tsx              # [Entry] Mounts the React app into a Shadow Root, injects main-world-bridge.js,
+│   │                          #       warms the WASM linter on first field focus.
+│   ├── keyboard-guard.ts      # [Utility] Activation-key detection/suppression so menu keys never reach the field.
+│   ├── live-proofread.ts      # [Logic] Live proofreading controller: debounced lint loop, CSS Highlight underlines,
+│   │                          #       hover/click hit-testing and cards, fix application, dictionary/ignore actions.
+│   ├── main-world-bridge.ts   # [Bridge] Main-world script: Slate/Lexical/Twitter/React-input transactions,
+│   │                          #       reached via window.postMessage from the isolated world.
+│   ├── overlay-chrome.tsx     # [UI] TriggerDot (field-corner chevron) and overlay toast.
+│   ├── plain-text-dom.ts      # [Logic] Plain-text offsets over contenteditable using one Range.toString() model.
+│   ├── positioning.ts         # [UI] Floating-UI integration (flip/shift/autoUpdate) for menu and cards.
+│   ├── preview-panel.tsx      # [Stub] Reserved for preview panel extraction.
+│   ├── preview-types.ts       # [Stub] Reserved for preview type extraction.
+│   ├── proofread-dictionary.ts # [Data] Persistent personal dictionary + ignored lint hashes (chrome.storage).
+│   ├── proofread-issues.ts    # [Logic] Pure Harper lint → issue conversion (spelling-first overlap dedupe,
+│   │                          #        labeled fixes, plain messages, ignore keys, non-English guard).
+│   ├── rich-editor-replace.ts # [Logic] High-level replacement orchestration: span re-location → transaction engine.
+│   ├── sensitive-fields.ts    # [Security] Password/payment/OTP field detection — never adapted, never captured.
+│   ├── span-geometry.ts       # [Logic] Mirror-based measurement of character spans → viewport rects.
+│   ├── storage.ts             # [Data] Config keys, action configs (chrome.storage) and History (IndexedDB).
+│   ├── suggestion-card.tsx    # [UI] Hover-anchored card: fix options, Add-to-dictionary, Ignore.
+│   ├── target-highlight.tsx   # [UI] Renders the active AI target span (idle marker or loading shimmer).
+│   ├── target-text-highlight.ts # [Logic] Target-span painting: CSS Highlight API + native ::selection styling.
+│   ├── transaction-engine.ts  # [Logic] Low-level framework commits (Main-World Slate/Lexical/Twitter bridges,
+│   │                          #        beforeinput, deleteByCut deletions, execCommand, paste) with verification.
 │   └── word-diff.ts           # [Logic] Word-level LCS diff algorithm for visualizing text changes.
 ├── hooks/
 │   └── use-mobile.ts          # [Utility] Responsive breakpoint hooks targeting mobile layouts.
 ├── lib/
 │   ├── action-icons.tsx       # [UI] Dynamic Lucide icon renderer for actions.
-│   ├── shortcuts.ts           # [Utility] Formatting and labeling for keyboard shortcuts.
+│   ├── dotmatrix-core/        # [UI] Dot-matrix loading primitives (components, factories, utils).
+│   ├── dotmatrix-hooks.ts     # [UI] React hooks driving the dot-matrix loaders.
+│   ├── shortcuts.ts           # [Utility] Formatting, labeling, and default action names for shortcuts.
 │   └── utils.ts               # [Utility] cn() helper using tailwind-merge and clsx.
+├── onboarding/                # [Page] First-run onboarding (opened on install).
+│   ├── main.tsx               # Entry point.
+│   └── onboarding.tsx         # Onboarding flow UI.
 ├── options/                   # [Page] Extension settings page (React).
 │   ├── main.tsx               # Entry point for the options page.
-│   └── options.tsx            # Main options UI with API, Shortcut, History, and Actions tabs.
+│   ├── options.tsx            # Shell: sidebar tabs, settings load/save, history deep-links.
+│   └── tabs/
+│       ├── ActionsStudioTab.tsx   # Actions Studio container (overview / editor / marketplace views).
+│       ├── actionstudio/      # Studio internals: card grid, editor (prompt/icon/model fields),
+│       │                      # marketplace browse+install+update, constants, types.
+│       ├── ApiProvidersTab.tsx    # Provider keys, models, endpoints for all six providers.
+│       ├── CustomizationsTab.tsx  # Overlay visuals, live proofreading toggle, provider fallback, history limit.
+│       ├── DashboardTab.tsx       # Status overview: connection, shortcuts, rewrite stats, recent activity.
+│       ├── HistoryTab.tsx         # Searchable rewrite history with detail dialog.
+│       └── KeyBindingsTab.tsx     # Shortcut recorder for menu toggle + quick action.
 ├── popup/                     # [Page] Extension popup menu (React).
 │   ├── main.tsx               # Entry point for the popup.
-│   └── popup.tsx              # Quick status and settings toggle UI.
+│   └── popup.tsx              # Provider picker, shortcuts, two latest rewrites, quick toggles.
+├── providers.ts               # [Data] Provider registry: ids, labels, storage keys, defaults, configured checks.
 ├── types/
 │   └── material-web.d.ts      # TypeScript definitions for Material Web Components.
 ├── App.css                    # Vite template styles.
 ├── App.tsx                    # [Dev] Vite template landing page (not in production bundle).
 ├── index.css                  # Global Tailwind imports and base styles.
-├── main.tsx                   # [Dev] Entry point for the Vite development landing page.
+└── main.tsx                   # [Dev] Entry point for the Vite development landing page.
+
+tests/
+├── proofread-issues.test.ts   # Harper lint → issue conversion rules (overlaps, fix labels, ignore keys).
+└── sensitive-fields.test.ts   # Secret-field detection contract: passwords/payment/OTP never adapted.
 ```
 
 ---
@@ -230,9 +293,9 @@ Each `actions/*.json` file is validated against `schema.json` and contains:
 
 ### How the Extension Interacts
 
-- **Fetching the catalog**: `handleFetchRegistry()` in `src/background/service-worker.ts:561` fetches `registry.json` and caches it for 6 hours (`REGISTRY_CACHE_TTL_MS`). The `ActionsStudioTab` in the options page sends a `MARKETPLACE_FETCH_REGISTRY` message to trigger this.
-- **Installing an action**: `handleInstallAction()` in `src/background/service-worker.ts:590` fetches the individual action JSON, validates each field (never blind-spreads), constructs a `CustomAction` with `type: 'marketplace'` and `category: 'custom'`, and saves it via `saveActionConfig()`.
+- **Fetching the catalog**: `handleFetchRegistry()` in `src/background/service-worker.ts:329` fetches `registry.json` and caches it for 6 hours (`REGISTRY_CACHE_TTL_MS`). The `ActionsStudioTab` in the options page sends a `MARKETPLACE_FETCH_REGISTRY` message to trigger this.
+- **Installing an action**: `handleInstallAction()` in `src/background/service-worker.ts:358` fetches the individual action JSON, validates each field (never blind-spreads), constructs a `CustomAction` with `type: 'marketplace'` and `category: 'custom'`, and saves it via `saveActionConfig()`. The marketplace UI marks installed actions and shows an "Update available" badge when the registry version differs.
 - **Storage schema**: Installed marketplace actions use the same `CustomAction` interface (`src/content/storage.ts:14`) as user-created custom actions, distinguished by `type: 'marketplace'` and `sourceId` tracking the registry ID.
-- **Runtime execution**: The `ActionRegistry` (`src/content/actions.ts:36`) loads all enabled actions (builtin, custom, marketplace) at startup from local storage. The service worker (`callAIProviderRaw()`) routes AI requests using the user's global provider setting -- per-action provider/model fields are not currently read at runtime.
+- **Runtime execution**: The `ActionRegistry` (`src/content/actions.ts:35`) loads all enabled actions (builtin, custom, marketplace) at startup from local storage and re-loads on `actionConfigs` storage changes. The service worker (`callAIProviderRaw()`) routes AI requests using the user's global provider setting -- per-action provider/model fields are stored but not currently read at runtime.
 
 
