@@ -348,14 +348,14 @@ Outputs to `dist/`.
 
 ### 📦 For Everyone Else
 
-[![Download Latest Release](https://img.shields.io/badge/Download-v0.0.1-blue?style=for-the-badge&logo=github)](https://github.com/rabden/hone-compose/releases/latest)
+[![Download Latest Release](https://img.shields.io/badge/Download-v0.1.0-blue?style=for-the-badge&logo=github)](https://github.com/rabden/hone-compose/releases/latest)
 
-1. **Download** `hone-v0.0.1.zip` from the [latest release](https://github.com/rabden/hone-compose/releases/latest)
+1. **Download** `hone-v0.1.0.zip` from the [latest release](https://github.com/rabden/hone-compose/releases/latest)
 2. **Extract** the zip somewhere on your computer
 3. Open Chrome and go to `chrome://extensions/`
 4. Enable **Developer mode** (toggle in the top-right corner)
 5. Click **Load unpacked** (top-left)
-6. Select the extracted `hone-v0.0.1/` folder
+6. Select the extracted `hone-v0.1.0/` folder
 
 That's it — Hone is now installed.
 
