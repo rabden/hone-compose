@@ -123,7 +123,11 @@ function looksLikeExpectedReplace(ctx: TransactionContext, text: string): boolea
     .trim()
     .slice(0, Math.min(48, ctx.replacement.length));
 
-  if (!probe) return true;
+  if (!probe) {
+    // Deletion: there is no new text to look for — count it done only when
+    // text was actually removed (exact match above, or any net shortening).
+    return text.length < ctx.beforeText.length;
+  }
 
   return text.includes(probe) && (!oldPart || !text.includes(oldPart));
 }
@@ -265,7 +269,9 @@ type MainWorldAttempt = {
   changed: boolean;
 };
 
-/** Lexical / many CE: one beforeinput with insertReplacementText */
+/** Lexical / many CE: one beforeinput with insertReplacementText (or
+ *  deleteByCut for removals — insertReplacementText with empty data is a
+ *  guaranteed no-op). */
 async function commitViaBeforeInputAttempt(
   ctx: TransactionContext,
   maxWaitMs = 150,
@@ -275,12 +281,16 @@ async function commitViaBeforeInputAttempt(
   await delayForSelectionSync();
 
   try {
-    const evt = new InputEvent("beforeinput", {
-      bubbles: true,
-      cancelable: true,
-      inputType: "insertReplacementText",
-      data: ctx.replacement,
-    });
+    const removing = ctx.replacement.length === 0;
+    const eventInit: InputEventInit = removing
+      ? { bubbles: true, cancelable: true, inputType: "deleteByCut" }
+      : {
+          bubbles: true,
+          cancelable: true,
+          inputType: "insertReplacementText",
+          data: ctx.replacement,
+        };
+    const evt = new InputEvent("beforeinput", eventInit);
     const dispatchResult = ctx.root.dispatchEvent(evt);
     syncSelectionChange();
     const verified = await verifyDomReplace(ctx, maxWaitMs);
@@ -442,9 +452,13 @@ async function commitViaExecCommand(ctx: TransactionContext): Promise<boolean> {
   await delayForSelectionSync();
 
   try {
-    if (!document.execCommand("insertText", false, ctx.replacement)) {
-      return false;
-    }
+    // insertText with "" does not delete in Chrome — removals must go
+    // through "delete", which removes the span selected above.
+    const ok =
+      ctx.replacement.length > 0
+        ? document.execCommand("insertText", false, ctx.replacement)
+        : document.execCommand("delete");
+    if (!ok) return false;
     syncSelectionChange();
     return await verifyDomReplace(ctx);
   } catch {
@@ -517,12 +531,17 @@ export async function applyEditorTransaction(
 
   if (framework === "prosemirror") {
     // For ProseMirror, only try beforeinput - paste event can cause double insertion
-    // because ProseMirror handles paste events internally and may duplicate the text
-    if (await commitViaBeforeInput(ctx)) {
-      return { committed: true, confidence: 0.9, suggestClipboardPaste: false };
-    }
-    if (await commitViaExecCommand(ctx)) {
-      return { committed: true, confidence: 0.7, suggestClipboardPaste: false };
+    // because ProseMirror handles paste events internally and may duplicate the text.
+    // Removals (empty replacement) go to execCommand("delete") first: a
+    // deleteByCut beforeinput is far less commonly handled.
+    const order: [(ctx: TransactionContext) => Promise<boolean>, number][] =
+      ctx.replacement.length > 0
+        ? [[commitViaBeforeInput, 0.9], [commitViaExecCommand, 0.7]]
+        : [[commitViaExecCommand, 0.7], [commitViaBeforeInput, 0.9]];
+    for (const [strategy, confidence] of order) {
+      if (await strategy(ctx)) {
+        return { committed: true, confidence, suggestClipboardPaste: false };
+      }
     }
     return {
       committed: false,
@@ -551,11 +570,14 @@ export async function applyEditorTransaction(
     };
   }
 
-  const ok = await runStrategies(ctx, [
-    commitViaBeforeInput,
-    commitViaExecCommand,
-    commitViaPasteEvent,
-  ]);
+  // Removals (empty replacement): execCommand("delete") is the only reliable
+  // primitive — beforeinput/paste with empty data are guaranteed no-ops.
+  const ok = await runStrategies(
+    ctx,
+    ctx.replacement.length > 0
+      ? [commitViaBeforeInput, commitViaExecCommand, commitViaPasteEvent]
+      : [commitViaExecCommand, commitViaBeforeInput],
+  );
 
   if (ok) {
     return { committed: true, confidence: 0.7, suggestClipboardPaste: false };

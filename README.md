@@ -127,12 +127,14 @@ Hone is provider-agnostic. Bring your own API key — or use the preconfigured f
 
 | Provider | How to use | Pricing |
 |---|---|---|
-| **OpenRouter Free** | Get a free API key at [openrouter.ai](https://openrouter.ai). Hone auto-cycles through 5 free models (Gemma 4 26B, Nemotron 3 30B, Llama 3.2 3B, etc.) with up to 3 retry passes. | **Free-of-cost** with rate-limit fallback |
-| **OpenRouter Paid** | Use any model slug from OpenRouter's catalog (GPT-4o, Claude, etc.). | Pay-as-you-go via OpenRouter credits |
-| **OpenAI** | Bring your own `sk-proj-...` key. Supports custom endpoints (proxies, local gateways). | Your OpenAI plan |
-| **Anthropic Claude** | Paste your `sk-ant-...` key from the Anthropic Console. | Your Anthropic plan |
-| **Google Gemini** | Use a free API key from [aistudio.google.com](https://aistudio.google.com). Generous free tier. | **Free tier available** |
-| **Google AI Studio** | Gemma models via `@google/genai` SDK with thinking config. Also uses aistudio keys. | **Free tier available** |
+| **OpenRouter** | Get a free API key at [openrouter.ai](https://openrouter.ai) and use any model from their catalog (free or paid). Default provider. | Free models available |
+| **OpenAI-compatible** | Bring your own `sk-...` key. Supports custom endpoints (proxies, local gateways). | Your plan |
+| **Anthropic** | Paste your `sk-ant-...` key from the Anthropic Console. | Your Anthropic plan |
+| **Google AI Studio** | Use a free API key from [aistudio.google.com](https://aistudio.google.com). Generous free tier. | **Free tier available** |
+| **Groq** | Fast open models via [console.groq.com](https://console.groq.com). | **Free tier available** |
+| **DeepSeek** | Bring your DeepSeek API key. | Pay-as-you-go |
+
+If the active provider fails, Hone can automatically retry the same text with your other configured providers until one succeeds (toggleable in Customizations).
 
 > **No API key? Start with OpenRouter Free** — sign up at openrouter.ai, grab a key, paste it in Hone's settings, and you're good to go. Zero cost.
 
@@ -167,7 +169,7 @@ graph TD
 |---|---|
 | **Improve writing** | Enhances grammar, flow, vocabulary — makes any text polished and engaging |
 | **Paraphrase** | Rewrites while preserving meaning — fresh wording, natural flow |
-| **Fix spelling & grammar** | Corrects errors without changing tone or structure — powered by Harper.js for instant local checking |
+| **Fix spelling & grammar** | Corrects errors without changing tone or structure using your AI provider (instant local underlining while you type is handled separately by Harper.js) |
 | **Professional tone** | Shifts text to clear, business-appropriate language |
 | **Casual tone** | Makes text conversational and easy to read |
 | **Exciting tone** | Adds enthusiasm and energy |
@@ -214,34 +216,33 @@ Marketplace actions use the same `CustomAction` storage model as user-created ac
 
 ### Smart Text Boundary Inference
 
-When no text is selected, Hone intelligently guesses what you want to rewrite:
+When no text is selected, Hone targets the whole field; highlight text and it rewrites exactly that:
 
-1. **Selection** — explicitly highlighted text
-2. **Sentence** — auto-detected via regex
-3. **Paragraph** — blank-line delimited block
-4. **Full field** — entire editor contents
+1. **Selection** — explicitly highlighted text (highest priority)
+2. **Full field** — entire editor contents (default when nothing is selected)
 
-Cycle through options in the action menu with a single click.
+Sentence- and paragraph-level inference live in the engine (`computeInferenceOptions`), ready to be surfaced in the menu.
 
-### ⚡ Instant Spelling & Grammar with Harper.js
+### ⚡ Live Spelling & Grammar with Harper.js
 
-Hone integrates **Harper.js** — a well-known, open-source grammar checker that runs entirely in your browser via WebAssembly. This provides instant spelling and grammar corrections without sending your text to any external server.
+Hone integrates **Harper.js** — a well-known, open-source grammar checker that runs entirely in your browser via WebAssembly. As you type, misspelled words and grammar slips are underlined right in the field (red for spelling, blue for grammar), and hovering — or clicking — an underline opens a small card with every fix Harper suggests. Apply one, add the word to your personal dictionary, or ignore it for good. Nothing is sent to any server, and your dictionary and ignores persist across sessions.
 
 **Why Harper.js?**
 - **Privacy-First**: All grammar checking happens locally in your browser. Your text never leaves your device for spelling/grammar analysis.
-- **Instant Response**: WebAssembly execution delivers sub-100ms correction times for typical text segments — no network latency.
+- **Live, not batch**: checking runs a moment after you stop typing, so underlines stay current without ever blocking your keystrokes.
 - **No API Costs**: Unlike cloud-based grammar services, Harper.js is free to use with no rate limits or subscription fees.
 - **Offline Capable**: Works without an internet connection once the WASM module is loaded.
 - **SEO-Friendly**: Harper is a widely recognized name in the developer community, making Hone more discoverable for users searching for grammar checking solutions.
 
 **How it works:**
-1. When you select "Fix spelling & grammar," Hone first checks if the text is primarily English using Chrome's language detection API.
+1. About half a second after you stop typing, Hone checks if the text is primarily English using Chrome's language detection API.
 2. Harper.js runs locally as a WebAssembly module, analyzing your text for spelling errors, grammar mistakes, and awkward phrasing.
-3. Corrections are displayed in the preview card with word-level diff visualization showing exactly what changed.
-4. Smart fallback skips correction if too many errors are detected (indicating non-English text or gibberish).
+3. Each flagged span is underlined — natively on rich editors via the CSS Custom Highlight API, and as wavy overlays on inputs and textareas.
+4. Hovering (or clicking) an underline opens an anchored suggestion card; applying a fix goes through the same transaction engine as AI rewrites, so every editor framework (Slate, Lexical, ProseMirror, Draft.js) records it as a real edit. "Add to dictionary" and "Ignore" are remembered permanently — locally, in your browser.
+5. Smart fallback skips underlining if too many errors are detected (indicating non-English text or gibberish).
 
 **Performance:**
-- WASM-based execution for near-native speed
+- WASM-based execution for near-native speed, with results cached per text so re-focusing a field is instant
 - Language detection prevents unnecessary processing on non-English text
 - Smart error threshold avoids false positives on code snippets or technical content
 
@@ -272,8 +273,9 @@ Hone never activates on password, payment, or one-time-code fields. The trigger 
 The Options page gives you full control:
 
 - **Dashboard** — at-a-glance status: API connection, active shortcuts, total rewrites, recent activity
-- **API Providers** — manage keys, models, and endpoints for all 6 providers
+- **API Providers** — manage keys, models, and endpoints for all providers
 - **Key Bindings** — record custom shortcuts, hide the floating dot (keyboard-only mode)
+- **Customizations** — overlay visuals, live proofreading toggle, provider fallback, history limit
 - **Rewrite History** — searchable, virtual-scrolled log with before/after detail view, copy, and delete
 - **Actions Studio** — create, edit, and test custom actions
 
@@ -337,7 +339,7 @@ The Options page gives you full control:
 
 ```bash
 git clone https://github.com/rabden/hone-compose.git
-cd hone
+cd hone-compose
 npm install
 npm run build
 ```
@@ -346,14 +348,14 @@ Outputs to `dist/`.
 
 ### 📦 For Everyone Else
 
-[![Download Latest Release](https://img.shields.io/badge/Download-v0.1.0-blue?style=for-the-badge&logo=github)](https://github.com/rabden/hone-compose/archive/refs/tags/v0.1.0.zip)
+[![Download Latest Release](https://img.shields.io/badge/Download-v0.0.1-blue?style=for-the-badge&logo=github)](https://github.com/rabden/hone-compose/releases/latest)
 
-1. **Download** the zip file by clicking the button above
+1. **Download** `hone-v0.0.1.zip` from the [latest release](https://github.com/rabden/hone-compose/releases/latest)
 2. **Extract** the zip somewhere on your computer
 3. Open Chrome and go to `chrome://extensions/`
 4. Enable **Developer mode** (toggle in the top-right corner)
 5. Click **Load unpacked** (top-left)
-6. Select the extracted `hone-compose-0.1.0/dist/` folder
+6. Select the extracted `hone-v0.0.1/` folder
 
 That's it — Hone is now installed.
 
@@ -361,7 +363,9 @@ That's it — Hone is now installed.
 
 - Click the Hone icon in the toolbar, then **Open settings**
 - Go to **API Providers**, pick your provider, paste your key
-- Or grab a free key from [console.groq.com](https://console.groq.com) and select **Groq** — it's our preferred provider (much faster than the alternatives)
+- No key yet? Grab a free one from [openrouter.ai](https://openrouter.ai) (the default provider) or [console.groq.com](https://console.groq.com)
+
+> **Tip:** spelling and grammar underlining works without any API key — it runs locally via Harper.js.
 
 ### ✍️ Use it
 

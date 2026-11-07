@@ -99,9 +99,18 @@ export function SwitchCardGroup({ items, className }: SwitchCardGroupProps) {
           checked={item.checked}
           onCheckedChange={item.onCheckedChange}
           className={cn(
-            idx === 0 && "rounded-t-3xl rounded-b-md",
-            idx === items.length - 1 && "rounded-b-3xl rounded-t-md",
-            idx > 0 && idx < items.length - 1 && "rounded-md",
+            // A single card is both first and last — every corner is an
+            // outer corner, so it gets uniform rounding. Positional rounding
+            // only applies while there is more than one card.
+            items.length === 1 && "rounded-3xl",
+            items.length > 1 && idx === 0 && "rounded-t-3xl rounded-b-md",
+            items.length > 1 &&
+              idx === items.length - 1 &&
+              "rounded-b-3xl rounded-t-md",
+            items.length > 1 &&
+              idx > 0 &&
+              idx < items.length - 1 &&
+              "rounded-md",
             idx > 0 && "border-t border-border/10",
           )}
         />

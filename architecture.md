@@ -4,7 +4,8 @@ This document contains the low-level architectural details, file tree structure,
 
 ---
 
-## 🧩 System Flow
+## System Flow
+
 ```mermaid
 graph TD
     User([User]) -->|Focus Field| Content[Content Script]
@@ -21,7 +22,7 @@ graph TD
 
 ---
 
-## 🏗️ Architecture Design
+## Architecture Design
 
 The project is structured into three main execution environments, coordinated via Chrome's messaging system and shared storage:
 
@@ -64,13 +65,16 @@ The project includes high-fidelity custom components designed for a native-like 
 - **2-Column Menu Layout**: The floating action menu uses a split design with actions on the left and a preview card on the right, allowing users to review AI results before applying. See [floating-action-menu.tsx](file:///disk2/desktop/extensions-A/src/content/floating-action-menu.tsx).
 - **Dynamic Sizing**: The preview card automatically adjusts its height and width based on content and available viewport space using `useLayoutEffect` and `useEffect`.
 
-### **Local Grammar & Spelling with Harper.js**
-Hone integrates Harper.js (a well-known open-source grammar checker) for instant, offline spelling and grammar correction:
-- **WASM Module**: Harper.js runs as a WebAssembly module in a dedicated worker ([grammar-worker.ts](file:///disk2/desktop/extensions-A/src/content/grammar-worker.ts)).
-- **Language Detection**: Uses Chrome's `chrome.i18n.detectLanguage` API to determine if text is primarily English before applying corrections.
-- **Smart Fallback**: Skips correction if too many spelling errors are detected (indicating non-English text or gibberish).
-- **Privacy-First**: All processing happens locally in the browser — no text is sent to external servers for grammar checking.
-- **Instant Response**: Local WASM execution provides sub-100ms response times for typical text segments.
+### **Live Proofreading with Harper.js (QuillBot-style)**
+Hone integrates Harper.js (a well-known open-source grammar checker) for instant, offline spelling and grammar correction **while you type**:
+- **WASM Module**: Harper.js runs as a WebAssembly module in the content script ([grammar-worker.ts](file:///disk2/desktop/extensions-A/src/content/grammar-worker.ts)); if the page's CSP blocks WASM, checking transparently moves to the service worker (`LINT_TEXT` message → [background/grammar-worker.ts](file:///disk2/desktop/extensions-A/src/background/grammar-worker.ts)).
+- **Issues, not corrections**: Harper's lints are converted to positioned issues with labeled fixes ([proofread-issues.ts](file:///disk2/desktop/extensions-A/src/content/proofread-issues.ts), modeled on markview's `spell::harper_issues`: spelling lints win overlaps, suggestions map to Replace/InsertAfter/Remove fixes, Markdown is stripped from messages).
+- **Debounced live loop** ([live-proofread.ts](file:///disk2/desktop/extensions-A/src/content/live-proofread.ts)): the focused field is linted ~500ms after typing settles (IME composition aware), with a per-tab lint cache so refocusing is instant. Fields over 8,000 characters are skipped.
+- **Underlines**: contenteditable spans use the **CSS Custom Highlight API** (live DOM Ranges that track edits between checks); `input`/`textarea` get wavy overlay strips measured by the mirror in `span-geometry.ts`. Red = spelling, blue = grammar (Google Docs/Word convention).
+- **Hover suggestion cards** ([suggestion-card.tsx](file:///disk2/desktop/extensions-A/src/content/suggestion-card.tsx)): hovering ~160ms over an underlined issue — or **clicking** it (click again to dismiss) — opens a floating-ui-anchored card with the issue's category, message, every Harper fix (click applies it through the full `replaceRange` transaction engine), a session Ignore, and "Add to dictionary" for spelling.
+- **Persistent personal dictionary & ignores** ([proofread-dictionary.ts](file:///disk2/desktop/extensions-A/src/content/proofread-dictionary.ts) + [harper-lint.ts](file:///disk2/desktop/extensions-A/src/content/harper-lint.ts)): "Add to dictionary" feeds Harper's own dictionary (`importWords`), and Ignore stores Harper's stable `contextHash`; both live in `chrome.storage.local`, are filtered at lint time in both linter worlds (content + background), and survive restarts. The lint pipeline ([harper-lint.ts](file:///disk2/desktop/extensions-A/src/content/harper-lint.ts)) is shared by both worlds.
+- **Language Detection**: Uses Chrome's `chrome.i18n.detectLanguage` API plus a spelling-density guard (skip when >35% of words are flagged) so non-English text is never underlined.
+- **Privacy-First**: All processing happens locally in the browser — no text is sent to external servers for grammar checking. The `liveProofread` setting lives in the popup and the Customizations tab.
 
 ### **Word-Level Diff Visualization**
 The [word-diff.ts](file:///disk2/desktop/extensions-A/src/content/word-diff.ts) module implements a Longest Common Subsequence (LCS) algorithm for computing word-level differences:
@@ -127,11 +131,16 @@ src/
 │   ├── adapters.ts            # [Logic] EditableAdapter interface & implementations (Native Input, ContentEditable, Slate, Lexical, ProseMirror, Twitter).
 │   │                          # Bypasses React state using execCommand and valueTracker resets. Handles boundary text inferences.
 │   ├── api.ts                 # [Utility] Robust fetch wrapper with AbortSignal, timeouts, and streaming support.
-│   ├── app.tsx                # [Main] Root React component for the injected UI. Manages global state (menu, preview).
+│   ├── app.tsx                # [Main] Root React component for the injected UI. Manages global state (menu, preview, live proofreading).
 │   │                          # Handles focus tracking, scroll/resize updates, and keyboard event interception.
 │   ├── content.css            # [Styles] Scoped styles for the Shadow DOM container.
 │   ├── floating-action-menu.tsx # [UI] 2-column floating menu with action list and preview card.
-│   ├── grammar-worker.ts      # [Logic] Harper.js WASM integration for local spelling/grammar checking.
+│   ├── grammar-worker.ts      # [Logic] Harper.js WASM linter: lint text → positioned issues (local, with background CSP fallback).
+│   ├── harper-lint.ts         # [Logic] Shared lint pipeline: context hashes, persistent-ignore filtering, issue conversion.
+│   ├── live-proofread.ts      # [Logic] Live proofreading controller: debounced lint loop, CSS Highlight underlines, hover/click cards, fix application.
+│   ├── proofread-dictionary.ts # [Data] Persistent personal dictionary + ignored lint hashes (chrome.storage, synced across linter worlds).
+│   ├── proofread-issues.ts    # [Logic] Pure Harper lint → issue conversion (spelling-first overlap dedupe, labeled fixes, plain messages).
+│   ├── suggestion-card.tsx    # [UI] Hover-anchored card listing an issue's category, message, fixes and Ignore.
 │   ├── index.tsx              # [Entry] Mounts the React app into a Shadow Root with style isolation and injects main-world-bridge.js.
 │   ├── main-world-bridge.ts   # [Bridge] Standard isolated world bypass allowing direct React/Slate Fiber interactions from the main world.
 │   ├── positioning.ts         # [UI] Floating-UI integration for anchoring the menu to the text caret.
@@ -225,4 +234,5 @@ Each `actions/*.json` file is validated against `schema.json` and contains:
 - **Installing an action**: `handleInstallAction()` in `src/background/service-worker.ts:590` fetches the individual action JSON, validates each field (never blind-spreads), constructs a `CustomAction` with `type: 'marketplace'` and `category: 'custom'`, and saves it via `saveActionConfig()`.
 - **Storage schema**: Installed marketplace actions use the same `CustomAction` interface (`src/content/storage.ts:14`) as user-created custom actions, distinguished by `type: 'marketplace'` and `sourceId` tracking the registry ID.
 - **Runtime execution**: The `ActionRegistry` (`src/content/actions.ts:36`) loads all enabled actions (builtin, custom, marketplace) at startup from local storage. The service worker (`callAIProviderRaw()`) routes AI requests using the user's global provider setting -- per-action provider/model fields are not currently read at runtime.
-```
+
+

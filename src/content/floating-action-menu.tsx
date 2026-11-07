@@ -516,7 +516,7 @@ export function FloatingActionMenu({
                 {isCardLoading && !cardResultText ? (
                   <span className="text-muted-foreground italic inline-flex items-center gap-2">
                     <DotmSquare12 />
-                    {loadingActionId === "fix_spelling" || loadingActionId === "fix_spelling_auto"
+                    {loadingActionId === "fix_spelling"
                       ? "Checking for spelling and grammar errors..."
                       : "Honing your text..."}
                   </span>
@@ -552,7 +552,7 @@ export function FloatingActionMenu({
                     </div>
                   ) : (
                     <span className="text-muted-foreground/80 italic">
-                      {cardActionId === "fix_spelling_local" || cardActionId === "fix_spelling" || cardActionId === "fix_spelling_auto"
+                      {cardActionId === "fix_spelling"
                         ? "No spelling or grammar errors detected. Text is perfect!"
                         : "AI response matches original text. No changes needed."}
                     </span>

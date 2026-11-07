@@ -94,7 +94,11 @@ function looksLikeExpectedReplace(
   }
 
   const probe = replacement.trim().slice(0, Math.min(48, replacement.length));
-  if (!probe) return true;
+
+  if (!probe) {
+    // Deletion: count it done only when text was actually removed.
+    return text.length < beforeText.length;
+  }
 
   return text.includes(probe) && (!expectedSlice || !text.includes(expectedSlice));
 }
@@ -222,6 +226,25 @@ async function runLexicalTransaction(
   root.focus({ preventScroll: true });
   setDomSelectionByOffsets(root, s, e);
   document.dispatchEvent(new Event("selectionchange"));
+
+  // Removals: insertReplacementText with empty data does nothing on Lexical —
+  // delete the selected span through the editing engine instead.
+  if (replacement === "") {
+    let deleted: boolean;
+    try {
+      deleted = document.execCommand("delete");
+    } catch {
+      deleted = false;
+    }
+    document.dispatchEvent(new Event("selectionchange"));
+    const success = deleted
+      ? await verifyLexicalReplace(root, beforeText, s, e, "", expectedSlice)
+      : false;
+    return {
+      success,
+      changed: extractPlainText(root) !== currentText,
+    };
+  }
 
   const targetRanges = getStaticTargetRange(root, s, e);
   const eventInit: InputEventInit = {
@@ -376,6 +399,23 @@ async function runTwitterTransaction(
   // Small delay to let Draft.js process selection before paste
   await new Promise((resolve) => setTimeout(resolve, 10));
 
+  const newText = beforeText.substring(0, s) + replacement + beforeText.substring(e);
+  const probe = replacement.trim().slice(0, Math.min(32, replacement.length));
+
+  if (replacement === "") {
+    // Removals: a paste of empty data inserts nothing — delete the selected
+    // span through the editing engine instead.
+    let deleted: boolean;
+    try {
+      deleted = document.execCommand("delete");
+    } catch {
+      deleted = false;
+    }
+    if (!deleted) return false;
+    const afterDelete = extractPlainText(root);
+    return afterDelete === newText;
+  }
+
   // Use simple paste event - Draft.js handles this natively and correctly
   try {
     const dt = new DataTransfer();
@@ -397,8 +437,6 @@ async function runTwitterTransaction(
   }
 
   const after = extractPlainText(root);
-  const newText = beforeText.substring(0, s) + replacement + beforeText.substring(e);
-  const probe = replacement.trim().slice(0, Math.min(32, replacement.length));
   if (after === newText) return true;
   if (probe && after.includes(probe)) return true;
   return false;

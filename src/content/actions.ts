@@ -23,7 +23,6 @@ export interface ActionItem {
   shortcut?: { key: string; ctrl: boolean; alt: boolean; shift: boolean };
   replaceMode?: "replace" | "preview";
   enabled: boolean;
-  isLocal?: boolean;
 }
 
 export interface ActionHandler extends ActionItem {
@@ -73,7 +72,6 @@ export class ActionRegistry {
       shortcut: ca.shortcut,
       replaceMode: ca.replaceMode,
       enabled: ca.enabled,
-      isLocal: ca.isLocal,
       provider: ca.provider,
       model: ca.model,
       temperature: ca.temperature,

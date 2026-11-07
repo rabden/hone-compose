@@ -16,8 +16,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/modern-dropdown";
 import { SwitchCardGroup } from "@/components/ui/switch-card";
-import { Ripple } from "@/components/ui/ripple";
-import { Tag, TagGroup } from "@/components/ui/tag";
 import { HoneLogo } from "@/components/hone-logo";
 import { cn } from "@/lib/utils";
 import { formatShortcutCombo, getActionLabel } from "@/lib/shortcuts";
@@ -35,14 +33,6 @@ import {
   type ProviderId,
 } from "../providers";
 
-type SpellcheckMode = "disabled" | "browser_only" | "always";
-
-const SPELLCHECK_MODES: { value: SpellcheckMode; label: string }[] = [
-  { value: "disabled", label: "Off" },
-  { value: "browser_only", label: "On error" },
-  { value: "always", label: "Always run" },
-];
-
 /**
  * The popup closes on blur and has no room for text entry, so it only reads
  * what it can render: the active engine, key presence (never key values), and
@@ -52,7 +42,7 @@ const STORAGE_KEYS = [
   "activeProvider",
   "previewInCard",
   "hideDot",
-  "autoSpellcheckMode",
+  "liveProofread",
   "dropdownShortcutKey",
   "dropdownShortcutCtrl",
   "dropdownShortcutAlt",
@@ -71,12 +61,6 @@ const STORAGE_KEYS = [
 // normal casing) so both surfaces read as the same settings.
 const ROW_LABEL = "text-xs font-semibold text-foreground";
 
-function toSpellcheckMode(value: unknown): SpellcheckMode {
-  return value === "disabled" || value === "always"
-    ? value
-    : "browser_only";
-}
-
 function toProviderId(value: unknown): ProviderId {
   const id = typeof value === "string" ? value : "";
   return PROVIDER_MAP[id] ? (id as ProviderId) : "openrouter";
@@ -87,8 +71,7 @@ export default function Popup() {
   const [model, setModel] = useState(() => getDefaultModel("openrouter"));
   const [previewInCard, setPreviewInCard] = useState(true);
   const [hideDot, setHideDot] = useState(false);
-  const [spellcheckMode, setSpellcheckMode] =
-    useState<SpellcheckMode>("browser_only");
+  const [liveProofread, setLiveProofread] = useState(true);
   const [store, setStore] = useState<Record<string, unknown>>({});
   const [menuShortcut, setMenuShortcut] = useState<string | null>(null);
   const [quickShortcut, setQuickShortcut] = useState<string | null>(null);
@@ -96,10 +79,10 @@ export default function Popup() {
     "Fix spelling & grammar",
   );
   // undefined = still loading, null = no rewrites yet
-  const [lastRewrite, setLastRewrite] = useState<HistoryEntry | null | undefined>(
+  const [lastRewrites, setLastRewrites] = useState<HistoryEntry[] | null | undefined>(
     undefined,
   );
-  const [copied, setCopied] = useState(false);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const applyStore = useCallback((res: Record<string, unknown>) => {
     const active = toProviderId(res.activeProvider);
@@ -115,7 +98,7 @@ export default function Popup() {
     // Mirrors the options page default so both surfaces never disagree.
     setPreviewInCard(res.previewInCard !== undefined ? !!res.previewInCard : true);
     setHideDot(!!res.hideDot);
-    setSpellcheckMode(toSpellcheckMode(res.autoSpellcheckMode));
+    setLiveProofread(res.liveProofread !== undefined ? !!res.liveProofread : true);
     setMenuShortcut(
       formatShortcutCombo({
         key: (res.dropdownShortcutKey as string) || "d",
@@ -173,15 +156,15 @@ export default function Popup() {
     };
   }, [applyStore]);
 
-  // Newest rewrite only — one indexed read, no list to render.
+  // Two newest rewrites — one indexed read, no full list to render.
   useEffect(() => {
     let alive = true;
-    getHistory({ limit: 1 })
+    getHistory({ limit: 2 })
       .then((entries) => {
-        if (alive) setLastRewrite(entries[0] ?? null);
+        if (alive) setLastRewrites(entries.length > 0 ? entries : null);
       })
       .catch(() => {
-        if (alive) setLastRewrite(null);
+        if (alive) setLastRewrites(null);
       });
     return () => {
       alive = false;
@@ -206,37 +189,41 @@ export default function Popup() {
     });
   };
 
-  const openLastRewrite = () => {
-    if (!lastRewrite?.id) return;
-    openOptionsTab("history", lastRewrite.id);
+  const openRewrite = (entry: HistoryEntry) => {
+    if (!entry.id) return;
+    openOptionsTab("history", entry.id);
   };
 
-  const onLastRewriteKeyDown = (e: React.KeyboardEvent) => {
+  const onRewriteKeyDown = (e: React.KeyboardEvent, entry: HistoryEntry) => {
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
-      openLastRewrite();
+      openRewrite(entry);
     }
   };
 
-  const copyLastRewrite = (e: React.SyntheticEvent) => {
+  const copyRewrite = (e: React.SyntheticEvent, entry: HistoryEntry) => {
     e.stopPropagation();
-    if (!lastRewrite) return;
+    if (!entry.id) return;
+    const id = entry.id;
     navigator.clipboard
-      .writeText(lastRewrite.rewrittenText)
+      .writeText(entry.rewrittenText)
       .then(() => {
-        setCopied(true);
-        window.setTimeout(() => setCopied(false), 1500);
+        setCopiedId(id);
+        window.setTimeout(
+          () => setCopiedId((current) => (current === id ? null : current)),
+          1500,
+        );
       })
       .catch(() => {
         // Clipboard unavailable — stay silent, the modal has its own copy.
       });
   };
 
-  const onCopyKeyDown = (e: React.KeyboardEvent) => {
+  const onCopyKeyDown = (e: React.KeyboardEvent, entry: HistoryEntry) => {
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
       e.stopPropagation();
-      copyLastRewrite(e);
+      copyRewrite(e, entry);
     }
   };
 
@@ -254,27 +241,9 @@ export default function Popup() {
     write({ hideDot: checked });
   };
 
-  const setSpellMode = (mode: SpellcheckMode) => {
-    setSpellcheckMode(mode);
-    write({ autoSpellcheckMode: mode });
-  };
-
-  const onSegmentGroupKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    const current = SPELLCHECK_MODES.findIndex((m) => m.value === spellcheckMode);
-    const delta =
-      e.key === "ArrowRight" || e.key === "ArrowDown"
-        ? 1
-        : e.key === "ArrowLeft" || e.key === "ArrowUp"
-          ? -1
-          : 0;
-    if (delta === 0) return;
-    e.preventDefault();
-    const next =
-      (current + delta + SPELLCHECK_MODES.length) % SPELLCHECK_MODES.length;
-    const value = SPELLCHECK_MODES[next].value;
-    setSpellMode(value);
-    const radios = e.currentTarget.querySelectorAll<HTMLElement>('[role="radio"]');
-    radios[next]?.focus();
+  const toggleLiveProofread = (checked: boolean) => {
+    setLiveProofread(checked);
+    write({ liveProofread: checked });
   };
 
   const providerLabel = PROVIDER_MAP[provider].label;
@@ -429,52 +398,67 @@ export default function Popup() {
         </div>
       </div>
 
-      {/* Last rewrite — fixed-size card, copy inline, opens the history modal */}
+      {/* Last rewrites — fixed-size cards, copy inline, open the history modal */}
       <div className="flex flex-col gap-2 min-w-0">
-        <span className={ROW_LABEL}>Last rewrite</span>
-        {lastRewrite === undefined ? (
+        <span className={ROW_LABEL}>Last rewrites</span>
+        {lastRewrites === undefined ? (
           <div className="rounded-3xl border border-border/20 p-4">
             <span className="text-[11px] text-muted-foreground/50 animate-pulse">
               Loading&hellip;
             </span>
           </div>
-        ) : lastRewrite === null ? (
+        ) : lastRewrites === null ? (
           <p className="text-[11px] text-muted-foreground/60 leading-relaxed px-1">
-            No rewrites yet — your latest result will land here.
+            No rewrites yet — your latest results will land here.
           </p>
         ) : (
-          <div className="rounded-3xl border border-border/20 p-0.5 overflow-hidden">
-            <div
-              role="button"
-              tabIndex={0}
-              onClick={openLastRewrite}
-              onKeyDown={onLastRewriteKeyDown}
-              title="Open in Rewrite History"
-              className="flex items-center gap-2 rounded-3xl bg-background px-4 py-3 w-full overflow-hidden cursor-default transition-colors hover:bg-background/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20"
-            >
-              <span className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2 flex-1">
-                {lastRewrite.rewrittenText}
-              </span>
-              <span
-                role="button"
-                tabIndex={0}
-                aria-label={copied ? "Copied" : "Copy rewrite"}
-                title={copied ? "Copied" : "Copy rewrite"}
-                onClick={copyLastRewrite}
-                onKeyDown={onCopyKeyDown}
-                className="shrink-0 rounded-md p-1 cursor-default transition-colors hover:bg-foreground/[0.08] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
-              >
-                <HugeiconsIcon
-                  icon={copied ? CheckmarkCircle01Icon : Copy01Icon}
+          <div className="rounded-3xl border border-border/20 p-0.5 overflow-hidden flex flex-col gap-0.5">
+            {lastRewrites.map((entry, i) => {
+              const isOnly = lastRewrites.length === 1;
+              const isLast = i === lastRewrites.length - 1;
+              const copied = !!entry.id && copiedId === entry.id;
+              return (
+                <div
+                  key={entry.id ?? i}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => openRewrite(entry)}
+                  onKeyDown={(e) => onRewriteKeyDown(e, entry)}
+                  title="Open in Rewrite History"
                   className={cn(
-                    "size-3.5",
-                    copied
-                      ? "text-emerald-500"
-                      : "text-muted-foreground/70",
+                    "flex items-center gap-2 bg-background px-4 py-3 w-full overflow-hidden cursor-default transition-colors hover:bg-background/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20",
+                    isOnly
+                      ? "rounded-3xl"
+                      : isLast
+                        ? "rounded-b-3xl rounded-t-md border-t border-border/10"
+                        : "rounded-t-3xl rounded-b-md",
                   )}
-                />
-              </span>
-            </div>
+                >
+                  <span className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2 flex-1">
+                    {entry.rewrittenText}
+                  </span>
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    aria-label={copied ? "Copied" : "Copy rewrite"}
+                    title={copied ? "Copied" : "Copy rewrite"}
+                    onClick={(e) => copyRewrite(e, entry)}
+                    onKeyDown={(e) => onCopyKeyDown(e, entry)}
+                    className="shrink-0 rounded-md p-1 cursor-default transition-colors hover:bg-foreground/[0.08] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+                  >
+                    <HugeiconsIcon
+                      icon={copied ? CheckmarkCircle01Icon : Copy01Icon}
+                      className={cn(
+                        "size-3.5",
+                        copied
+                          ? "text-emerald-500"
+                          : "text-muted-foreground/70",
+                      )}
+                    />
+                  </span>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
@@ -505,56 +489,20 @@ export default function Popup() {
         />
       </div>
 
-      {/* Automatic Spellcheck — same section as the Customizations tab */}
+      {/* Live Proofreading — same section as the Customizations tab */}
       <div className="flex flex-col gap-2">
-        <span className={ROW_LABEL}>Automatic Spellcheck</span>
-        <div
-          role="radiogroup"
-          aria-label="Long text auto-check mode"
-          onKeyDown={onSegmentGroupKeyDown}
-        >
-          <TagGroup className="flex-nowrap">
-            {SPELLCHECK_MODES.map((mode) => {
-              const active = mode.value === spellcheckMode;
-              return (
-                <Tag
-                  key={mode.value}
-                  variant="interactive"
-                  role="radio"
-                  aria-checked={active}
-                  tabIndex={active ? 0 : -1}
-                  aria-label={mode.label}
-                  onClick={() => setSpellMode(mode.value)}
-                  style={active ? { borderRadius: 36 } : undefined}
-                  className={cn(
-                    "min-w-0 flex-1 justify-start px-2 py-2 text-[10px] focus-visible:ring-2 focus-visible:ring-ring/30 transition-[background-color,border-radius,flex-grow] duration-500 ease-[cubic-bezier(0.34,1.56,0.64,1)]",
-                    active && "flex-[1.5]",
-                  )}
-                >
-                  <Ripple />
-                  <span
-                    className={cn(
-                      "relative z-10 pointer-events-none size-3 rounded-full flex items-center justify-center shrink-0 transition-all duration-200",
-                      active
-                        ? "border-2 border-foreground"
-                        : "border-2 border-muted-foreground/30",
-                    )}
-                  >
-                    <span
-                      className={cn(
-                        "rounded-full bg-foreground transition-all duration-200",
-                        active
-                          ? "size-1.5 scale-100 opacity-100"
-                          : "size-0 scale-0 opacity-0",
-                      )}
-                    />
-                  </span>
-                  <span className="relative z-10 min-w-0 truncate">{mode.label}</span>
-                </Tag>
-              );
-            })}
-          </TagGroup>
-        </div>
+        <span className={ROW_LABEL}>Live Proofreading</span>
+        <SwitchCardGroup
+          items={[
+            {
+              id: "live-proofread",
+              label: "Underline errors while typing",
+              description: "Local Harper check, hover or click a red or blue underline to fix",
+              checked: liveProofread,
+              onCheckedChange: toggleLiveProofread,
+            },
+          ]}
+        />
       </div>
 
       {/* Footer */}

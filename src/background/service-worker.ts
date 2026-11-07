@@ -9,7 +9,7 @@ import { ALL_PROVIDER_IDS, ALL_STORAGE_KEYS, getProviderLabel, isProviderConfigu
 import type { ProviderId } from '../providers';
 import { ActionRegistry } from '../content/actions';
 import type { PromptPayload } from '../content/actions';
-import { checkGrammarAndSpelling, getLinter } from './grammar-worker';
+import { lintForIssues, getLinter, syncProofreadState } from './grammar-worker';
 
 import { addHistoryEntry, saveActionConfig } from '../content/storage';
 import type { CustomAction } from '../content/storage';
@@ -581,11 +581,11 @@ chrome.runtime.onMessage.addListener((message: Record<string, unknown>, sender: 
     return true;
   }
 
-  if (message.type === 'CHECK_GRAMMAR') {
+  if (message.type === 'LINT_TEXT') {
     const text = message.text as string;
-    checkGrammarAndSpelling(text)
-      .then((corrected) => {
-        sendResponse({ success: true, text: corrected });
+    lintForIssues(text)
+      .then((issues) => {
+        sendResponse({ success: true, issues });
       })
       .catch((err) => {
         console.error("Grammar check failed in background:", err);
@@ -599,6 +599,16 @@ chrome.runtime.onMessage.addListener((message: Record<string, unknown>, sender: 
       .then(() => sendResponse({ success: true }))
       .catch((err) => {
         console.error("Warmup linter failed in background:", err);
+        sendResponse({ success: false, error: err instanceof Error ? err.message : String(err) });
+      });
+    return true;
+  }
+
+  // Mirror newly persisted dictionary/ignore state into the background linter
+  if (message.type === 'PROOFREAD_STATE_ADDED') {
+    syncProofreadState({ word: message.word as string | undefined, hash: message.hash as string | undefined })
+      .then(() => sendResponse({ success: true }))
+      .catch((err) => {
         sendResponse({ success: false, error: err instanceof Error ? err.message : String(err) });
       });
     return true;

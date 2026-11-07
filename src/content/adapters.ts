@@ -281,9 +281,14 @@ export class NativeInputAdapter implements EditableAdapter {
     this.element.focus();
     this.element.setSelectionRange(s, e);
 
-    // Try execCommand first (mimics user typing, preserves undo/redo)
+    // Try execCommand first (mimics user typing, preserves undo/redo).
+    // insertText with "" does not delete in Chrome — removals use "delete".
     try {
-      if (document.execCommand("insertText", false, replacement)) {
+      const done =
+        replacement.length > 0
+          ? document.execCommand("insertText", false, replacement)
+          : document.execCommand("delete");
+      if (done && this.element.value === newValue) {
         this.element.dispatchEvent(new Event("change", { bubbles: true }));
         return true;
       }

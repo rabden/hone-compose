@@ -1,4 +1,10 @@
 import { LocalLinter, Dialect, createBinaryModuleFromUrl } from "harper.js";
+import { runHarperLint, primeLinterState } from "./harper-lint";
+import {
+  addDictionaryWord,
+  addIgnoredLintHash,
+} from "./proofread-dictionary";
+import type { ProofreadIssue } from "./proofread-issues";
 
 // ponytail: try local WASM first (instant, stays in tab memory).
 // If page CSP blocks WebAssembly, flip to background service worker fallback.
@@ -22,6 +28,7 @@ async function getLocalLinter(): Promise<LocalLinter> {
       dialect: Dialect.American,
     });
     await linter.setup();
+    await primeLinterState(linter);
     linterInstance = linter;
     return linter;
   })();
@@ -49,14 +56,14 @@ async function isEnglishText(text: string): Promise<boolean> {
   });
 }
 
-function checkViaBackground(text: string): Promise<string> {
+function lintViaBackground(text: string): Promise<ProofreadIssue[]> {
   return new Promise((resolve) => {
-    chrome.runtime.sendMessage({ type: "CHECK_GRAMMAR", text }, (response) => {
-      if (chrome.runtime.lastError) {
-        resolve(text);
+    chrome.runtime.sendMessage({ type: "LINT_TEXT", text }, (response) => {
+      if (chrome.runtime.lastError || !response?.success) {
+        resolve([]);
         return;
       }
-      resolve(response?.success ? response.text : text);
+      resolve((response.issues ?? []) as ProofreadIssue[]);
     });
   });
 }
@@ -86,60 +93,20 @@ export async function getLinter(): Promise<unknown> {
   }
 }
 
-export async function checkGrammarAndSpelling(text: string): Promise<string> {
-  if (!text || !text.trim()) return text;
-  if (useBackground) return checkViaBackground(text);
+/**
+ * Lint text and return positioned issues (with fixes) instead of corrected
+ * text, so live proofreading can underline exactly what Harper flagged.
+ */
+export async function lintForIssues(text: string): Promise<ProofreadIssue[]> {
+  if (!text || !text.trim()) return [];
+  if (useBackground) return lintViaBackground(text);
 
   try {
     const isEnglish = await isEnglishText(text);
-    if (!isEnglish) return text;
+    if (!isEnglish) return [];
 
     const linter = await getLocalLinter();
-    const lints = await linter.lint(text);
-
-    if (!lints || lints.length === 0) return text;
-
-    const words = text.split(/\s+/).filter(w => w.length > 1);
-    if (words.length >= 3) {
-      let spellingErrors = 0;
-      for (const lint of lints) {
-        const kind = lint.lint_kind().toLowerCase();
-        const msg = lint.message().toLowerCase();
-        if (
-          kind.includes("spelling") ||
-          msg.includes("typo") ||
-          msg.includes("did you mean")
-        ) {
-          spellingErrors++;
-        }
-      }
-
-      if (spellingErrors / words.length > 0.35) return text;
-    }
-
-    const sortedLints = [...lints].sort((a, b) => b.span().start - a.span().start);
-
-    let corrected = text;
-    for (const lint of sortedLints) {
-      const suggestions = lint.suggestions();
-      if (suggestions && suggestions.length > 0) {
-        const replacement = suggestions[0].get_replacement_text();
-        const span = lint.span();
-
-        if (
-          span.start >= 0 &&
-          span.end <= text.length &&
-          span.start <= span.end
-        ) {
-          corrected =
-            corrected.slice(0, span.start) +
-            replacement +
-            corrected.slice(span.end);
-        }
-      }
-    }
-
-    return corrected;
+    return await runHarperLint(linter, text);
   } catch (error) {
     // CSP or WASM compilation blocked — switch to background permanently for this tab
     if (
@@ -147,9 +114,47 @@ export async function checkGrammarAndSpelling(text: string): Promise<string> {
       (error instanceof Error && error.message.includes("WebAssembly"))
     ) {
       switchToBackground();
-      return checkViaBackground(text);
+      return lintViaBackground(text);
     }
-    console.error("Local grammar check failed, returning original text.", error);
-    return text;
+    console.error("Local grammar check failed.", error);
+    return [];
   }
+}
+
+/** Mirror newly persisted state into the background linter. Awaited so a
+ *  following LINT_TEXT never races the sync. */
+async function notifyBackgroundStateAdded(added: {
+  word?: string;
+  hash?: string;
+}): Promise<void> {
+  try {
+    await chrome.runtime.sendMessage({ type: "PROOFREAD_STATE_ADDED", ...added });
+  } catch {
+    // Extension context gone — storage persistence already happened.
+  }
+}
+
+/**
+ * Add a word to the persistent personal dictionary. Persists to storage,
+ * imports it into the local linter when active, and syncs the background.
+ */
+export async function proofreadAddWord(word: string): Promise<void> {
+  const trimmed = word.trim();
+  if (!trimmed) return;
+  await addDictionaryWord(trimmed);
+  if (!useBackground && linterInstance) {
+    try {
+      await linterInstance.importWords([trimmed]);
+    } catch {
+      // Best effort — the word still persists and primes future linters.
+    }
+  }
+  await notifyBackgroundStateAdded({ word: trimmed });
+}
+
+/** Persistently ignore a lint by its Harper context hash. */
+export async function proofreadIgnoreLint(contextHash: string): Promise<void> {
+  if (!contextHash) return;
+  await addIgnoredLintHash(contextHash);
+  await notifyBackgroundStateAdded({ hash: contextHash });
 }

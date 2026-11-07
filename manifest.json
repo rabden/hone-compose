@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "Hone compose",
-  "version": "0.1.0",
+  "version": "0.0.1",
   "description": "Hone every field you type in. AI writing tools for inputs and textareas across the web.",
-  "permissions": ["storage"],
+  "permissions": ["storage", "clipboardWrite"],
   "host_permissions": ["<all_urls>"],
   "content_security_policy": {
     "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self';"
@@ -19,6 +19,36 @@
       "run_at": "document_end"
     }
   ],
+  "commands": {
+    "toggle-menu": {
+      "suggested_key": {
+        "default": "Alt+Shift+D",
+        "mac": "Command+Shift+D"
+      },
+      "description": "Toggle AI menu"
+    },
+    "improve-writing": {
+      "suggested_key": {
+        "default": "Alt+Shift+I",
+        "mac": "Command+Shift+I"
+      },
+      "description": "Improve writing"
+    },
+    "fix-spelling": {
+      "suggested_key": {
+        "default": "Alt+Shift+G",
+        "mac": "Command+Shift+G"
+      },
+      "description": "Fix spelling & grammar"
+    },
+    "paraphrase": {
+      "suggested_key": {
+        "default": "Alt+Shift+P",
+        "mac": "Command+Shift+P"
+      },
+      "description": "Paraphrase text"
+    }
+  },
   "icons": {
     "16": "icon16.png",
     "32": "icon32.png",
@@ -40,7 +70,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["main-world-bridge.js"],
+      "resources": ["main-world-bridge.js", "harper_wasm_bg.wasm"],
       "matches": ["<all_urls>"]
     }
   ]

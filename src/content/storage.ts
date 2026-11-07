@@ -28,7 +28,6 @@ export interface CustomAction {
   replaceMode: 'replace' | 'preview'
   enabled: boolean
   createdAt: number
-  isLocal?: boolean
   // Marketplace-specific fields
   sourceId?: string
   version?: string
@@ -36,8 +35,6 @@ export interface CustomAction {
   installedAt?: number
   tags?: string[]
 }
-
-export type AutoSpellcheckMode = 'disabled' | 'browser_only' | 'always';
 
 export interface Config {
   // Shortcuts
@@ -57,8 +54,8 @@ export interface Config {
   // UI
   hideDot?: boolean;
   previewInCard?: boolean;
-  autoSpellcheckMode?: AutoSpellcheckMode;
-  autoSpellcheckWordThreshold?: number;
+  /** Live Harper underlines + hover suggestion cards while typing. */
+  liveProofread?: boolean;
 
   // History
   historyLimit?: number;
@@ -88,8 +85,7 @@ const CONFIG_KEYS: (keyof Config)[] = [
   'dropdownShortcutMeta',
   'hideDot',
   'previewInCard',
-  'autoSpellcheckMode',
-  'autoSpellcheckWordThreshold',
+  'liveProofread',
   'historyLimit',
   'googleAiStudioKey',
   'googleAiStudioModel',

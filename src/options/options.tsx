@@ -34,7 +34,6 @@ import { Ripple } from "@/components/ui/ripple";
 import { Button } from "@/components/ui/material-design-3-button";
 
 import type { CustomAction } from "../content/storage";
-import type { AutoSpellcheckMode } from "../content/storage";
 import {
   loadCustomActions,
   loadAllActionConfigs,
@@ -188,10 +187,7 @@ export default function Options() {
   const [hideDot, setHideDot] = useState(false);
   const [previewInCard, setPreviewInCard] = useState(true);
   const [enableProviderFallback, setEnableProviderFallback] = useState(true);
-  const [autoSpellcheckMode, setAutoSpellcheckMode] =
-    useState<AutoSpellcheckMode>("browser_only");
-  const [autoSpellcheckWordThreshold, setAutoSpellcheckWordThreshold] =
-    useState(20);
+  const [liveProofread, setLiveProofread] = useState(true);
 
   // History limit
   const [historyLimit, setHistoryLimit] = useState(1000);
@@ -273,8 +269,7 @@ export default function Options() {
         "hideDot",
         "previewInCard",
         "enableProviderFallback",
-        "autoSpellcheckMode",
-        "autoSpellcheckWordThreshold",
+        "liveProofread",
         "historyLimit",
         "history",
       ])
@@ -328,18 +323,7 @@ export default function Options() {
         setHideDot(!!res.hideDot);
         setPreviewInCard(res.previewInCard !== undefined ? !!res.previewInCard : true);
         setEnableProviderFallback(res.enableProviderFallback !== false);
-        setAutoSpellcheckMode(
-          res.autoSpellcheckMode === "disabled" ||
-          res.autoSpellcheckMode === "browser_only" ||
-          res.autoSpellcheckMode === "always"
-            ? (res.autoSpellcheckMode as AutoSpellcheckMode)
-            : "browser_only",
-        );
-        setAutoSpellcheckWordThreshold(
-          typeof res.autoSpellcheckWordThreshold === "number"
-            ? Math.min(50, Math.max(10, Math.round(res.autoSpellcheckWordThreshold)))
-            : 20,
-        );
+        setLiveProofread(res.liveProofread !== undefined ? !!res.liveProofread : true);
 
         setHistoryLimit(
           typeof res.historyLimit === "number"
@@ -467,8 +451,7 @@ export default function Options() {
         hideDot,
         previewInCard,
         enableProviderFallback,
-        autoSpellcheckMode,
-        autoSpellcheckWordThreshold,
+        liveProofread,
         historyLimit,
       })
       .catch(console.error);
@@ -487,8 +470,7 @@ export default function Options() {
     hideDot,
     previewInCard,
     enableProviderFallback,
-    autoSpellcheckMode,
-    autoSpellcheckWordThreshold,
+    liveProofread,
     historyLimit,
   ]);
 
@@ -813,10 +795,8 @@ export default function Options() {
                     setPreviewInCard={setPreviewInCard}
                     enableProviderFallback={enableProviderFallback}
                     setEnableProviderFallback={setEnableProviderFallback}
-                    autoSpellcheckMode={autoSpellcheckMode}
-                    setAutoSpellcheckMode={setAutoSpellcheckMode}
-                    autoSpellcheckWordThreshold={autoSpellcheckWordThreshold}
-                    setAutoSpellcheckWordThreshold={setAutoSpellcheckWordThreshold}
+                    liveProofread={liveProofread}
+                    setLiveProofread={setLiveProofread}
                     historyLimit={historyLimit}
                     setHistoryLimit={setHistoryLimit}
                   />

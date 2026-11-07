@@ -332,3 +332,22 @@
     background: color-mix(in srgb, var(--border) 90%, transparent);
     border-width: 1px;
 }
+
+/* ── Live proofreading squiggles (native input/textarea overlay strips).
+      Contenteditable underlines are ::highlight() rules injected into the
+      page document by live-proofread.ts; these strips are for native fields
+      where no DOM ranges exist. ── */
+.hone-squiggle {
+    pointer-events: none;
+    background-repeat: repeat-x;
+    background-position: bottom left;
+    background-size: 6px 3px;
+}
+
+.hone-squiggle--spelling {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='3'%3E%3Cpath d='M0 2.25 Q1.5 0.25 3 2.25 T6 2.25' fill='none' stroke='%23dc2626' stroke-width='1' stroke-linecap='round'/%3E%3C/svg%3E");
+}
+
+.hone-squiggle--grammar {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='3'%3E%3Cpath d='M0 2.25 Q1.5 0.25 3 2.25 T6 2.25' fill='none' stroke='%232563eb' stroke-width='1' stroke-linecap='round'/%3E%3C/svg%3E");
+}

@@ -1,7 +1,7 @@
 {
   "name": "hone",
   "private": false,
-  "version": "0.1.0",
+  "version": "0.0.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -10,7 +10,8 @@
     "build:content": "ENTRY=content vite build",
     "build:bridge": "ENTRY=bridge vite build",
     "build:copy-wasm": "cp node_modules/harper.js/dist/harper_wasm_bg.wasm dist/harper_wasm_bg.wasm",
-    "build": "tsc -b && npm run build:pages && npm run build:background && npm run build:content && npm run build:bridge && npm run build:copy-wasm",
+    "build:copy-manifest": "cp manifest.json dist/manifest.json",
+    "build": "tsc -b && npm run build:pages && npm run build:background && npm run build:content && npm run build:bridge && npm run build:copy-wasm && npm run build:copy-manifest",
     "lint": "eslint .",
     "test": "node --test \"tests/**/*.test.ts\"",
     "preview": "vite preview"
@@ -37,11 +38,9 @@
     "ai": "^7.0.37",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "dictionary-en": "^4.0.0",
     "harper.js": "^2.0.0",
     "lucide-react": "^1.16.0",
     "motion": "^12.40.0",
-    "nspell": "^2.1.5",
     "radix-ui": "^1.4.3",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",

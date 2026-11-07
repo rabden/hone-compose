@@ -21,10 +21,13 @@ import {
   shouldSuppressActivationKey,
 } from "./keyboard-guard";
 import { wordDiff, type DiffToken } from "./word-diff";
-import { checkGrammarAndSpelling } from "./grammar-worker";
-import { browserHasSpellingErrors } from "./browser-proofreader";
-import { nspellHasSpellingErrors } from "./nspell-detector";
-import type { AutoSpellcheckMode } from "./storage";
+import type { ProofreadFix, ProofreadIssue } from "./proofread-issues";
+import {
+  LiveProofreader,
+  type HoverCardState,
+} from "./live-proofread";
+import { SuggestionCard } from "./suggestion-card";
+import { getSpanClientRects } from "./span-geometry";
 import { getProviderLabel } from "../providers";
 
 interface Toast {
@@ -90,18 +93,11 @@ export default function App({
 
   // New Generalized Card & Settings states
   const [previewInCard, setPreviewInCard] = useState<boolean>(true);
-  const [autoSpellcheckMode, setAutoSpellcheckMode] =
-    useState<AutoSpellcheckMode>("browser_only");
-  const [autoSpellcheckWordThreshold, setAutoSpellcheckWordThreshold] =
-    useState(20);
+  const [liveProofread, setLiveProofread] = useState<boolean>(true);
   const [cardResultText, setCardResultText] = useState<string>("");
   const [cardDiff, setCardDiff] = useState<DiffToken[] | null>(null);
-  const [isHarperLoading, setIsHarperLoading] = useState<boolean>(false);
   const [loadingActionId, setLoadingActionId] = useState<string | null>(null);
-  const [localResultText, setLocalResultText] = useState<string>("");
-  const [localDiff, setLocalDiff] = useState<DiffToken[] | null>(null);
   const [revealMenuOverride, setRevealMenuOverride] = useState<boolean>(false);
-  const [harperHasErrors, setHarperHasErrors] = useState<boolean>(false);
   
   // Accordion expansion states (lifted to allow unified keyboard navigation)
   const [toneExpanded, setToneExpanded] = useState<boolean>(false);
@@ -145,24 +141,26 @@ export default function App({
     span: { start: number; end: number; text: string; level: string };
     fieldSnapshot: string;
   } | null>(null);
-  const grammarCheckCacheRef = useRef<Map<string, string>>(new Map());
+
+  // ── Live proofreading (Harper underlines + hover suggestion cards) ──
+  const proofreaderRef = useRef<LiveProofreader | null>(null);
+  const [proofreadIssues, setProofreadIssues] = useState<ProofreadIssue[]>([]);
+  const [hoverCard, setHoverCard] = useState<HoverCardState | null>(null);
+  const [suggestionCardPos, setSuggestionCardPos] = useState({ top: 0, left: 0 });
+  const suggestionCardRef = useRef<HTMLDivElement | null>(null);
 
   const [pendingActionOverride, setPendingActionOverride] = useState<{ actionId: string; override?: InferredSelection } | null>(null);
 
   const clearCardState = useCallback(() => {
     setCardResultText("");
     setCardDiff(null);
-    setLocalResultText("");
-    setLocalDiff(null);
     setCardActionId(null);
     cardActionIdRef.current = null;
     cardApplyTextRef.current = "";
     cardOverrideInferenceRef.current = undefined;
     cardApplyTargetRef.current = null;
-    setHarperHasErrors(false);
     setLoadingActionId(null);
     loadingActionIdRef.current = null;
-    setIsHarperLoading(false);
     setPendingActionOverride(null); // Clear grade picker when resetting card state
   }, []);
 
@@ -254,176 +252,105 @@ export default function App({
     }
   }, []);
 
-  const activeLevelText = useMemo(() => {
-    if (!inferenceOptions || !selectedInferenceLevel) return "";
-    const opt = inferenceOptions[selectedInferenceLevel] as { text?: string } | undefined;
-    return opt?.text ?? "";
-  }, [inferenceOptions, selectedInferenceLevel]);
-
+  // ── Live proofreading: underline Harper issues as the user types ──
+  // One controller per focused field; underlines on CE come from the CSS
+  // Custom Highlight API inside the controller, native fields get overlay
+  // strips rendered below, and dwelling on an issue opens a suggestion card.
   useEffect(() => {
-    let active = true;
-    const runGrammarCheck = async () => {
-      if (!isMenuOpen || !activeLevelText) return;
+    const adapter = activeContext?.adapter ?? null;
+    if (!liveProofread || !adapter || activeContext?.type !== "input") {
+      // stop() clears published state through the controller's own callbacks.
+      proofreaderRef.current?.stop();
+      proofreaderRef.current = null;
+      return;
+    }
 
-      const threshold = Math.min(50, Math.max(10, autoSpellcheckWordThreshold || 20));
-      const wordCount = activeLevelText
-        .trim()
-        .split(/\s+/)
-        .filter((w) => w.length > 0).length;
-
-      const ctx = activeContextRef.current;
-      const adapter = ctx?.adapter;
-      const activeOverride =
-        inferenceOptions && selectedInferenceLevel
-          ? (inferenceOptions[selectedInferenceLevel] as InferredSelection | undefined)
-          : undefined;
-      const activeSpan = adapter
-        ? resolveReplacementSpan(adapter, activeOverride)
-        : null;
-      const fieldSnapshot = adapter?.getText() ?? "";
-      if (fieldSnapshot && fieldSnapshot === lastAcceptedFieldTextRef.current) {
-        setIsHarperLoading(false);
-        return;
-      }
-
-      if (wordCount <= threshold) {
-        setIsHarperLoading(true);
-        try {
-          const corrected = await checkGrammarAndSpelling(activeLevelText);
-          if (!active) return;
-          if (loadingActionIdRef.current) {
-            setIsHarperLoading(false);
-            return;
-          }
-
-          const diff = wordDiff(activeLevelText, corrected);
-          const hasErrors = diff.some((t) => t.type !== "equal");
-          setHarperHasErrors(hasErrors);
-          setCardResultText(corrected);
-          cardApplyTextRef.current = corrected;
-          setCardDiff(diff);
-          setLocalResultText(corrected);
-          setLocalDiff(diff);
-          cardActionIdRef.current = "fix_spelling_local";
-          setCardActionId("fix_spelling_local");
-          cardOverrideInferenceRef.current = activeOverride;
-          cardApplyTargetRef.current = activeSpan
-            ? { ...activeSpan, fieldSnapshot }
-            : null;
-          setIsHarperLoading(false);
-        } catch (err) {
-          console.error("Failed to run Harper.js local check:", err);
-          if (active) {
-            setIsHarperLoading(false);
-          }
-        }
-        return;
-      }
-
-      if (autoSpellcheckMode === "disabled") {
-        setIsHarperLoading(false);
-        return;
-      }
-
-      setIsHarperLoading(true);
-
-      if (autoSpellcheckMode === "browser_only") {
-        const browserHasErrors = await browserHasSpellingErrors(activeLevelText);
-        if (!active || browserHasErrors === false) {
-          if (active) setIsHarperLoading(false);
-          return;
-        }
-
-        if (browserHasErrors === null) {
-          const nspellHasErrors = nspellHasSpellingErrors(activeLevelText, 500);
-          if (nspellHasErrors !== true) {
-            setIsHarperLoading(false);
-            return;
-          }
-        }
-      }
-
-      const cacheKey = activeLevelText;
-      const cachedResponse = grammarCheckCacheRef.current.get(cacheKey);
-      if (cachedResponse) {
-        const diff = wordDiff(activeLevelText, cachedResponse);
-        setCardResultText(cachedResponse);
-        cardApplyTextRef.current = cachedResponse;
-        setCardDiff(diff);
-        setLocalResultText(cachedResponse);
-        setLocalDiff(diff);
-        cardActionIdRef.current = "fix_spelling_auto";
-        setCardActionId("fix_spelling_auto");
-        cardOverrideInferenceRef.current = activeOverride;
-        cardApplyTargetRef.current = activeSpan
-          ? { ...activeSpan, fieldSnapshot }
-          : null;
-        setHarperHasErrors(diff.some((t) => t.type !== "equal"));
-        setLoadingActionId(null);
-        loadingActionIdRef.current = null;
-        if (active) setIsHarperLoading(false);
-        return;
-      }
-
-      setLoadingActionId("fix_spelling_auto");
-      loadingActionIdRef.current = "fix_spelling_auto";
-      cardActionIdRef.current = "fix_spelling_auto";
-      setCardActionId("fix_spelling_auto");
-      cardOverrideInferenceRef.current = activeOverride;
-      cardApplyTargetRef.current = activeSpan
-        ? { ...activeSpan, fieldSnapshot }
-        : null;
-      setCardResultText("");
-      cardApplyTextRef.current = "";
-      setCardDiff(null);
-
-      if (adapter && activeSpan) {
-        const requestId = ++aiRequestIdRef.current;
-
-        chrome.runtime.sendMessage(
-          { type: "PROCESS_TEXT", action: "fix_spelling", text: activeSpan.text, requestId },
-          (response: {
-            success: boolean;
-            text?: string;
-            error?: string;
-            requestId?: number;
-          }) => {
-            if (!active || requestId !== aiRequestIdRef.current) return;
-            if (loadingActionIdRef.current !== "fix_spelling_auto") return;
-
-            setLoadingActionId(null);
-            loadingActionIdRef.current = null;
-            setIsHarperLoading(false);
-
-            if (response && response.success && response.text !== undefined) {
-              grammarCheckCacheRef.current.set(cacheKey, response.text);
-
-              const diff = wordDiff(activeLevelText, response.text);
-              setCardResultText(response.text);
-              cardApplyTextRef.current = response.text;
-              setCardDiff(diff);
-              setLocalResultText(response.text);
-              setLocalDiff(diff);
-              setHarperHasErrors(diff.some((t) => t.type !== "equal"));
-            } else {
-              showToast(response?.error || "AI request failed.", "error");
-              setCardResultText(activeLevelText);
-              cardApplyTextRef.current = activeLevelText;
-              setCardDiff(null);
-            }
-          }
-        );
-      } else if (active) {
-        setIsHarperLoading(false);
-      }
-    };
-
-    void runGrammarCheck();
+    const proofreader = new LiveProofreader({
+      adapter,
+      onIssues: (issues) => setProofreadIssues(issues),
+      onHoverCard: (card) => setHoverCard(card),
+    });
+    proofreaderRef.current = proofreader;
+    proofreader.start();
 
     return () => {
-      active = false;
+      if (proofreaderRef.current === proofreader) {
+        proofreaderRef.current = null;
+      }
+      proofreader.stop();
     };
-  }, [isMenuOpen, activeLevelText, autoSpellcheckMode, autoSpellcheckWordThreshold, inferenceOptions, selectedInferenceLevel, showToast]);
+    // Identity: a fresh adapter is created per focus, which is exactly the
+    // lifecycle we want (re-focus re-checks instantly from the lint cache).
+  }, [activeContext?.adapter, activeContext?.type, liveProofread]);
+
+  // The suggestion card never competes with the menu, confirm states or AI runs.
+  useEffect(() => {
+    if (isMenuOpen || actionConfirm || isAiProcessing || !!loadingActionId) {
+      proofreaderRef.current?.closeHoverCard();
+    }
+  }, [isMenuOpen, actionConfirm, isAiProcessing, loadingActionId]);
+
+  // ── Anchor the suggestion card under the hovered issue ──
+  useEffect(() => {
+    if (!hoverCard || !suggestionCardRef.current) return;
+
+    const virtualEl: VirtualElement = {
+      getBoundingClientRect: () => hoverCard.anchor,
+    };
+
+    return autoPositionElement(virtualEl, suggestionCardRef.current, (pos) => {
+      setSuggestionCardPos({ top: pos.top, left: pos.left });
+    }, {
+      placement: "bottom-start",
+      gap: 6,
+    });
+  }, [hoverCard]);
+
+  const registerSuggestionCard = useCallback((el: HTMLElement | null) => {
+    suggestionCardRef.current = el as HTMLDivElement | null;
+    proofreaderRef.current?.setCardElement(el);
+  }, []);
+
+  const handleCardPointerEnter = useCallback(() => {
+    proofreaderRef.current?.cardPointerEntered();
+  }, []);
+
+  const handleCardPointerLeave = useCallback(() => {
+    proofreaderRef.current?.cardPointerLeft();
+  }, []);
+
+  const handleApplyProofreadFix = useCallback(
+    async (issue: ProofreadIssue, fix: ProofreadFix) => {
+      setHoverCard(null); // never leave the card stranded, whatever happens
+      const proofreader = proofreaderRef.current;
+      if (!proofreader) return;
+      const result = await proofreader.applyFix(issue, fix);
+      if (result.committed) return;
+
+      if (result.suggestClipboardPaste && fix.replacement !== "") {
+        const copied = await copyForManualPaste(fix.replacement);
+        showToast(
+          copied
+            ? "Copied to clipboard — press Ctrl+V in the field to apply."
+            : "Could not apply automatically. Copy the fix and paste manually.",
+          copied ? "success" : "error",
+        );
+      } else {
+        showToast("Could not apply fix — the field changed.", "error");
+      }
+    },
+    [showToast],
+  );
+
+  const handleIgnoreProofreadIssue = useCallback((issue: ProofreadIssue) => {
+    setHoverCard(null);
+    void proofreaderRef.current?.ignoreIssue(issue);
+  }, []);
+
+  const handleAddProofreadWord = useCallback((issue: ProofreadIssue) => {
+    setHoverCard(null);
+    void proofreaderRef.current?.addToDictionary(issue);
+  }, []);
 
   // Load config from storage
   useEffect(() => {
@@ -442,8 +369,7 @@ export default function App({
         "dropdownShortcutMeta",
         "hideDot",
         "previewInCard",
-        "autoSpellcheckMode",
-        "autoSpellcheckWordThreshold",
+        "liveProofread",
       ])) as Record<string, unknown>;
 
       if (res.shortcutKey) {
@@ -474,18 +400,7 @@ export default function App({
 
         setHideDot(!!res.hideDot);
         setPreviewInCard(res.previewInCard !== undefined ? !!res.previewInCard : true);
-        setAutoSpellcheckMode(
-          res.autoSpellcheckMode === "disabled" ||
-          res.autoSpellcheckMode === "browser_only" ||
-          res.autoSpellcheckMode === "always"
-            ? (res.autoSpellcheckMode as AutoSpellcheckMode)
-            : "browser_only",
-        );
-        setAutoSpellcheckWordThreshold(
-          typeof res.autoSpellcheckWordThreshold === "number"
-            ? Math.min(50, Math.max(10, Math.round(res.autoSpellcheckWordThreshold)))
-            : 20,
-        );
+        setLiveProofread(res.liveProofread !== undefined ? !!res.liveProofread : true);
     };
     loadConfig();
 
@@ -506,8 +421,7 @@ export default function App({
         changes.dropdownShortcutMeta ||
         changes.hideDot ||
         changes.previewInCard ||
-        changes.autoSpellcheckMode ||
-        changes.autoSpellcheckWordThreshold
+        changes.liveProofread
       ) {
         loadConfig();
       }
@@ -622,7 +536,7 @@ export default function App({
 
     await processAIResponse(
       { success: true, text: applyText },
-      cardActionIdRef.current || "fix_spelling_local",
+      cardActionIdRef.current || "improve",
       adapter,
       span,
       fieldSnapshot
@@ -637,17 +551,9 @@ export default function App({
         override: undefined,
       });
     } else {
-      setCardResultText(localResultText);
-      cardApplyTextRef.current = localResultText;
-      setCardDiff(localDiff);
-      cardActionIdRef.current = "fix_spelling_local";
-      setCardActionId("fix_spelling_local");
-      cardOverrideInferenceRef.current = undefined;
-      cardApplyTargetRef.current = null;
-      setLoadingActionId(null);
-      loadingActionIdRef.current = null;
+      clearCardState();
     }
-  }, [localResultText, localDiff]);
+  }, [clearCardState]);
 
   // ── AI action dispatcher ──
   const executeAIAction = useCallback(
@@ -683,24 +589,6 @@ export default function App({
         processingAdapterRef.current = adapter;
         setProcessingAdapter(adapter);
         processingSpanRef.current = { start: span.start, end: span.end };
-
-        if (handler?.isLocal) {
-          const runLocal = async () => {
-            let corrected = cardResultText;
-            if (!corrected || span.text !== activeLevelText) {
-              corrected = await checkGrammarAndSpelling(span.text);
-            }
-            await processAIResponse(
-              { success: true, text: corrected },
-              action,
-              adapter,
-              span,
-              fieldSnapshot
-            );
-          };
-          void runLocal();
-          return;
-        }
 
         const requestId = ++aiRequestIdRef.current;
 
@@ -746,35 +634,6 @@ export default function App({
         cardApplyTextRef.current = "";
         setCardDiff(null);
 
-        if (handler?.isLocal) {
-          const runLocal = async () => {
-            const corrected = await checkGrammarAndSpelling(span.text);
-            if (loadingActionIdRef.current !== action) return;
-            setLoadingActionId(null);
-            loadingActionIdRef.current = null;
-            const diff = wordDiff(span.text, corrected);
-            setCardResultText(corrected);
-            cardApplyTextRef.current = corrected;
-            setCardDiff(diff);
-          };
-          void runLocal();
-          return;
-        }
-
-        // Check cache for fix_spelling action
-        if (action === "fix_spelling") {
-          const cachedResponse = grammarCheckCacheRef.current.get(span.text);
-          if (cachedResponse) {
-            setLoadingActionId(null);
-            loadingActionIdRef.current = null;
-            const diff = wordDiff(span.text, cachedResponse);
-            setCardResultText(cachedResponse);
-            cardApplyTextRef.current = cachedResponse;
-            setCardDiff(diff);
-            return;
-          }
-        }
-
         const requestId = ++aiRequestIdRef.current;
         chrome.runtime.sendMessage(
           { type: "PROCESS_TEXT", action, text: span.text, requestId, extraParams },
@@ -791,11 +650,6 @@ export default function App({
             loadingActionIdRef.current = null;
 
             if (response && response.success && response.text !== undefined) {
-              // Cache fix_spelling responses
-              if (action === "fix_spelling") {
-                grammarCheckCacheRef.current.set(span.text, response.text);
-              }
-              
               setCardResultText(response.text);
               cardApplyTextRef.current = response.text;
               if (action === "fix_spelling") {
@@ -814,7 +668,7 @@ export default function App({
         );
       }
     },
-    [showToast, processAIResponse, cardResultText, activeLevelText, previewInCard],
+    [showToast, processAIResponse, previewInCard],
   );
 
   const triggerAIAction = useCallback(
@@ -867,15 +721,9 @@ export default function App({
       processingAdapterRef.current = null;
       setProcessingAdapter(null);
       processingSpanRef.current = null;
-      setLoadingActionId(null);
-      loadingActionIdRef.current = null;
-      cardActionIdRef.current = "fix_spelling_local";
-      setCardActionId("fix_spelling_local");
-      setCardResultText(localResultText);
-      cardApplyTextRef.current = localResultText;
-      setCardDiff(localDiff);
+      clearCardState();
     });
-  }, [localResultText, localDiff]);
+  }, [clearCardState]);
 
   const cancelActionConfirm = useCallback(() => {
     setActionConfirm(null);
@@ -967,7 +815,7 @@ export default function App({
             actionLabel: "cancel generation",
             override: undefined,
           });
-        } else if (cardActionIdRef.current && cardActionIdRef.current !== "fix_spelling_local") {
+        } else if (cardActionIdRef.current) {
           handleCancelCard();
         } else {
           setIsMenuOpen(false);
@@ -1018,21 +866,13 @@ export default function App({
     return () => chrome.runtime.onMessage.removeListener(handleCommand);
   }, [isMenuOpen, openAssistant]);
 
-  const hasNonLocalCardResult =
-    !!cardResultText &&
-    !!cardActionId &&
-    cardActionId !== "fix_spelling_local" &&
-    cardActionId !== "fix_spelling_auto";
+  const hasCardResult = !!cardResultText && !!cardActionId;
 
-  // Don't collapse to card-only mode for automatic grammar checking
-  // (fix_spelling_local for Harper.js, fix_spelling_auto for AI), even during loading state
+  // Card-only mode: an explicit AI action (or confirm/grade picker) owns the UI.
   const isCardOnly =
     pendingActionOverride?.actionId === "tone_reading_level" ||
     (!revealMenuOverride &&
-      cardActionId !== "fix_spelling_local" &&
-      cardActionId !== "fix_spelling_auto" &&
-      loadingActionId !== "fix_spelling_auto" &&
-      (!!actionConfirm || hasNonLocalCardResult || !!loadingActionId));
+      (!!actionConfirm || hasCardResult || !!loadingActionId));
 
   // ── Focus tracking ──
   useEffect(() => {
@@ -1069,8 +909,7 @@ export default function App({
         isCardOnly ||
         actionConfirmRef.current ||
         !!loadingActionIdRef.current ||
-        (!!cardActionIdRef.current &&
-          cardActionIdRef.current !== "fix_spelling_local");
+        !!cardActionIdRef.current;
 
       if (hasPinnedCardState && !document.hasFocus()) return;
 
@@ -1310,18 +1149,15 @@ export default function App({
 
   const canApplyCard =
     !!cardResultText &&
-    !isHarperLoading &&
     !loadingActionId &&
     (!cardDiff || cardDiff.some((token) => token.type !== "equal"));
 
-  // Harper runs quietly in the background. Only reveal the card automatically
-  // when it found local corrections, or when an explicit AI action needs it.
+  // The card only exists for explicit AI actions, confirms and the grade picker.
   const showCard =
-    harperHasErrors ||
     !!loadingActionId ||
     !!actionConfirm ||
     pendingActionOverride?.actionId === "tone_reading_level" ||
-    (!!cardActionId && cardActionId !== "fix_spelling_local" && cardActionId !== "fix_spelling_auto");
+    !!cardActionId;
 
   // ── Capture keyboard so Enter/Space never reach the field behind ──
   useEffect(() => {
@@ -1418,7 +1254,7 @@ export default function App({
 
       // If we are showing AI result in card (but menu is revealed) and user presses Escape, discard the AI result
       if (e.key === "Escape") {
-        if (cardActionIdRef.current && cardActionIdRef.current !== "fix_spelling_local") {
+        if (cardActionIdRef.current) {
           consumeKeyboardEvent(e);
           handleCancelCard();
           return;
@@ -1492,7 +1328,6 @@ export default function App({
     handleCancelCard,
     isCardOnly,
     canApplyCard,
-    isHarperLoading,
     loadingActionId,
     pendingActionOverride,
   ]);
@@ -1562,6 +1397,7 @@ export default function App({
     !isAiProcessing &&
     !actionConfirm &&
     !isMenuOpen &&
+    !hoverCard &&
     (!anchorRect || !activeContext)
   ) {
     return null;
@@ -1576,6 +1412,8 @@ export default function App({
   const showDot =
     showFieldChrome && !hideDot && activeContext!.type === "input";
   const dotSize = 16;
+
+  const proofreadElement = activeContext?.adapter?.getElement();
 
   return (
     <div
@@ -1600,6 +1438,36 @@ export default function App({
         active={highlightActive}
         onRestoreSelection={restoreEditorFocus}
       />
+
+      {/* Live proofreading: wavy underlines on native fields (contenteditable
+          underlines come from the CSS Custom Highlight API in the controller) */}
+      {liveProofread &&
+        proofreadElement &&
+        (proofreadElement instanceof HTMLInputElement ||
+          proofreadElement instanceof HTMLTextAreaElement) &&
+        activeContext?.adapter &&
+        !isAiProcessing && (
+          <NativeProofreadUnderlines
+            adapter={activeContext.adapter}
+            issues={proofreadIssues}
+          />
+        )}
+
+      {/* QuillBot-style hover card anchored to the underlined issue */}
+      {hoverCard && (
+        <SuggestionCard
+          issue={hoverCard.issue}
+          flagged={hoverCard.flagged}
+          top={suggestionCardPos.top}
+          left={suggestionCardPos.left}
+          cardRef={registerSuggestionCard}
+          onPointerEnterCard={handleCardPointerEnter}
+          onPointerLeaveCard={handleCardPointerLeave}
+          onApplyFix={(fix) => void handleApplyProofreadFix(hoverCard.issue, fix)}
+          onIgnore={() => handleIgnoreProofreadIssue(hoverCard.issue)}
+          onAddToDictionary={() => handleAddProofreadWord(hoverCard.issue)}
+        />
+      )}
 
       {showDot && (() => {
         const el = activeContext!.adapter?.getElement();
@@ -1641,7 +1509,7 @@ export default function App({
           getInferenceOverride={getInferenceOverride}
           cardResultText={cardResultText}
           cardDiff={cardDiff}
-          isCardLoading={isHarperLoading || !!loadingActionId}
+          isCardLoading={!!loadingActionId}
           loadingActionId={loadingActionId}
           cardActionId={cardActionId}
           onApplyCard={handleApplyCard}
@@ -1665,4 +1533,115 @@ export default function App({
       {toast && <OverlayToast message={toast.message} type={toast.type} />}
     </div>
   );
+}
+
+// ── Wavy underlines for input/textarea fields (overlay strips) ──
+// Contenteditable fields are underlined via the CSS Custom Highlight API
+// inside LiveProofreader; native fields have no DOM ranges, so thin wavy
+// strips are measured with the span-geometry mirror and drawn here.
+function NativeProofreadUnderlines({
+  adapter,
+  issues,
+}: {
+  adapter: EditableAdapter;
+  issues: ProofreadIssue[];
+}) {
+  const [strips, setStrips] = useState<
+    { key: string; kind: ProofreadIssue["kind"]; rects: DOMRect[] }[]
+  >([]);
+
+  useEffect(() => {
+    if (issues.length === 0) return;
+
+    let raf = 0;
+    let last: { key: string; kind: ProofreadIssue["kind"]; rects: DOMRect[] }[] = [];
+
+    const measure = () => {
+      raf = 0;
+      const next: typeof last = [];
+      for (let i = 0; i < issues.length; i++) {
+        let rects: DOMRect[];
+        try {
+          rects = getSpanClientRects(adapter, issues[i].start, issues[i].end);
+        } catch {
+          rects = [];
+        }
+        if (rects.length > 0) next.push({ key: `${i}`, kind: issues[i].kind, rects });
+      }
+      if (!rectGroupsEqual(last, next)) {
+        last = next;
+        setStrips(next);
+      }
+    };
+
+    const schedule = () => {
+      if (!raf) raf = requestAnimationFrame(measure);
+    };
+    schedule();
+    window.addEventListener("scroll", schedule, { passive: true, capture: true });
+    window.addEventListener("resize", schedule, { passive: true });
+    const el = adapter.getElement();
+    el.addEventListener("scroll", schedule, { passive: true });
+    el.addEventListener("input", schedule);
+
+    return () => {
+      if (raf) cancelAnimationFrame(raf);
+      window.removeEventListener("scroll", schedule, true);
+      window.removeEventListener("resize", schedule);
+      el.removeEventListener("scroll", schedule);
+      el.removeEventListener("input", schedule);
+    };
+  }, [adapter, issues]);
+
+  if (strips.length === 0) return null;
+
+  return (
+    <>
+      {strips.map((strip) =>
+        strip.rects.map((rect, i) => (
+          <div
+            key={`squiggle-${strip.key}-${i}`}
+            aria-hidden
+            className={
+              strip.kind === "spelling"
+                ? "hone-squiggle hone-squiggle--spelling"
+                : "hone-squiggle hone-squiggle--grammar"
+            }
+            style={{
+              position: "fixed",
+              left: rect.left,
+              top: rect.bottom - 2,
+              width: Math.max(rect.width, 4),
+              height: 3,
+              zIndex: 2147483644,
+            }}
+          />
+        )),
+      )}
+    </>
+  );
+}
+
+function rectGroupsEqual(
+  a: { key: string; rects: DOMRect[] }[],
+  b: { key: string; rects: DOMRect[] }[],
+): boolean {
+  if (a.length !== b.length) return false;
+  for (let g = 0; g < a.length; g++) {
+    if (a[g].key !== b[g].key || a[g].rects.length !== b[g].rects.length) {
+      return false;
+    }
+    for (let i = 0; i < a[g].rects.length; i++) {
+      const ra = a[g].rects[i];
+      const rb = b[g].rects[i];
+      if (
+        Math.abs(ra.left - rb.left) > 1 ||
+        Math.abs(ra.top - rb.top) > 1 ||
+        Math.abs(ra.width - rb.width) > 1
+      ) {
+        return false;
+      }
+    }
+  }
+  return true;
 }
