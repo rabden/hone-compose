@@ -85,6 +85,8 @@ jobs:
             echo "Release exists — replacing assets."
             gh release upload "$GITHUB_REF_NAME" \
               "hone-v${VERSION}.zip" "hone-latest.zip" SHA256SUMS.txt --clobber
+            # Re-uploading onto a draft release would leave it unpublished.
+            gh release edit "$GITHUB_REF_NAME" --draft=false
           else
             gh release create "$GITHUB_REF_NAME" \
               "hone-v${VERSION}.zip" "hone-latest.zip" SHA256SUMS.txt \
