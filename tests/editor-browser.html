@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Hone editor regression fixture</title>
+  <style>
+    body { font: 16px/1.5 system-ui; margin: 32px; color: #222; }
+    textarea, input, [contenteditable] { display: block; width: 640px; max-width: 90vw; min-height: 140px; border: 1px solid #888; padding: 14px; margin: 12px 0 24px; font: 18px/1.5 system-ui; }
+    input { min-height: 0; }
+    [contenteditable] p { margin: 0; }
+  </style>
+</head>
+<body>
+  <h1>Hone editor regression fixture</h1>
+  <p>Real controller, suggestion card, adapters and Harper running in a worker; extension messaging/storage are simulated.</p>
+  <label for="native">Textarea</label><textarea id="native" spellcheck="false"></textarea>
+  <label for="rich">Contenteditable</label><div id="rich" contenteditable="true" role="textbox" aria-label="Rich editor" spellcheck="false"></div>
+  <label for="single">Single-line input</label><input id="single" spellcheck="false">
+  <div id="react-field"></div>
+  <pre id="status">Loading fixture</pre>
+  <script type="module" src="./editor-browser.tsx"></script>
+</body>
+</html>

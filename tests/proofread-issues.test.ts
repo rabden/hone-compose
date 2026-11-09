@@ -8,6 +8,7 @@ import { test } from "node:test";
 import { strict as assert } from "node:assert";
 import {
   harperLintsToIssues,
+  hasConsecutiveSpellingErrors,
   ignoreKey,
   looksLikeNonEnglish,
   plainMessage,
@@ -178,8 +179,8 @@ test("ignore keys separate spelling words from grammar phrases", () => {
 });
 
 test("non-English text trips the spelling density guard", () => {
-  const text = "dsf sdf sdf sdfsdf sdf";
-  const issues = Array.from({ length: 5 }, (_, i) =>
+  const text = "dsf sdf sdf sdfsdf sdf dsfs";
+  const issues = Array.from({ length: 6 }, (_, i) =>
     lint({
       span: { start: i * 4, end: i * 4 + 3 },
       lintKind: "Spelling",
@@ -199,4 +200,75 @@ test("non-English text trips the spelling density guard", () => {
     ),
     false,
   );
+});
+
+test("typo-heavy English keeps its underlines; short samples never trip the guard", () => {
+  // Completing a third typo in seven words must not wipe every issue.
+  const text = "i dont hold any power withiin this househodl ";
+  const flagged = ["dont", "withiin", "househodl"].map((word) =>
+    lint({
+      span: { start: text.indexOf(word), end: text.indexOf(word) + word.length },
+      lintKind: "Spelling",
+    }),
+  );
+  assert.equal(looksLikeNonEnglish(harperLintsToIssues(flagged, text), text), false);
+
+  // Every word flagged, but too few words to conclude the text is non-English.
+  const short = "teh bron jumpped";
+  const all = harperLintsToIssues(
+    short.split(" ").map((word) =>
+      lint({
+        span: { start: short.indexOf(word), end: short.indexOf(word) + word.length },
+        lintKind: "Spelling",
+      }),
+    ),
+    short,
+  );
+  assert.equal(looksLikeNonEnglish(all, short), false);
+});
+
+function spellingForWords(text: string, words: string[]) {
+  return harperLintsToIssues(
+    words.map((w) =>
+      lint({
+        span: { start: text.indexOf(w), end: text.indexOf(w) + w.length },
+        lintKind: "Spelling",
+      }),
+    ),
+    text,
+  );
+}
+
+test("five consecutive misspelled words suppress; English typo runs never do", () => {
+  const roman = "bohot shukriya meherbani aap ki";
+  assert.equal(
+    hasConsecutiveSpellingErrors(spellingForWords(roman, ["bohot", "shukriya", "meherbani", "aap", "ki"]), roman),
+    true,
+  );
+
+  const four = "bohot shukriya meherbani aap";
+  assert.equal(
+    hasConsecutiveSpellingErrors(spellingForWords(four, ["bohot", "shukriya", "meherbani", "aap"]), four),
+    false,
+  );
+
+  // Correct function words break the run, as in real English prose.
+  const english = "teh quick bron fox jumpped over teh lazy dg";
+  assert.equal(
+    hasConsecutiveSpellingErrors(spellingForWords(english, ["teh", "bron", "jumpped", "dg"]), english),
+    false,
+  );
+
+  const isolated = "i dont hold any power withiin this househodl";
+  assert.equal(
+    hasConsecutiveSpellingErrors(spellingForWords(isolated, ["dont", "withiin", "househodl"]), isolated),
+    false,
+  );
+});
+
+test("consecutive-run detection counts a word flagged through attached punctuation", () => {
+  const text = "wo worda wordb wordc wordd worde, next";
+  const issues = spellingForWords(text, ["worda", "wordb", "wordc", "wordd", "worde"]);
+  assert.equal(hasConsecutiveSpellingErrors(issues, text), true);
+  assert.equal(hasConsecutiveSpellingErrors(issues, text, 6), false);
 });

@@ -3,16 +3,6 @@ import App from './app';
 import cssText from './content.css?inline';
 import { getLinter } from './grammar-worker';
 
-// Inject Main World bridge for React/Slate access
-try {
-  const script = document.createElement("script");
-  script.src = chrome.runtime.getURL("main-world-bridge.js");
-  (document.head || document.documentElement).appendChild(script);
-  script.onload = () => script.remove();
-} catch (e) {
-  console.error("Hone: Failed to inject bridge script", e);
-}
-
 function mount() {
   const EXISTING_ID = 'ai-assistant-root-container';
   if (document.getElementById(EXISTING_ID)) return;

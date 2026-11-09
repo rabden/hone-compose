@@ -88,7 +88,7 @@ function initialTabFromUrl(): OptionsTab {
   return "dashboard";
 }
 
-function SidebarWhitespaceTrigger() {  const { state, setOpen } = useSidebar();
+function SidebarWhitespaceTrigger() {  const { state, setOpen, isMobile } = useSidebar();
   const isCollapsed = state === "collapsed";
 
   if (!isCollapsed) {
@@ -105,34 +105,48 @@ function SidebarWhitespaceTrigger() {  const { state, setOpen } = useSidebar();
           aria-label="Expand Sidebar"
         />
       </TooltipTrigger>
-      <TooltipContent side="right" align="center">
-        Expand
+      <TooltipContent
+        side="right"
+        align="center"
+        hidden={state !== "collapsed" || isMobile}
+      >
+        Expand Sidebar
       </TooltipContent>
     </Tooltip>
   );
 }
 
 function SidebarToggleInHeader() {
-  const { toggleSidebar, state } = useSidebar();
+  const { toggleSidebar, state, isMobile } = useSidebar();
   const isCollapsed = state === "collapsed";
+  const label = isCollapsed ? "Expand Sidebar" : "Collapse Sidebar";
 
   return (
-    <Button
-      variant="ghost"
-      size="icon-sm"
-      shape="square"
-      onClick={toggleSidebar}
-      title={isCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
-      className="text-muted-foreground"
-    >
-      <HugeiconsIcon
-        icon={isCollapsed ? LayoutAlignRightIcon : LayoutAlignLeftIcon}
-        className={cn(
-          "size-4 transition-transform duration-200 ease-[cubic-bezier(0.16,1,0.3,1)]",
-          isCollapsed && "rotate-180",
-        )}
-      />
-    </Button>
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            shape="square"
+            onClick={toggleSidebar}
+            aria-label={label}
+            className="text-muted-foreground"
+          >
+            <HugeiconsIcon
+              icon={isCollapsed ? LayoutAlignRightIcon : LayoutAlignLeftIcon}
+              className={cn(
+                "size-4 transition-transform duration-200 ease-[cubic-bezier(0.16,1,0.3,1)]",
+                isCollapsed && "rotate-180",
+              )}
+            />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="right" align="center" hidden={isMobile}>
+          {label}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }
 
@@ -660,7 +674,10 @@ export default function Options() {
                                   "size-4 shrink-0 transition-colors duration-150 ease-[cubic-bezier(0.16,1,0.3,1)] relative z-10 pointer-events-none",
                                   activeTab === item.value
                                     ? "text-foreground"
-                                    : "text-muted-foreground/50",
+                                    : // Solid dim color — mixing toward the background avoids the
+                                      // alpha-compositing seams that opacity creates where icon
+                                      // paths overlap.
+                                      "text-[color-mix(in_oklab,var(--muted-foreground)_55%,var(--background))]",
                                 )}
                               />
                               <span className="text-sm whitespace-nowrap relative z-10 pointer-events-none">
@@ -696,27 +713,13 @@ export default function Options() {
                 {activeTab === "dashboard" && (
                   <DashboardTab
                     setActiveTab={setActiveTab}
-                    activeProvider={activeProvider}
-                    openrouterKey={openrouterKey}
-                    openaiCompatibleKey={openaiCompatibleKey}
-                    anthropicShapeKey={anthropicShapeKey}
-                    googleAiStudioKey={googleAiStudioKey}
-                    groqKey={groqKey}
-                    openaiCompatibleModel={openaiCompatibleModel}
-                    anthropicShapeModel={anthropicShapeModel}
-                    openrouterModel={openrouterModel}
-                    googleAiStudioModel={googleAiStudioModel}
-                    groqModel={groqModel}
-                    deepseekKey={deepseekKey}
-                    deepseekModel={deepseekModel}
-                    dropdownShortcutKey={dropdownShortcutKey}
-                    dropdownShortcutCtrl={dropdownShortcutCtrl}
-                    dropdownShortcutAlt={dropdownShortcutAlt}
-                    dropdownShortcutShift={dropdownShortcutShift}
-                    dropdownShortcutMeta={dropdownShortcutMeta}
-                    hideDot={hideDot}
                     history={history}
-                    customActions={customActions}
+                    actionConfigs={actionConfigs}
+                    onOpenHistoryItem={(item) => {
+                      setSelectedHistoryItem(item);
+                      setHistoryDialogOpen(true);
+                      setActiveTab("history");
+                    }}
                   />
                 )}
 

@@ -15,6 +15,13 @@ import {
   replaceInContentEditable,
 } from "./rich-editor-replace";
 import type { TransactionResult } from "./rich-editor-replace";
+import {
+  isCurrentTextTransaction,
+  locateTextSpan,
+  normalizeReplacementText,
+  verifyTextReplacement,
+  type TextTransaction,
+} from "./transaction-text";
 
 export interface SelectionInfo {
   text: string;
@@ -139,7 +146,7 @@ export class NativeInputAdapter implements EditableAdapter {
     const start = this.element.selectionStart ?? 0;
     const end = this.element.selectionEnd ?? 0;
     const selectedText = this.element.value.substring(start, end);
-    const isSelection = selectedText.trim().length > 0;
+    const isSelection = end > start;
     return {
       text: isSelection ? selectedText : this.element.value,
       start,
@@ -148,113 +155,60 @@ export class NativeInputAdapter implements EditableAdapter {
     };
   }
 
-  private async commitViaMainWorld(newValue: string): Promise<boolean> {
-    if (!this.element.id) {
-      this.element.id = `hone-input-${Math.random().toString(36).slice(2, 11)}`;
-    }
+  private selectionMatches(tx: TextTransaction): boolean {
+    return this.element.isConnected && document.activeElement === this.element &&
+      isCurrentTextTransaction(tx, this.element.value) &&
+      this.element.selectionStart === tx.start && this.element.selectionEnd === tx.end;
+  }
 
-    return new Promise((resolve) => {
-      const handleResult = (event: MessageEvent<{ type: string; success?: boolean }>) => {
-        if (event.source !== window || event.data?.type !== "HONE_TRANSACTION_RESULT") return;
-        
+  private async verifyValue(tx: TextTransaction): Promise<boolean> {
+    const startedAt = performance.now();
+    do {
+      await new Promise((resolve) => setTimeout(resolve, 16));
+      if (this.element.value !== tx.beforeText) {
+        if (!verifyTextReplacement(tx, this.element.value)) return false;
+        await new Promise((resolve) => setTimeout(resolve, 16));
+        return this.element.isConnected && verifyTextReplacement(tx, this.element.value);
+      }
+    } while (performance.now() - startedAt < 180);
+    return false;
+  }
+
+  private async commitViaMainWorld(tx: TextTransaction): Promise<boolean> {
+    if (!this.selectionMatches(tx)) return false;
+    if (!this.element.id) this.element.id = `hone-input-${crypto.randomUUID()}`;
+    const targetId = this.element.id;
+    const requestId = crypto.randomUUID();
+    const acknowledged = await new Promise<boolean>((resolve) => {
+      const finish = (success: boolean) => {
+        clearTimeout(timeout);
         window.removeEventListener("message", handleResult);
-        resolve(!!event.data.success);
+        resolve(success);
       };
-
+      const handleResult = (event: MessageEvent) => {
+        const data = event.data;
+        if (event.source !== window || data?.type !== "HONE_TRANSACTION_RESULT" ||
+            data.requestId !== requestId || data.targetId !== targetId ||
+            data.beforeText !== tx.beforeText || data.expectedSlice !== tx.expectedSlice) return;
+        finish(data.success === true);
+      };
+      const timeout = setTimeout(() => finish(false), 1200);
       window.addEventListener("message", handleResult);
-
       window.postMessage({
-        type: "HONE_RUN_REACT_INPUT_TRANSACTION",
-        targetId: this.element.id,
-        newValue: newValue
+        type: "HONE_RUN_REACT_INPUT_TRANSACTION", requestId, targetId, ...tx,
       }, "*");
-
-      // Safety timeout
-      setTimeout(() => {
-        window.removeEventListener("message", handleResult);
-        resolve(false);
-      }, 150);
     });
+    return acknowledged && await this.verifyValue(tx);
   }
 
   async replaceSelection(text: string, selectAll?: boolean): Promise<void> {
-    const oldValue = this.element.value;
-    if (selectAll) {
-      // Try Main World Bridge first (traverses React Fiber to invoke state updates)
-      const success = await this.commitViaMainWorld(text);
-      if (success) {
-        return;
-      }
-
-      this.element.focus();
-      this.element.select();
-
-      // Try execCommand first (mimics user typing, preserves undo/redo)
-      try {
-        if (document.execCommand("insertText", false, text)) {
-          this.element.dispatchEvent(new Event("change", { bubbles: true }));
-          return;
-        }
-      } catch {
-        // ignore and fall back
-      }
-
-      // Fallback
-      const valueSetter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(this.element), "value")?.set;
-      if (valueSetter) {
-        valueSetter.call(this.element, text);
-      } else {
-        this.element.value = text;
-      }
-      const tracker = (this.element as HTMLInputElement & { _valueTracker?: { setValue(v: string): void } })._valueTracker;
-      if (tracker) {
-        tracker.setValue(oldValue);
-      }
-      this.element.dispatchEvent(new Event("input", { bubbles: true }));
-      this.element.dispatchEvent(new Event("change", { bubbles: true }));
-    } else {
-      const start = this.element.selectionStart ?? 0;
-      const end = this.element.selectionEnd ?? 0;
-      const newValue = oldValue.substring(0, start) + text + oldValue.substring(end);
-
-      // Try Main World Bridge first (traverses React Fiber to invoke state updates)
-      const success = await this.commitViaMainWorld(newValue);
-      if (success) {
-        const caret = start + text.length;
-        this.element.setSelectionRange(caret, caret);
-        return;
-      }
-
-      this.element.focus();
-
-      // Try execCommand first (mimics user typing, preserves undo/redo)
-      try {
-        if (document.execCommand("insertText", false, text)) {
-          this.element.dispatchEvent(new Event("change", { bubbles: true }));
-          return;
-        }
-      } catch {
-        // ignore and fall back
-      }
-
-      // Fallback
-      const valueSetter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(this.element), "value")?.set;
-      if (valueSetter) {
-        valueSetter.call(this.element, newValue);
-      } else {
-        this.element.value = newValue;
-      }
-
-      const tracker = (this.element as HTMLInputElement & { _valueTracker?: { setValue(v: string): void } })._valueTracker;
-      if (tracker) {
-        tracker.setValue(oldValue);
-      }
-
-      const caret = start + text.length;
-      this.element.setSelectionRange(caret, caret);
-      this.element.dispatchEvent(new Event("input", { bubbles: true }));
-      this.element.dispatchEvent(new Event("change", { bubbles: true }));
-    }
+    const full = this.element.value;
+    const start = selectAll ? 0 : this.element.selectionStart ?? 0;
+    const end = selectAll ? full.length : this.element.selectionEnd ?? start;
+    await this.replaceRange(start, end, text, {
+      expectedText: full.slice(start, end),
+      fieldSnapshot: full,
+    });
   }
 
   async replaceRange(
@@ -263,57 +217,54 @@ export class NativeInputAdapter implements EditableAdapter {
     replacement: string,
     options?: ReplaceRangeOptions,
   ): Promise<boolean> {
+    if (activeNativeInputs.has(this.element)) return false;
+    replacement = normalizeReplacementText(replacement);
+    if (this.element instanceof HTMLInputElement && replacement.includes("\n")) return false;
     const full = this.element.value;
-    const located = locateTextSpan(full, start, end, options?.expectedText);
+    const located = locateTextSpan(full, start, end, options?.expectedText, options?.fieldSnapshot);
     if (!located) return false;
+    const tx: TextTransaction = {
+      beforeText: full,
+      ...located,
+      replacement,
+      expectedSlice: full.slice(located.start, located.end),
+    };
+    if (!isCurrentTextTransaction(tx, full)) return false;
 
-    const { start: s, end: e } = located;
-    const newValue = full.substring(0, s) + replacement + full.substring(e);
-
-    // Try Main World Bridge first (traverses React Fiber to invoke state updates)
-    const success = await this.commitViaMainWorld(newValue);
-    if (success) {
-      const caret = s + replacement.length;
-      this.element.setSelectionRange(caret, caret);
-      return true;
-    }
-
-    this.element.focus();
-    this.element.setSelectionRange(s, e);
-
-    // Try execCommand first (mimics user typing, preserves undo/redo).
-    // insertText with "" does not delete in Chrome — removals use "delete".
+    activeNativeInputs.add(this.element);
+    let changed = false;
+    const events: Event[] = [];
+    const trackChange = () => { changed ||= this.element.value !== full; };
+    const trackBeforeInput = (event: Event) => events.push(event);
+    this.element.addEventListener("input", trackChange, true);
+    this.element.addEventListener("change", trackChange, true);
+    this.element.addEventListener("beforeinput", trackBeforeInput, true);
     try {
-      const done =
-        replacement.length > 0
-          ? document.execCommand("insertText", false, replacement)
-          : document.execCommand("delete");
-      if (done && this.element.value === newValue) {
-        this.element.dispatchEvent(new Event("change", { bubbles: true }));
-        return true;
+      this.element.focus();
+      this.element.setSelectionRange(tx.start, tx.end);
+      if (!this.selectionMatches(tx)) return false;
+      try {
+        if (replacement.length > 0) document.execCommand("insertText", false, replacement);
+        else document.execCommand("delete");
+      } catch {
+        // A setter is allowed only if the editing command left the value unchanged.
       }
+      trackChange();
+      if (await this.verifyValue(tx)) {
+        this.element.dispatchEvent(new Event("change", { bubbles: true }));
+        return await this.verifyValue(tx);
+      }
+      if (changed || events.some((event) => event.defaultPrevented) || !this.selectionMatches(tx)) return false;
+      // This is the only setter fallback; a timed-out bridge must not be retried.
+      return await this.commitViaMainWorld(tx);
     } catch {
-      // ignore and fall back
+      return false;
+    } finally {
+      this.element.removeEventListener("input", trackChange, true);
+      this.element.removeEventListener("change", trackChange, true);
+      this.element.removeEventListener("beforeinput", trackBeforeInput, true);
+      activeNativeInputs.delete(this.element);
     }
-
-    // Fallback
-    const valueSetter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(this.element), "value")?.set;
-    if (valueSetter) {
-      valueSetter.call(this.element, newValue);
-    } else {
-      this.element.value = newValue;
-    }
-
-    const tracker = (this.element as HTMLInputElement & { _valueTracker?: { setValue(v: string): void } })._valueTracker;
-    if (tracker) {
-      tracker.setValue(full);
-    }
-
-    const caret = s + replacement.length;
-    this.element.setSelectionRange(caret, caret);
-    this.element.dispatchEvent(new Event("input", { bubbles: true }));
-    this.element.dispatchEvent(new Event("change", { bubbles: true }));
-    return true;
   }
 
   getCaretRect(): DOMRect {
@@ -414,6 +365,7 @@ export class NativeInputAdapter implements EditableAdapter {
   }
 }
 
+const activeNativeInputs = new WeakSet<HTMLElement>();
 let _inputCaretMirror: HTMLDivElement | null = null;
 
 /**
@@ -437,30 +389,24 @@ export class ContentEditableAdapter implements EditableAdapter {
 
   getSelection(): SelectionInfo {
     const selection = window.getSelection();
-    const selectedText = selection?.toString() ?? '';
-    const isSelection = selectedText.length > 0;
-
-    if (isSelection && selection && selection.rangeCount > 0) {
+    const fullText = this.getText();
+    if (selection && selection.rangeCount > 0) {
       const range = selection.getRangeAt(0);
       if (this.element.contains(range.commonAncestorContainer)) {
-        const start = this.getOffsetAtPoint(
-          range.startContainer,
-          range.startOffset,
-        );
+        const start = this.getOffsetAtPoint(range.startContainer, range.startOffset);
         const end = this.getOffsetAtPoint(range.endContainer, range.endOffset);
         const s = Math.min(start, end);
         const e = Math.max(start, end);
         return {
-          text: selectedText,
+          text: e > s ? fullText.slice(s, e) : fullText,
           start: s,
           end: e,
-          isSelection: true,
+          isSelection: e > s,
         };
       }
     }
 
     const caret = this.getCaretIndex();
-    const fullText = this.getText();
     return {
       text: fullText,
       start: caret,
@@ -582,39 +528,6 @@ export class ContentEditableAdapter implements EditableAdapter {
 }
 
 // --- Selection inference helpers ---
-
-/** Re-locate [start,end) when the field changed slightly during an async AI call */
-function locateTextSpan(
-  fullText: string,
-  start: number,
-  end: number,
-  expectedText?: string,
-): { start: number; end: number } | null {
-  const len = fullText.length;
-  const s = Math.max(0, Math.min(start, len));
-  const e = Math.max(s, Math.min(end, len));
-
-  if (expectedText === undefined) {
-    return { start: s, end: e };
-  }
-
-  if (fullText.substring(s, e) === expectedText) {
-    return { start: s, end: e };
-  }
-
-  const searchFrom = Math.max(0, s - expectedText.length);
-  const near = fullText.indexOf(expectedText, searchFrom);
-  if (near !== -1) {
-    return { start: near, end: near + expectedText.length };
-  }
-
-  const anywhere = fullText.indexOf(expectedText);
-  if (anywhere !== -1) {
-    return { start: anywhere, end: anywhere + expectedText.length };
-  }
-
-  return null;
-}
 
 /**
  * Resolve the exact character span to send to AI and replace afterward.

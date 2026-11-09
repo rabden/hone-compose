@@ -27,7 +27,7 @@ import {
   type HoverCardState,
 } from "./live-proofread";
 import { SuggestionCard } from "./suggestion-card";
-import { getSpanClientRects } from "./span-geometry";
+import { getSpansClientRects } from "./span-geometry";
 import { getProviderLabel } from "../providers";
 
 interface Toast {
@@ -1559,13 +1559,9 @@ function NativeProofreadUnderlines({
     const measure = () => {
       raf = 0;
       const next: typeof last = [];
+      const groups = getSpansClientRects(adapter, issues);
       for (let i = 0; i < issues.length; i++) {
-        let rects: DOMRect[];
-        try {
-          rects = getSpanClientRects(adapter, issues[i].start, issues[i].end);
-        } catch {
-          rects = [];
-        }
+        const rects = groups[i];
         if (rects.length > 0) next.push({ key: `${i}`, kind: issues[i].kind, rects });
       }
       if (!rectGroupsEqual(last, next)) {
@@ -1593,7 +1589,7 @@ function NativeProofreadUnderlines({
     };
   }, [adapter, issues]);
 
-  if (strips.length === 0) return null;
+  if (issues.length === 0 || strips.length === 0) return null;
 
   return (
     <>

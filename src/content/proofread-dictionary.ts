@@ -1,18 +1,11 @@
 /**
- * Persistent proofreading state shared by the content script and the
- * background grammar worker:
+ * Persistent proofreading state owned by the background grammar worker.
+ * Only its serialized queue may load or mutate this state; content scripts
+ * send state messages instead of keeping or writing full-array snapshots.
  *
- * - Personal dictionary (words added from the suggestion card). These are
- *   imported into Harper's own dictionary via `importWords`, so Harper stops
- *   flagging them natively.
- * - Ignored lint hashes (Harper `contextHash` values). Harper's
- *   `ignoreLintHash` stores hashes but `lint()` does not filter by them, so
- *   we filter ourselves at lint time — the hashes stay stable across
- *   linter instances, which makes them safely persistable.
- *
- * Everything lives in chrome.storage.local; each world keeps an in-memory
- * copy and the content script notifies the background worker when new
- * entries are added so both linter instances stay in sync.
+ * Dictionary words prime Harper via importWords. Ignored context hashes are
+ * filtered in our pipeline because Harper's lint() does not filter them.
+ * All data stays local in chrome.storage.local.
  */
 
 const WORDS_KEY = "proofreadWords";
@@ -32,28 +25,40 @@ export async function loadProofreadState(): Promise<void> {
   if (loadPromise) return loadPromise;
 
   loadPromise = (async () => {
-    try {
-      const res = (await chrome.storage.local.get([
-        WORDS_KEY,
-        IGNORED_KEY,
-      ])) as Record<string, unknown>;
-      const storedWords = Array.isArray(res[WORDS_KEY]) ? res[WORDS_KEY] : [];
-      const storedIgnored = Array.isArray(res[IGNORED_KEY])
-        ? res[IGNORED_KEY]
-        : [];
-      for (const w of storedWords) {
-        if (typeof w === "string" && w.trim()) words.add(w.trim());
-      }
-      for (const h of storedIgnored) {
-        if (typeof h === "string" && h) ignoredHashes.add(h);
-      }
-    } catch {
-      // Storage unavailable — run with empty state rather than failing checks.
+    const res = (await chrome.storage.local.get([
+      WORDS_KEY,
+      IGNORED_KEY,
+    ])) as Record<string, unknown>;
+    const storedWords = Array.isArray(res[WORDS_KEY]) ? res[WORDS_KEY] : [];
+    const storedIgnored = Array.isArray(res[IGNORED_KEY]) ? res[IGNORED_KEY] : [];
+    const nextWords = new Set<string>();
+    const nextIgnored = new Set<string>();
+    for (const w of storedWords) {
+      if (nextWords.size >= MAX_WORDS) break;
+      if (typeof w === "string" && w.trim()) nextWords.add(w.trim());
     }
+    for (const h of storedIgnored) {
+      if (nextIgnored.size >= MAX_IGNORED) break;
+      if (typeof h === "string" && h) nextIgnored.add(h);
+    }
+    // Also bound legacy oversized storage, not just the in-memory copies.
+    if (storedWords.length > MAX_WORDS || storedIgnored.length > MAX_IGNORED) {
+      await chrome.storage.local.set({
+        [WORDS_KEY]: Array.from(nextWords),
+        [IGNORED_KEY]: Array.from(nextIgnored),
+      });
+    }
+    for (const w of nextWords) words.add(w);
+    for (const h of nextIgnored) ignoredHashes.add(h);
     loaded = true;
   })();
 
-  return loadPromise;
+  try {
+    await loadPromise;
+  } finally {
+    // Failed reads/writes must be retryable, not an empty authoritative state.
+    loadPromise = null;
+  }
 }
 
 export function getDictionaryWords(): string[] {
@@ -64,28 +69,27 @@ export function isIgnoredHash(hash: string | undefined): boolean {
   return !!hash && ignoredHashes.has(hash);
 }
 
-async function persist(): Promise<void> {
-  try {
-    await chrome.storage.local.set({
-      [WORDS_KEY]: Array.from(words).slice(0, MAX_WORDS),
-      [IGNORED_KEY]: Array.from(ignoredHashes).slice(0, MAX_IGNORED),
-    });
-  } catch {
-    // Best effort — in-memory state still applies for this session.
-  }
-}
-
-export async function addDictionaryWord(word: string): Promise<void> {
+/** Return whether a new word was persisted and needs importing into Harper. */
+export async function addDictionaryWord(word: string): Promise<boolean> {
   await loadProofreadState();
   const trimmed = word.trim();
-  if (!trimmed || words.has(trimmed)) return;
+  if (!trimmed || words.has(trimmed)) return false;
+  if (words.size >= MAX_WORDS) {
+    throw new Error(`Personal dictionary is full (${MAX_WORDS} words).`);
+  }
+  await chrome.storage.local.set({ [WORDS_KEY]: [...words, trimmed] });
+  // Commit in memory only after persistence succeeds, so a failed write can
+  // be retried and is never accidentally imported into Harper.
   words.add(trimmed);
-  await persist();
+  return true;
 }
 
 export async function addIgnoredLintHash(hash: string): Promise<void> {
   await loadProofreadState();
   if (!hash || ignoredHashes.has(hash)) return;
+  if (ignoredHashes.size >= MAX_IGNORED) {
+    throw new Error(`Proofreading ignore list is full (${MAX_IGNORED} entries).`);
+  }
+  await chrome.storage.local.set({ [IGNORED_KEY]: [...ignoredHashes, hash] });
   ignoredHashes.add(hash);
-  await persist();
 }

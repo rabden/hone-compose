@@ -8,26 +8,21 @@
  */
 
 import type { EditableAdapter } from "./adapters";
-import { domPointFromOffset, offsetFromDomPoint } from "./plain-text-dom";
-import { getSpanClientRects } from "./span-geometry";
-import { lintForIssues, proofreadAddWord, proofreadIgnoreLint } from "./grammar-worker";
+import { getPlainTextMap, offsetFromDomPoint } from "./plain-text-dom";
+import { getSpanClientRects, getSpansClientRects } from "./span-geometry";
+import { lintForIssues, proofreadAddWord, proofreadIgnoreLint, subscribeProofreadState } from "./grammar-worker";
+import { ProofreadScheduler, invalidateLintCache } from "./proofread-scheduler";
+export { invalidateLintCache } from "./proofread-scheduler";
 import {
   ignoreKey,
   type ProofreadFix,
   type ProofreadIssue,
 } from "./proofread-issues";
 
-/** Pause after the last keystroke before linting. */
-const SETTLE_MS = 500;
 /** Pointer must rest on an issue this long before the card opens. */
 const DWELL_MS = 160;
 /** Grace after the pointer leaves before the card closes. */
 const LEAVE_GRACE_MS = 260;
-/** Fields longer than this are skipped: linting them risks jank, and web
- * inputs this long are rare (the manual AI action still works there). */
-const MAX_TEXT_LENGTH = 8000;
-/** Lint results cached per text, so refocusing a field is instant. */
-const CACHE_LIMIT = 24;
 
 export interface HoverCardState {
   issue: ProofreadIssue;
@@ -41,14 +36,9 @@ export interface ApplyFixResult {
   suggestClipboardPaste: boolean;
 }
 
-const lintCache = new Map<string, ProofreadIssue[]>();
 /** Session-scoped ignores (per tab), shared across fields. */
 const sessionIgnores = new Set<string>();
-
-/** Drop cached lint results — dictionary/ignore changes invalidate them. */
-export function invalidateLintCache(): void {
-  lintCache.clear();
-}
+subscribeProofreadState(invalidateLintCache);
 
 const HIGHLIGHT_SPELL = "hone-spell";
 const HIGHLIGHT_GRAMMAR = "hone-grammar";
@@ -109,17 +99,18 @@ export class LiveProofreader {
   private readonly element: HTMLElement;
   private isNative: boolean;
 
-  /** Issues from the last landed check, before ignore filtering. */
   private checkedText = "";
-  private settleTimer = 0;
-  private checkToken = 0;
-  private composing = false;
+  private scheduler: ProofreadScheduler | null = null;
+  private observer: MutationObserver | null = null;
   private running = false;
+  private savedSpellcheck: string | null = null;
+  private nativeSpellcheckDisabled = false;
 
   /** Filtered issues currently underlined (what the user sees). */
   private paintedIssues: ProofreadIssue[] = [];
   /** Cached rects per painted issue (native fields only, hit-testing). */
   private nativeRects: DOMRect[][] = [];
+  private nativeRectsValid = false;
 
   private hoveredIssue: ProofreadIssue | null = null;
   /** The issue the open card is currently showing (click-to-open toggling). */
@@ -151,6 +142,22 @@ export class LiveProofreader {
     if (this.running) return;
     this.running = true;
     injectHighlightStyles();
+    this.disableNativeSpellcheck();
+    this.scheduler = new ProofreadScheduler(lintForIssues, (text, issues) => {
+      if (!this.running) return;
+      if (this.safeGetText() !== text) {
+        this.handleInput();
+        return;
+      }
+      this.checkedText = text;
+      this.publish(issues);
+    });
+    if (!this.isNative) {
+      this.observer = new MutationObserver(() => {
+        if (this.safeGetText() !== this.checkedText) this.handleInput();
+      });
+      this.observer.observe(this.element, { childList: true, characterData: true, subtree: true });
+    }
 
     this.element.addEventListener("input", this.handleInput, true);
     this.element.addEventListener("compositionstart", this.handleCompositionStart);
@@ -164,11 +171,16 @@ export class LiveProofreader {
     window.addEventListener("keydown", this.handleKeyDown, true);
     window.addEventListener("pointermove", this.handleGlobalPointerMove, true);
 
-    this.scheduleCheck(120);
+    this.scheduler.update(this.safeGetText() ?? "");
   }
 
   stop(): void {
     this.running = false;
+    this.restoreNativeSpellcheck();
+    this.scheduler?.stop();
+    this.scheduler = null;
+    this.observer?.disconnect();
+    this.observer = null;
     this.clearTimers();
     this.element.removeEventListener("input", this.handleInput, true);
     this.element.removeEventListener("compositionstart", this.handleCompositionStart);
@@ -195,6 +207,23 @@ export class LiveProofreader {
     this.cardElement = el;
   }
 
+  // Native spellcheck is element-scoped — it cannot be exempted per word, so
+  // Hone replaces it on this field while proofreading and restores the
+  // field's own setting when the controller releases it.
+  private disableNativeSpellcheck(): void {
+    if (this.nativeSpellcheckDisabled) return;
+    this.savedSpellcheck = this.element.getAttribute("spellcheck");
+    this.element.setAttribute("spellcheck", "false");
+    this.nativeSpellcheckDisabled = true;
+  }
+
+  private restoreNativeSpellcheck(): void {
+    if (!this.nativeSpellcheckDisabled) return;
+    this.nativeSpellcheckDisabled = false;
+    if (this.savedSpellcheck === null) this.element.removeAttribute("spellcheck");
+    else this.element.setAttribute("spellcheck", this.savedSpellcheck);
+  }
+
   closeHoverCard(): void {
     this.clearTimers();
     this.hoveredIssue = null;
@@ -206,8 +235,6 @@ export class LiveProofreader {
   }
 
   private clearTimers(): void {
-    if (this.settleTimer) window.clearTimeout(this.settleTimer);
-    this.settleTimer = 0;
     if (this.dwellTimer) window.clearTimeout(this.dwellTimer);
     this.dwellTimer = 0;
     if (this.closeTimer) window.clearTimeout(this.closeTimer);
@@ -219,37 +246,19 @@ export class LiveProofreader {
   // ── checking ───────────────────────────────────────────────────────────
 
   private handleInput = (): void => {
-    // Typing invalidates the underlined spans and any open card.
     this.closeHoverCard();
     this.invalidateNativeRects();
-    if (this.composing) return;
-    this.scheduleCheck(SETTLE_MS);
+    this.scheduler?.update(this.safeGetText() ?? "");
   };
 
   private handleCompositionStart = (): void => {
-    this.composing = true;
+    this.closeHoverCard();
+    this.scheduler?.pause();
   };
 
   private handleCompositionEnd = (): void => {
-    this.composing = false;
-    this.scheduleCheck(SETTLE_MS);
+    this.scheduler?.resume(this.safeGetText() ?? "");
   };
-
-  private scheduleCheck(delayMs: number): void {
-    const text = this.safeGetText();
-    if (text === null || text.length > MAX_TEXT_LENGTH) {
-      this.checkedText = "";
-      this.publish([]);
-      return;
-    }
-    const key = text;
-    if (this.settleTimer) window.clearTimeout(this.settleTimer);
-    if (this.checkedText === key) return; // already checked this exact text
-    this.settleTimer = window.setTimeout(() => {
-      this.settleTimer = 0;
-      void this.runCheck(text);
-    }, delayMs);
-  }
 
   private safeGetText(): string | null {
     try {
@@ -259,44 +268,15 @@ export class LiveProofreader {
     }
   }
 
-  private async runCheck(text: string): Promise<void> {
-    const token = ++this.checkToken;
-
-    let issues = lintCache.get(text);
-    if (!issues) {
-      issues = await lintForIssues(text);
-      if (lintCache.size >= CACHE_LIMIT) {
-        const oldest = lintCache.keys().next().value;
-        if (oldest !== undefined) lintCache.delete(oldest);
-      }
-      lintCache.set(text, issues);
-    }
-
-    // A later check (or teardown) superseded this one.
-    if (!this.running || token !== this.checkToken) return;
-    const current = this.safeGetText();
-    if (current !== text) {
-      // Text moved on while checking — check the fresh text. This also covers
-      // frameworks whose DOM settles slightly after their input event.
-      if (!this.settleTimer) {
-        this.checkedText = ""; // force the re-schedule below to run
-        this.scheduleCheck(60);
-      }
-      return;
-    }
-
-    this.checkedText = text;
-    this.publish(issues);
-  }
-
   /** Paint the filtered set: highlights on CE, published rects for native. */
   private publish(issues: ProofreadIssue[]): void {
+    if (this.cardIssue) this.closeHoverCard();
     const visible = issues.filter((issue) => {
       const flagged = this.checkedText.slice(issue.start, issue.end);
       return flagged && !sessionIgnores.has(ignoreKey(issue, flagged));
     });
     this.paintedIssues = visible;
-    this.nativeRects = visible.map(() => []);
+    this.invalidateNativeRects();
     this.paintHighlights();
     this.onIssues(visible);
   }
@@ -307,8 +287,9 @@ export class LiveProofreader {
 
     const spellRanges: Range[] = [];
     const grammarRanges: Range[] = [];
+    const map = getPlainTextMap(this.element);
     for (const issue of this.paintedIssues) {
-      const range = this.buildDomRange(issue.start, issue.end);
+      const range = this.buildDomRange(issue.start, issue.end, map);
       if (!range) continue;
       (issue.kind === "spelling" ? spellRanges : grammarRanges).push(range);
     }
@@ -332,11 +313,10 @@ export class LiveProofreader {
     }
   }
 
-  private buildDomRange(start: number, end: number): Range | null {
+  private buildDomRange(start: number, end: number, map: ReturnType<typeof getPlainTextMap>): Range | null {
     try {
-      const root = this.element;
-      const s = domPointFromOffset(root, start);
-      const e = domPointFromOffset(root, end);
+      const s = map.pointAt(start);
+      const e = map.pointAt(end);
       if (!s || !e) return null;
       const range = document.createRange();
       range.setStart(s.node, s.offset);
@@ -452,7 +432,8 @@ export class LiveProofreader {
   };
 
   private invalidateNativeRects(): void {
-    this.nativeRects = this.paintedIssues.map(() => []);
+    this.nativeRects = [];
+    this.nativeRectsValid = false;
   }
 
   private hitTest(x: number, y: number): void {
@@ -566,18 +547,11 @@ export class LiveProofreader {
   }
 
   private nativeRectsFor(index: number): DOMRect[] {
-    const cached = this.nativeRects[index];
-    if (cached && cached.length > 0) return cached;
-    const issue = this.paintedIssues[index];
-    if (!issue) return [];
-    let rects: DOMRect[];
-    try {
-      rects = getSpanClientRects(this.adapter, issue.start, issue.end);
-    } catch {
-      rects = [];
+    if (!this.nativeRectsValid) {
+      this.nativeRects = getSpansClientRects(this.adapter, this.paintedIssues);
+      this.nativeRectsValid = true;
     }
-    this.nativeRects[index] = rects;
-    return rects;
+    return this.nativeRects[index] ?? [];
   }
 
   /** Anchor rect for the hover card (first client rect of the span). */
@@ -599,6 +573,8 @@ export class LiveProofreader {
    */
   async ignoreIssue(issue: ProofreadIssue): Promise<void> {
     this.closeHoverCard();
+    if (!this.paintedIssues.includes(issue)) return;
+    const flagged = this.checkedText.slice(issue.start, issue.end);
     if (issue.contextHash) {
       try {
         await proofreadIgnoreLint(issue.contextHash);
@@ -606,7 +582,6 @@ export class LiveProofreader {
         // Persistence failed — session ignore below still applies.
       }
     }
-    const flagged = this.checkedText.slice(issue.start, issue.end);
     if (flagged) sessionIgnores.add(ignoreKey(issue, flagged));
     await this.refreshAfterStateChange();
   }
@@ -617,6 +592,7 @@ export class LiveProofreader {
    */
   async addToDictionary(issue: ProofreadIssue): Promise<void> {
     this.closeHoverCard();
+    if (!this.paintedIssues.includes(issue)) return;
     const word = this.checkedText.slice(issue.start, issue.end).trim();
     if (!word) return;
     try {
@@ -631,14 +607,12 @@ export class LiveProofreader {
   /** Dictionary/ignore changes invalidate cached lints — re-check now. */
   private async refreshAfterStateChange(): Promise<void> {
     invalidateLintCache();
-    this.checkedText = ""; // force scheduleCheck to re-run for current text
-    this.scheduleCheck(0);
   }
 
   async applyFix(issue: ProofreadIssue, fix: ProofreadFix): Promise<ApplyFixResult> {
     this.closeHoverCard();
     const expectedText = this.checkedText.slice(issue.start, issue.end);
-    if (!expectedText) {
+    if (!expectedText || !this.paintedIssues.includes(issue)) {
       return { committed: false, suggestClipboardPaste: false };
     }
 
@@ -665,10 +639,10 @@ export class LiveProofreader {
       // Check immediately so fresh underlines land right after the edit, and
       // again shortly after: Slate/Lexical flush their DOM a beat after the
       // transaction resolves, and the lint cache makes the retry free.
-      this.scheduleCheck(0);
+      this.scheduler?.update(this.safeGetText() ?? "", 0);
       window.setTimeout(() => {
         if (this.running && this.checkedText !== this.safeGetText()) {
-          this.scheduleCheck(0);
+          this.scheduler?.update(this.safeGetText() ?? "", 0);
         }
       }, 350);
     }

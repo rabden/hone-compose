@@ -582,7 +582,11 @@ chrome.runtime.onMessage.addListener((message: Record<string, unknown>, sender: 
   }
 
   if (message.type === 'LINT_TEXT') {
-    const text = message.text as string;
+    const text = message.text;
+    if (typeof text !== 'string' || text.length > 8000) {
+      sendResponse({ success: false, error: 'Proofreading text must be a string of at most 8000 characters.' });
+      return false;
+    }
     lintForIssues(text)
       .then((issues) => {
         sendResponse({ success: true, issues });
@@ -598,15 +602,25 @@ chrome.runtime.onMessage.addListener((message: Record<string, unknown>, sender: 
     getLinter()
       .then(() => sendResponse({ success: true }))
       .catch((err) => {
-        console.error("Warmup linter failed in background:", err);
+        // Warmup is best-effort; the next real check re-initializes the linter.
+        console.warn("Linter warmup deferred; will retry on next check:", err);
         sendResponse({ success: false, error: err instanceof Error ? err.message : String(err) });
       });
     return true;
   }
 
-  // Mirror newly persisted dictionary/ignore state into the background linter
+  // The background owns persistence and linter updates for every tab.
   if (message.type === 'PROOFREAD_STATE_ADDED') {
-    syncProofreadState({ word: message.word as string | undefined, hash: message.hash as string | undefined })
+    const { word, hash } = message;
+    if (
+      (word !== undefined && (typeof word !== 'string' || !word.trim())) ||
+      (hash !== undefined && (typeof hash !== 'string' || !hash)) ||
+      (word === undefined && hash === undefined)
+    ) {
+      sendResponse({ success: false, error: 'Expected a nonempty dictionary word or lint hash.' });
+      return false;
+    }
+    syncProofreadState({ word: word as string | undefined, hash: hash as string | undefined })
       .then(() => sendResponse({ success: true }))
       .catch((err) => {
         sendResponse({ success: false, error: err instanceof Error ? err.message : String(err) });

@@ -175,12 +175,39 @@ export function harperLintsToIssues(lints: RawLint[], text: string): ProofreadIs
 
 /**
  * Non-English (or gibberish) text trips spelling rules on nearly every word.
- * When spelling issues dominate, the text is probably not English — check
- * nothing rather than underline everything.
+ * Only suppress when a meaningful sample is mostly flagged — a few typos in
+ * English prose (even a third of the words) must never wipe the underlines.
  */
 export function looksLikeNonEnglish(issues: ProofreadIssue[], text: string): boolean {
   const words = text.split(/\s+/).filter((w) => w.length > 1);
-  if (words.length < 3) return false;
+  if (words.length < 6) return false;
   const spelling = issues.filter((i) => i.kind === "spelling").length;
-  return spelling / words.length > 0.35;
+  return spelling / words.length > 0.6;
+}
+
+/**
+ * True when `minRun` consecutive words are all misspelled. English prose never
+ * does this — correct function words break any typo run — but romanized
+ * Banglish/Hinglish/Urdu (and other transliterations) flag word after word.
+ * Language-agnostic, so it catches scripts that detection mistakes for English.
+ */
+export function hasConsecutiveSpellingErrors(
+  issues: ProofreadIssue[],
+  text: string,
+  minRun = 5,
+): boolean {
+  const spelling = issues.filter((i) => i.kind === "spelling");
+  if (spelling.length < minRun) return false;
+  let run = 0;
+  for (const match of text.matchAll(/\S+/g)) {
+    const start = match.index ?? 0;
+    const end = start + match[0].length;
+    const flagged = spelling.some((i) => i.start < end && start < i.end);
+    if (flagged) {
+      if (++run >= minRun) return true;
+    } else {
+      run = 0;
+    }
+  }
+  return false;
 }

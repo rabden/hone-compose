@@ -3,7 +3,7 @@
   "name": "Hone compose",
   "version": "0.1.0",
   "description": "Hone every field you type in. AI writing tools for inputs and textareas across the web.",
-  "permissions": ["storage", "clipboardWrite"],
+  "permissions": ["storage", "clipboardWrite", "favicon"],
   "host_permissions": ["<all_urls>"],
   "content_security_policy": {
     "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self';"
@@ -13,6 +13,12 @@
     "type": "module"
   },
   "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["main-world-bridge.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
     {
       "matches": ["<all_urls>"],
       "js": ["content.js"],
@@ -70,7 +76,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["main-world-bridge.js", "harper_wasm_bg.wasm"],
+      "resources": ["harper_wasm_bg.wasm"],
       "matches": ["<all_urls>"]
     }
   ]

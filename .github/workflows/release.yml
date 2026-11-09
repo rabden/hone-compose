@@ -1,0 +1,92 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Node 24: the test suite runs `node --test` on .ts files, which needs
+      # native type stripping (Node >= 22.15 for node:module registerHooks).
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify tag version matches manifest and package.json
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          MANIFEST_VERSION=$(node -p "require('./manifest.json').version")
+          PACKAGE_VERSION=$(node -p "require('./package.json').version")
+          echo "tag=$TAG manifest=$MANIFEST_VERSION package=$PACKAGE_VERSION"
+          if [ "$TAG" != "$MANIFEST_VERSION" ]; then
+            echo "::error title=Version mismatch::Tag $GITHUB_REF_NAME does not match manifest.json version $MANIFEST_VERSION"
+            exit 1
+          fi
+          if [ "$TAG" != "$PACKAGE_VERSION" ]; then
+            echo "::error title=Version mismatch::Tag $GITHUB_REF_NAME does not match package.json version $PACKAGE_VERSION"
+            exit 1
+          fi
+
+      - name: Typecheck
+        run: npx tsc -b
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Smoke-test dist artifacts
+        run: |
+          for f in manifest.json background.js content.js main-world-bridge.js popup.html options.html harper_wasm_bg.wasm icon128.png; do
+            if [ ! -s "dist/$f" ]; then
+              echo "::error title=Missing artifact::dist/$f is missing or empty"
+              exit 1
+            fi
+          done
+
+      - name: Package extension
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          # Root-level entries like the hand-packaged hone-v0.1.0.zip, so
+          # extractors land the files in a folder named after the archive.
+          (cd dist && zip -r -X "../hone-v${VERSION}.zip" .)
+          # Stable alias so the README's always-latest download URL is permanent.
+          cp "hone-v${VERSION}.zip" "hone-latest.zip"
+          sha256sum "hone-v${VERSION}.zip" > SHA256SUMS.txt
+          unzip -l "hone-v${VERSION}.zip" | tail -4
+
+      - name: Attach assets to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "Release exists — replacing assets."
+            gh release upload "$GITHUB_REF_NAME" \
+              "hone-v${VERSION}.zip" "hone-latest.zip" SHA256SUMS.txt --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" \
+              "hone-v${VERSION}.zip" "hone-latest.zip" SHA256SUMS.txt \
+              --title "Hone v${VERSION}" --generate-notes
+          fi

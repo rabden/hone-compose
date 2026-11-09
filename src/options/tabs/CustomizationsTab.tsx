@@ -145,8 +145,8 @@ export default function CustomizationsTab({
             </p>
           </div>
           <div className="md:col-span-2">
-            <div className="rounded-xl border border-border/20 bg-foreground/[0.01] p-0.5">
-              <div className="flex flex-col gap-4 rounded-[calc(0.75rem-2px)] bg-foreground/[0.02] p-4">
+            <div className="flex flex-col gap-0.5 rounded-3xl border border-border/20 p-0.5 overflow-hidden">
+              <div className="flex flex-col gap-4 rounded-3xl bg-background p-4">
                 <div className="flex items-center justify-between gap-3">
                   <Label className="text-xs font-semibold text-foreground">
                     Max history items

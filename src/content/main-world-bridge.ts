@@ -2,6 +2,21 @@
  * Runs in the page Main World — direct access to React fibers and trusted execCommand.
  */
 
+import {
+  domPointFromOffset,
+  extractPlainText,
+  offsetFromDomPoint,
+  selectPlainTextRange,
+} from "./plain-text-dom";
+import {
+  expectedTextAfterReplace,
+  isCurrentTextTransaction,
+  isValidTextTransaction,
+  normalizeReplacementText,
+  verifyTextReplacement,
+  type TextTransaction,
+} from "./transaction-text";
+
 type FiberNode = {
   memoizedProps?: Record<string, unknown>;
   child?: FiberNode;
@@ -31,15 +46,22 @@ type SlatePoint = {
   offset: number;
 };
 
+type SlateSelection = { anchor: SlatePoint; focus: SlatePoint };
 type SlateEditor = {
   children: SlateNode[];
-  selection?: {
-    anchor: SlatePoint;
-    focus: SlatePoint;
-  };
+  selection?: SlateSelection | null;
+  apply?: (operation: {
+    type: "set_selection";
+    properties: SlateSelection | null;
+    newProperties: SlateSelection;
+  }) => void;
   focus?: () => void;
   deleteFragment?: () => void;
-  insertText?: (text: string) => void;
+  insertText: (text: string) => void;
+  insertData?: (data: DataTransfer) => void;
+  insertBreak?: () => void;
+  withoutNormalizing?: (fn: () => void) => void;
+  withNewBatch?: (fn: () => void) => void;
   onChange?: () => void;
 };
 
@@ -53,107 +75,47 @@ function getReactFiber(dom: Element): FiberNode | null {
   return key ? (el[key] as FiberNode) : null;
 }
 
-function extractPlainText(root: HTMLElement): string {
-  const range = document.createRange();
-  try {
-    range.selectNodeContents(root);
-    return range.toString();
-  } catch {
-    return root.innerText || root.textContent || "";
-  }
+function delay(ms = 16): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function normalizePlain(s: string): string {
-  return s.replace(/\s+/g, " ").trim();
-}
-
-function expectedTextAfterReplace(
-  beforeText: string,
-  start: number,
-  end: number,
-  replacement: string,
-): string {
-  return (
-    beforeText.substring(0, start) +
-    replacement +
-    beforeText.substring(end)
-  );
-}
-
-function looksLikeExpectedReplace(
-  text: string,
-  beforeText: string,
-  start: number,
-  end: number,
-  replacement: string,
-  expectedSlice: string,
-): boolean {
-  const expected = expectedTextAfterReplace(beforeText, start, end, replacement);
-  if (text === expected || normalizePlain(text) === normalizePlain(expected)) {
-    return true;
-  }
-
-  const probe = replacement.trim().slice(0, Math.min(48, replacement.length));
-
-  if (!probe) {
-    // Deletion: count it done only when text was actually removed.
-    return text.length < beforeText.length;
-  }
-
-  return text.includes(probe) && (!expectedSlice || !text.includes(expectedSlice));
-}
-
-function domPointFromOffset(
-  root: HTMLElement,
-  charIndex: number,
-): { node: Node; offset: number } {
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-  let node: Node | null = walker.nextNode();
-  let last: Text | null = null;
-  const range = document.createRange();
-  range.setStart(root, 0);
-
-  while (node) {
-    const textNode = node as Text;
-    range.setEnd(textNode, textNode.data.length);
-    if (range.toString().length >= charIndex) {
-      range.setEnd(textNode, 0);
-      const lengthBeforeNode = range.toString().length;
-      const offsetInNode = charIndex - lengthBeforeNode;
-      return {
-        node: textNode,
-        offset: Math.max(0, Math.min(offsetInNode, textNode.data.length)),
-      };
+async function verifyRenderedText(read: () => string, tx: TextTransaction): Promise<boolean> {
+  const startedAt = performance.now();
+  do {
+    await delay();
+    const after = read();
+    if (after !== tx.beforeText) {
+      if (!verifyTextReplacement(tx, after)) return false;
+      await delay();
+      return verifyTextReplacement(tx, read());
     }
-    last = textNode;
-    node = walker.nextNode();
-  }
-
-  if (last) return { node: last, offset: last.data.length };
-  return { node: root, offset: 0 };
+  } while (performance.now() - startedAt < 650);
+  return false;
 }
 
-function setDomSelectionByOffsets(
-  root: HTMLElement,
-  start: number,
-  end: number,
-): boolean {
-  const startPair = domPointFromOffset(root, Math.max(0, start));
-  const endPair = domPointFromOffset(root, Math.max(0, end));
-  const range = document.createRange();
+function selectionMatches(root: HTMLElement, tx: TextTransaction): boolean {
+  if (!root.isConnected || !isCurrentTextTransaction(tx, extractPlainText(root))) return false;
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount !== 1 || !root.contains(document.activeElement)) return false;
   try {
-    range.setStart(startPair.node, startPair.offset);
-    range.setEnd(endPair.node, endPair.offset);
+    const range = selection.getRangeAt(0);
+    return root.contains(range.startContainer) && root.contains(range.endContainer) &&
+      offsetFromDomPoint(root, range.startContainer, range.startOffset) === tx.start &&
+      offsetFromDomPoint(root, range.endContainer, range.endOffset) === tx.end;
   } catch {
     return false;
   }
+}
 
-  const sel = window.getSelection();
-  if (!sel) return false;
-  sel.removeAllRanges();
-  sel.addRange(range);
+async function prepareDomSelection(root: HTMLElement, tx: TextTransaction): Promise<boolean> {
+  if (!isCurrentTextTransaction(tx, extractPlainText(root))) return false;
   root.focus({ preventScroll: true });
-  return true;
+  if (!isCurrentTextTransaction(tx, extractPlainText(root)) ||
+      !selectPlainTextRange(root, tx.start, tx.end, tx.expectedSlice, { focus: false })) return false;
+  document.dispatchEvent(new Event("selectionchange"));
+  if (!selectionMatches(root, tx)) return false;
+  await delay(30);
+  return selectionMatches(root, tx);
 }
 
 function getStaticTargetRange(
@@ -179,101 +141,36 @@ function getStaticTargetRange(
   }
 }
 
-async function verifyLexicalReplace(
-  root: HTMLElement,
-  beforeText: string,
-  start: number,
-  end: number,
-  replacement: string,
-  expectedSlice: string,
-  maxWaitMs = 650,
-): Promise<boolean> {
-  const startedAt = performance.now();
-  while (performance.now() - startedAt < maxWaitMs) {
-    const after = extractPlainText(root);
-    if (
-      looksLikeExpectedReplace(
-        after,
-        beforeText,
-        start,
-        end,
-        replacement,
-        expectedSlice,
-      )
-    ) {
-      return true;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 16));
-  }
-  return false;
-}
-
-async function runLexicalTransaction(
-  root: HTMLElement,
-  replacement: string,
-  start: number,
-  end: number,
-  beforeTextArg?: string,
-  expectedSliceArg?: string,
-): Promise<{ success: boolean; changed: boolean }> {
-  const currentText = extractPlainText(root);
-  const beforeText = beforeTextArg || currentText;
-  const len = beforeText.length;
-  const s = Math.max(0, Math.min(start, len));
-  const e = Math.max(s, Math.min(end, len));
-  const expectedSlice = expectedSliceArg ?? beforeText.substring(s, e);
-
-  root.focus({ preventScroll: true });
-  setDomSelectionByOffsets(root, s, e);
-  document.dispatchEvent(new Event("selectionchange"));
-
-  // Removals: insertReplacementText with empty data does nothing on Lexical —
-  // delete the selected span through the editing engine instead.
-  if (replacement === "") {
-    let deleted: boolean;
-    try {
-      deleted = document.execCommand("delete");
-    } catch {
-      deleted = false;
-    }
-    document.dispatchEvent(new Event("selectionchange"));
-    const success = deleted
-      ? await verifyLexicalReplace(root, beforeText, s, e, "", expectedSlice)
-      : false;
-    return {
-      success,
-      changed: extractPlainText(root) !== currentText,
-    };
-  }
-
-  const targetRanges = getStaticTargetRange(root, s, e);
-  const eventInit: InputEventInit = {
+function pastePlainText(root: HTMLElement, text: string): void {
+  const dt = new DataTransfer();
+  dt.setData("text/plain", text);
+  root.dispatchEvent(new ClipboardEvent("paste", {
     bubbles: true,
     cancelable: true,
-    inputType: "insertReplacementText",
-    data: replacement,
-  };
+    clipboardData: dt,
+  }));
+}
 
-  if (targetRanges.length > 0) {
-    (eventInit as InputEventInit & { targetRanges: StaticRange[] }).targetRanges =
-      targetRanges;
+async function runLexicalTransaction(root: HTMLElement, tx: TextTransaction): Promise<boolean> {
+  if (!(await prepareDomSelection(root, tx)) || !selectionMatches(root, tx)) return false;
+  if (tx.replacement === "") {
+    document.execCommand("delete");
+  } else if (tx.replacement.includes("\n")) {
+    // Let Lexical create paragraph/linebreak nodes instead of a multiline text node.
+    pastePlainText(root, tx.replacement);
+  } else {
+    const targetRanges = getStaticTargetRange(root, tx.start, tx.end);
+    const eventInit: InputEventInit & { targetRanges?: StaticRange[] } = {
+      bubbles: true,
+      cancelable: true,
+      inputType: "insertReplacementText",
+      data: tx.replacement,
+      targetRanges,
+    };
+    root.dispatchEvent(new InputEvent("beforeinput", eventInit));
   }
-
-  root.dispatchEvent(new InputEvent("beforeinput", eventInit));
   document.dispatchEvent(new Event("selectionchange"));
-
-  const success = await verifyLexicalReplace(
-    root,
-    beforeText,
-    s,
-    e,
-    replacement,
-    expectedSlice,
-  );
-  return {
-    success,
-    changed: extractPlainText(root) !== currentText,
-  };
+  return true;
 }
 
 function resolveTwitterEditable(host: HTMLElement): HTMLElement {
@@ -299,56 +196,47 @@ function isSlateTextNode(node: SlateNode): node is SlateTextNode {
   return typeof (node as { text?: unknown }).text === "string";
 }
 
-function getSlateTextLeaves(nodes: SlateNode[]): SlateLeaf[] {
-  const leaves: SlateLeaf[] = [];
-  let currentOffset = 0;
-
-  function dfs(nodeList: SlateNode[], path: number[]) {
-    if (!nodeList || !Array.isArray(nodeList)) return;
-    for (let i = 0; i < nodeList.length; i++) {
-      const node = nodeList[i];
-      if (!node) continue;
-      const nextPath = [...path, i];
+function getSlateTextLeaves(root: HTMLElement, editor: SlateEditor): SlateLeaf[] | null {
+  const internal: Array<{ path: number[]; textNode: SlateTextNode }> = [];
+  function visit(nodes: SlateNode[], path: number[]): void {
+    nodes.forEach((node, index) => {
+      const nextPath = [...path, index];
       if (isSlateTextNode(node)) {
-        leaves.push({
-          path: nextPath,
-          textNode: node,
-          startOffset: currentOffset,
-          endOffset: currentOffset + node.text.length
-        });
-        currentOffset += node.text.length;
+        internal.push({ path: nextPath, textNode: node });
       } else if (Array.isArray(node.children)) {
-        dfs(node.children, nextPath);
+        visit(node.children, nextPath);
       }
-    }
+    });
   }
-
-  dfs(nodes, []);
+  visit(editor.children, []);
+  const domLeaves = Array.from(root.querySelectorAll<HTMLElement>('[data-slate-node="text"]'));
+  if (internal.length === 0 || internal.length !== domLeaves.length) return null;
+  const text = extractPlainText(root);
+  const leaves: SlateLeaf[] = [];
+  let previousEnd = 0;
+  for (let i = 0; i < internal.length; i++) {
+    const domLeaf = domLeaves[i];
+    const startOffset = offsetFromDomPoint(root, domLeaf, 0);
+    const endOffset = offsetFromDomPoint(root, domLeaf, domLeaf.childNodes.length);
+    const leaf = internal[i];
+    if (startOffset < previousEnd || endOffset < startOffset ||
+        endOffset - startOffset !== leaf.textNode.text.length ||
+        text.slice(startOffset, endOffset) !== leaf.textNode.text ||
+        !/^\n*$/.test(text.slice(previousEnd, startOffset))) return null;
+    leaves.push({ ...leaf, startOffset, endOffset });
+    previousEnd = endOffset;
+  }
+  if (!/^\n*$/.test(text.slice(previousEnd))) return null;
   return leaves;
 }
 
-function getSlatePointFromOffset(
-  leaves: SlateLeaf[],
-  charIdx: number,
-): SlatePoint | null {
-  if (leaves.length === 0) return null;
-  const maxOffset = leaves[leaves.length - 1].endOffset;
-  const target = Math.max(0, Math.min(charIdx, maxOffset));
-
+function getSlatePointFromOffset(leaves: SlateLeaf[], offset: number): SlatePoint | null {
   for (const leaf of leaves) {
-    if (target >= leaf.startOffset && target <= leaf.endOffset) {
-      return {
-        path: leaf.path,
-        offset: target - leaf.startOffset
-      };
+    if (offset >= leaf.startOffset && offset <= leaf.endOffset) {
+      return { path: leaf.path, offset: offset - leaf.startOffset };
     }
   }
-
-  const last = leaves[leaves.length - 1];
-  return {
-    path: last.path,
-    offset: last.textNode.text.length
-  };
+  return null;
 }
 
 // ============================================================================
@@ -377,69 +265,15 @@ function getSlatePointFromOffset(
 // DO NOT CHANGE THIS APPROACH unless you have a deep understanding of Draft.js internals.
 // Any attempt to manually manipulate Draft.js state will likely break it.
 // ============================================================================
-async function runTwitterTransaction(
-  host: HTMLElement,
-  replacement: string,
-  start: number,
-  end: number,
-): Promise<boolean> {
-  const root = resolveTwitterEditable(host);
-  const beforeText = extractPlainText(root);
-  const len = beforeText.length;
-  const s = Math.max(0, Math.min(start, len));
-  const e = Math.max(s, Math.min(end, len));
-
-  root.focus({ preventScroll: true });
-
-  // Set selection using text node offsets (preserves Draft.js span structure)
-  setDomSelectionByOffsets(root, s, e);
-
+async function runTwitterTransaction(root: HTMLElement, tx: TextTransaction): Promise<boolean> {
+  if (!(await prepareDomSelection(root, tx)) || !selectionMatches(root, tx)) return false;
+  if (tx.replacement === "") {
+    document.execCommand("delete");
+  } else {
+    pastePlainText(root, tx.replacement);
+  }
   document.dispatchEvent(new Event("selectionchange"));
-
-  // Small delay to let Draft.js process selection before paste
-  await new Promise((resolve) => setTimeout(resolve, 10));
-
-  const newText = beforeText.substring(0, s) + replacement + beforeText.substring(e);
-  const probe = replacement.trim().slice(0, Math.min(32, replacement.length));
-
-  if (replacement === "") {
-    // Removals: a paste of empty data inserts nothing — delete the selected
-    // span through the editing engine instead.
-    let deleted: boolean;
-    try {
-      deleted = document.execCommand("delete");
-    } catch {
-      deleted = false;
-    }
-    if (!deleted) return false;
-    const afterDelete = extractPlainText(root);
-    return afterDelete === newText;
-  }
-
-  // Use simple paste event - Draft.js handles this natively and correctly
-  try {
-    const dt = new DataTransfer();
-    dt.setData("text/plain", replacement);
-    root.dispatchEvent(
-      new ClipboardEvent("paste", {
-        bubbles: true,
-        cancelable: true,
-        clipboardData: dt,
-      }),
-    );
-  } catch {
-    // Fallback to execCommand if paste event fails (rare)
-    try {
-      document.execCommand("insertText", false, replacement);
-    } catch {
-      return false;
-    }
-  }
-
-  const after = extractPlainText(root);
-  if (after === newText) return true;
-  if (probe && after.includes(probe)) return true;
-  return false;
+  return true;
 }
 
 function findSlateEditorInFiber(fiber: FiberNode): SlateEditor | null {
@@ -474,238 +308,158 @@ function findSlateEditorInFiber(fiber: FiberNode): SlateEditor | null {
   return null;
 }
 
+async function runSlateTransaction(root: HTMLElement, tx: TextTransaction): Promise<boolean> {
+  const fiber = getReactFiber(root);
+  const editor = fiber && findSlateEditorInFiber(fiber);
+  if (!editor) return false;
+  const multiline = tx.replacement.includes("\n");
+  const useData = multiline && typeof editor.insertData === "function";
+  const needsDelete = tx.replacement === "" ||
+    (multiline && !useData && tx.replacement.startsWith("\n") && tx.end > tx.start);
+  if ((multiline && !useData && typeof editor.insertBreak !== "function") ||
+      (needsDelete && typeof editor.deleteFragment !== "function")) return false;
+  const dt = useData ? new DataTransfer() : null;
+  dt?.setData("text/plain", tx.replacement);
+
+  editor.focus?.();
+  if (!(await prepareDomSelection(root, tx)) || !selectionMatches(root, tx)) return false;
+  const leaves = getSlateTextLeaves(root, editor);
+  if (!leaves) return false;
+  const anchor = getSlatePointFromOffset(leaves, tx.start);
+  const focus = getSlatePointFromOffset(leaves, tx.end);
+  if (!anchor || !focus) return false;
+  const selection = { anchor, focus };
+  if (typeof editor.apply === "function") {
+    editor.apply({ type: "set_selection", properties: editor.selection ?? null, newProperties: selection });
+  } else {
+    editor.selection = selection;
+  }
+  const samePoint = (a: SlatePoint | undefined, b: SlatePoint) => a?.offset === b.offset &&
+    a.path.length === b.path.length && a.path.every((part, index) => part === b.path[index]);
+  if (!isCurrentTextTransaction(tx, extractPlainText(root)) ||
+      !samePoint(editor.selection?.anchor, anchor) || !samePoint(editor.selection?.focus, focus)) return false;
+
+  const insert = () => {
+    if (dt) {
+      editor.insertData!(dt);
+    } else if (tx.replacement === "") {
+      editor.deleteFragment!();
+    } else if (multiline) {
+      const lines = tx.replacement.split("\n");
+      if (needsDelete) editor.deleteFragment!();
+      if (lines[0]) editor.insertText(lines[0]);
+      for (let i = 1; i < lines.length; i++) {
+        editor.insertBreak!();
+        if (lines[i]) editor.insertText(lines[i]);
+      }
+    } else {
+      // Slate insertText replaces an expanded selection itself.
+      editor.insertText(tx.replacement);
+    }
+  };
+  const normalize = () => {
+    if (typeof editor.withoutNormalizing === "function") editor.withoutNormalizing(insert);
+    else insert();
+  };
+  if (typeof editor.withNewBatch === "function") editor.withNewBatch(normalize);
+  else normalize();
+  editor.onChange?.();
+  document.dispatchEvent(new Event("selectionchange"));
+  return true;
+}
+
+function runNativeInputTransaction(
+  element: HTMLInputElement | HTMLTextAreaElement,
+  tx: TextTransaction,
+): boolean {
+  const textarea = element instanceof HTMLTextAreaElement;
+  if (!element.isConnected || document.activeElement !== element ||
+      element.selectionStart !== tx.start || element.selectionEnd !== tx.end ||
+      !isCurrentTextTransaction(tx, element.value) ||
+      tx.replacement !== normalizeReplacementText(tx.replacement) ||
+      (!textarea && /[\r\n]/.test(expectedTextAfterReplace(tx)))) return false;
+  const prototype = textarea ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+  const setter = Object.getOwnPropertyDescriptor(prototype, "value")?.set;
+  if (!setter) return false;
+  // No await or host callback may occur between this check and the setter.
+  if (!isCurrentTextTransaction(tx, element.value)) return false;
+  setter.call(element, expectedTextAfterReplace(tx));
+  const tracker = (element as typeof element & { _valueTracker?: { setValue: (value: string) => void } })._valueTracker;
+  tracker?.setValue(tx.beforeText);
+  const caret = tx.start + tx.replacement.length;
+  element.setSelectionRange(caret, caret);
+  element.dispatchEvent(new Event("input", { bubbles: true }));
+  element.dispatchEvent(new Event("change", { bubbles: true }));
+  return true;
+}
+
+function readTransaction(data: Record<string, unknown>): TextTransaction | null {
+  if (typeof data.beforeText !== "string" || typeof data.expectedSlice !== "string" ||
+      typeof data.replacement !== "string" || typeof data.start !== "number" ||
+      typeof data.end !== "number") return null;
+  const tx = {
+    beforeText: data.beforeText,
+    expectedSlice: data.expectedSlice,
+    replacement: data.replacement,
+    start: data.start,
+    end: data.end,
+  };
+  return isValidTextTransaction(tx) ? tx : null;
+}
+
+const requestTypes = new Set([
+  "HONE_RUN_SLATE_TRANSACTION",
+  "HONE_RUN_LEXICAL_TRANSACTION",
+  "HONE_RUN_TWITTER_TRANSACTION",
+  "HONE_RUN_REACT_INPUT_TRANSACTION",
+]);
+const activeRoots = new WeakSet<HTMLElement>();
+
 window.addEventListener("message", async (event) => {
-  if (event.source !== window) {
+  const data = event.data;
+  if (event.source !== window || !data || !requestTypes.has(data.type) ||
+      typeof data.requestId !== "string" || typeof data.targetId !== "string") return;
+  const { requestId, targetId, beforeText, expectedSlice } = data;
+  const reply = (success: boolean, changed: boolean) => window.postMessage({
+    type: "HONE_TRANSACTION_RESULT", requestId, targetId, beforeText, expectedSlice, success, changed,
+  }, "*");
+  const tx = readTransaction(data);
+  const element = document.getElementById(targetId);
+  if (!element || !tx) {
+    reply(false, false);
     return;
   }
-
-  if (event.data?.type === "HONE_RUN_SLATE_TRANSACTION") {
-    const { targetId, replacement, start, end } = event.data;
-    const element = document.getElementById(targetId);
-
-    if (!element) {
-      window.postMessage(
-        { type: "HONE_TRANSACTION_RESULT", success: false, error: "Element not found" },
-        "*",
-      );
-      return;
-    }
-
-    try {
-      const s = typeof start === "number" ? start : Number(start) || 0;
-      const e = typeof end === "number" ? end : Number(end) || 0;
-
-      const fiber = getReactFiber(element);
-      if (!fiber) {
-        window.postMessage(
-          {
-            type: "HONE_TRANSACTION_RESULT",
-            success: false,
-            error: "React Fiber not found",
-          },
-          "*",
-        );
-        return;
-      }
-
-      const editor = findSlateEditorInFiber(fiber);
-      if (editor) {
-        if (typeof editor.focus === "function") {
-          editor.focus();
-        }
-
-        // Map offsets directly to Slate internal paths & offsets
-        const leaves = getSlateTextLeaves(editor.children);
-        const anchor = getSlatePointFromOffset(leaves, s);
-        const focus = getSlatePointFromOffset(leaves, e);
-
-        if (anchor && focus) {
-          editor.selection = { anchor, focus };
-        } else {
-          setDomSelectionByOffsets(element as HTMLElement, s, e);
-          document.dispatchEvent(new Event("selectionchange"));
-          await new Promise((resolve) => setTimeout(resolve, 15)); 
-        }
-        
-        if (typeof editor.deleteFragment === "function") {
-          editor.deleteFragment();
-        }
-        if (typeof editor.insertText === "function") {
-          editor.insertText(replacement);
-        }
-        if (typeof editor.onChange === "function") {
-          editor.onChange();
-        }
-
-        window.postMessage({ type: "HONE_TRANSACTION_RESULT", success: true }, "*");
-      } else {
-        window.postMessage(
-          {
-            type: "HONE_TRANSACTION_RESULT",
-            success: false,
-            error: "Slate editor not found in fiber",
-          },
-          "*",
-        );
-      }
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      window.postMessage(
-        { type: "HONE_TRANSACTION_RESULT", success: false, error: message },
-        "*",
-      );
-    }
-  } else if (event.data?.type === "HONE_RUN_LEXICAL_TRANSACTION") {
-    const {
-      requestId,
-      targetId,
-      replacement,
-      start,
-      end,
-      beforeText,
-      expectedSlice,
-    } = event.data;
-    const element = document.getElementById(targetId) as HTMLElement | null;
-
-    if (!element) {
-      window.postMessage(
-        {
-          type: "HONE_TRANSACTION_RESULT",
-          requestId,
-          success: false,
-          changed: false,
-          error: "Element not found",
-        },
-        "*",
-      );
-      return;
-    }
-
-    try {
-      const result = await runLexicalTransaction(
-        element,
-        String(replacement ?? ""),
-        Number(start) || 0,
-        Number(end) || 0,
-        typeof beforeText === "string" ? beforeText : undefined,
-        typeof expectedSlice === "string" ? expectedSlice : undefined,
-      );
-      window.postMessage(
-        {
-          type: "HONE_TRANSACTION_RESULT",
-          requestId,
-          success: result.success,
-          changed: result.changed,
-        },
-        "*",
-      );
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      window.postMessage(
-        {
-          type: "HONE_TRANSACTION_RESULT",
-          requestId,
-          success: false,
-          changed: false,
-          error: message,
-        },
-        "*",
-      );
-    }
-  } else if (event.data?.type === "HONE_RUN_TWITTER_TRANSACTION") {
-    const { targetId, replacement, start, end } = event.data;
-    const element = document.getElementById(targetId) as HTMLElement | null;
-
-    if (!element) {
-      window.postMessage(
-        { type: "HONE_TRANSACTION_RESULT", success: false, error: "Element not found" },
-        "*",
-      );
-      return;
-    }
-
-    try {
-      const ok = await runTwitterTransaction(
-        element,
-        String(replacement ?? ""),
-        Number(start) || 0,
-        Number(end) || 0,
-      );
-      window.postMessage({ type: "HONE_TRANSACTION_RESULT", success: ok }, "*");
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      window.postMessage(
-        { type: "HONE_TRANSACTION_RESULT", success: false, error: message },
-        "*",
-      );
-    }
-  } else if (event.data?.type === "HONE_RUN_REACT_INPUT_TRANSACTION") {
-    const { targetId, newValue } = event.data;
-    const element = document.getElementById(targetId) as
-      | HTMLInputElement
-      | HTMLTextAreaElement
-      | null;
-
-    if (!element) {
-      window.postMessage(
-        { type: "HONE_TRANSACTION_RESULT", success: false, error: "Element not found" },
-        "*",
-      );
-      return;
-    }
-
-    try {
-      const prototype =
-        element instanceof HTMLTextAreaElement
-          ? window.HTMLTextAreaElement.prototype
-          : window.HTMLInputElement.prototype;
-      const valueSetter = Object.getOwnPropertyDescriptor(prototype, "value")?.set;
-      if (valueSetter) {
-        valueSetter.call(element, newValue);
-      } else {
-        element.value = newValue;
-      }
-
-      const fiber = getReactFiber(element);
-      if (fiber) {
-        let node: FiberNode | undefined = fiber;
-        while (node) {
-          const props = node.memoizedProps;
-          if (props) {
-            if (typeof props.onChangeText === "function") {
-              (props.onChangeText as (text: string) => void)(newValue);
-              break;
-            }
-            if (typeof props.onChange === "function") {
-              (props.onChange as (e: { target: HTMLInputElement }) => void)({
-                target: element,
-                currentTarget: element,
-                preventDefault() {},
-                stopPropagation() {},
-              } as unknown as { target: HTMLInputElement });
-              break;
-            }
-            if (typeof props.onInput === "function") {
-              (props.onInput as (e: { target: HTMLInputElement }) => void)({
-                target: element,
-                currentTarget: element,
-                preventDefault() {},
-                stopPropagation() {},
-              } as unknown as { target: HTMLInputElement });
-              break;
-            }
-          }
-          node = node.return;
-        }
-      }
-
-      window.postMessage({ type: "HONE_TRANSACTION_RESULT", success: true }, "*");
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      window.postMessage(
-        { type: "HONE_TRANSACTION_RESULT", success: false, error: message },
-        "*",
-      );
-    }
+  const native = data.type === "HONE_RUN_REACT_INPUT_TRANSACTION";
+  if (native && !(element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement)) {
+    reply(false, false);
+    return;
+  }
+  const root = data.type === "HONE_RUN_TWITTER_TRANSACTION" ? resolveTwitterEditable(element) : element;
+  const read = native
+    ? () => (element as HTMLInputElement | HTMLTextAreaElement).value
+    : () => extractPlainText(root);
+  if (activeRoots.has(root) || !isCurrentTextTransaction(tx, read())) {
+    reply(false, read() !== tx.beforeText);
+    return;
+  }
+  activeRoots.add(root);
+  let mutated = false;
+  const observer = new MutationObserver(() => { mutated = true; });
+  observer.observe(root, { subtree: true, childList: true, characterData: true });
+  let success = false;
+  try {
+    const attempted = native
+      ? runNativeInputTransaction(element as HTMLInputElement | HTMLTextAreaElement, tx)
+      : data.type === "HONE_RUN_SLATE_TRANSACTION" ? await runSlateTransaction(root, tx)
+      : data.type === "HONE_RUN_LEXICAL_TRANSACTION" ? await runLexicalTransaction(root, tx)
+      : await runTwitterTransaction(root, tx);
+    success = attempted && await verifyRenderedText(read, tx);
+  } catch {
+    // A failed host operation is not retried, even if it already mutated text.
+  } finally {
+    mutated ||= observer.takeRecords().length > 0;
+    observer.disconnect();
+    activeRoots.delete(root);
+    reply(success, mutated || read() !== tx.beforeText);
   }
 });

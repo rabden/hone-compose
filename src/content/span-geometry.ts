@@ -2,7 +2,7 @@
  * Map plain-text character spans to viewport rectangles for highlight overlays.
  */
 
-import { domPointFromOffset } from "./plain-text-dom";
+import { getPlainTextMap } from "./plain-text-dom";
 import type { EditableAdapter } from "./adapters";
 
 let rangeMirror: HTMLDivElement | null = null;
@@ -47,82 +47,47 @@ function applyNativeMirrorStyles(
   mirror.style.wordBreak = cs.wordBreak;
   mirror.style.overflowWrap = cs.overflowWrap as string;
   mirror.style.overflow = "hidden";
-  mirror.scrollTop = isTextarea ? el.scrollTop : 0;
-  mirror.scrollLeft = isTextarea ? el.scrollLeft : 0;
 }
 
-function getNativeInputRangeRects(
-  el: HTMLInputElement | HTMLTextAreaElement,
-  start: number,
-  end: number,
-): DOMRect[] {
-  if (end <= start) return [];
-
-  const cs = getComputedStyle(el);
-  const elRect = el.getBoundingClientRect();
-  const mirror = getRangeMirror();
-  applyNativeMirrorStyles(mirror, el, cs, elRect);
-
-  const value = el.value;
-  const mark = document.createElement("mark");
-  mark.style.background = "transparent";
-  mark.style.color = "inherit";
-  mark.style.padding = "0";
-  mark.style.margin = "0";
-  mark.textContent = value.slice(start, end);
-
-  mirror.replaceChildren(
-    document.createTextNode(value.slice(0, start)),
-    mark,
-    document.createTextNode(value.slice(end)),
-  );
-
-  const rects = Array.from(mark.getClientRects()).filter(
-    (r) => r.width > 0 && r.height > 0,
-  );
-  if (rects.length > 0) return rects;
-
-  const fallback = mark.getBoundingClientRect();
-  return fallback.width > 0 || fallback.height > 0 ? [fallback] : [];
-}
-
-function getContentEditableRangeRects(
-  root: HTMLElement,
-  start: number,
-  end: number,
-): DOMRect[] {
-  if (end <= start) return [];
-
-  const startPair = domPointFromOffset(root, start);
-  const endPair = domPointFromOffset(root, end);
-  const range = document.createRange();
-
-  try {
-    range.setStart(startPair.node, startPair.offset);
-    range.setEnd(endPair.node, endPair.offset);
-  } catch {
-    return [];
-  }
-
-  return Array.from(range.getClientRects()).filter(
-    (r) => r.width > 0 && r.height > 0,
-  );
-}
-
-export function getSpanClientRects(
+export function getSpansClientRects(
   adapter: EditableAdapter,
-  start: number,
-  end: number,
-): DOMRect[] {
+  spans: { start: number; end: number }[],
+): DOMRect[][] {
+  if (!spans.length) return [];
   const el = adapter.getElement();
-  const s = Math.max(0, Math.min(start, end));
-  const e = Math.max(s, end);
-
-  if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
-    return getNativeInputRangeRects(el, s, e);
+  const native = el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement;
+  let map: ReturnType<typeof getPlainTextMap>;
+  let clip: DOMRect | undefined;
+  if (native) {
+    const mirror = getRangeMirror();
+    clip = el.getBoundingClientRect();
+    applyNativeMirrorStyles(mirror, el, getComputedStyle(el), clip);
+    mirror.textContent = el.value;
+    mirror.scrollTop = el.scrollTop;
+    mirror.scrollLeft = el.scrollLeft;
+    map = getPlainTextMap(mirror);
+  } else {
+    map = getPlainTextMap(el);
   }
+  // All writes happen before the first range read, avoiding per-issue layout.
+  return spans.map(({ start, end }) => {
+    if (end <= start || start < 0 || end > map.text.length) return [];
+    const s = map.pointAt(start);
+    const e = map.pointAt(end);
+    const range = document.createRange();
+    range.setStart(s.node, s.offset);
+    range.setEnd(e.node, e.offset);
+    return Array.from(range.getClientRects()).flatMap((rect) => {
+      const left = Math.max(rect.left, clip?.left ?? rect.left);
+      const right = Math.min(rect.right, clip?.right ?? rect.right);
+      if (right <= left || rect.height <= 0 || clip && (rect.bottom > clip.bottom || rect.top < clip.top)) return [];
+      return [new DOMRect(left, rect.top, right - left, rect.height)];
+    });
+  });
+}
 
-  return getContentEditableRangeRects(el, s, e);
+export function getSpanClientRects(adapter: EditableAdapter, start: number, end: number): DOMRect[] {
+  return getSpansClientRects(adapter, [{ start, end }])[0];
 }
 
 /**

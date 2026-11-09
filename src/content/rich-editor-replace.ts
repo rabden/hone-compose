@@ -4,6 +4,7 @@
 
 import { resolveEditorRoot } from "./editor-detection";
 import { extractPlainText, setDomSelectionByOffsets } from "./plain-text-dom";
+import { locateTextSpan, normalizeReplacementText } from "./transaction-text";
 import {
   applyEditorTransaction,
   buildTransactionContext,
@@ -18,41 +19,7 @@ export interface ReplaceInEditorOptions {
   fieldSnapshot?: string;
 }
 
-export function locatePlainTextSpan(
-  fullText: string,
-  start: number,
-  end: number,
-  expectedText?: string,
-): { start: number; end: number } | null {
-  const len = fullText.length;
-  const s = Math.max(0, Math.min(start, len));
-  const e = Math.max(s, Math.min(end, len));
-
-  if (expectedText === undefined) {
-    return { start: s, end: e };
-  }
-
-  if (fullText.substring(s, e) === expectedText) {
-    return { start: s, end: e };
-  }
-
-  const searchFrom = Math.max(0, s - expectedText.length);
-  const near = fullText.indexOf(expectedText, searchFrom);
-  if (near !== -1) {
-    return { start: near, end: near + expectedText.length };
-  }
-
-  const anywhere = fullText.indexOf(expectedText);
-  if (anywhere !== -1) {
-    return { start: anywhere, end: anywhere + expectedText.length };
-  }
-
-  if (s < len && e <= len && e > s) {
-    return { start: s, end: e };
-  }
-
-  return null;
-}
+export { locateTextSpan as locatePlainTextSpan } from "./transaction-text";
 
 export async function replaceInContentEditable(
   element: HTMLElement,
@@ -63,28 +30,13 @@ export async function replaceInContentEditable(
 ): Promise<TransactionResult> {
   const root = resolveEditorRoot(element);
   const currentText = extractPlainText(root);
-  const snapshot = options?.fieldSnapshot;
-  const locateIn =
-    snapshot &&
-    options?.expectedText &&
-    snapshot.includes(options.expectedText)
-      ? snapshot
-      : currentText;
-
-  let resolved = locatePlainTextSpan(
-    locateIn,
+  const resolved = locateTextSpan(
+    currentText,
     start,
     end,
     options?.expectedText,
+    options?.fieldSnapshot,
   );
-  if (!resolved) {
-    resolved = locatePlainTextSpan(
-      currentText,
-      start,
-      end,
-      options?.expectedText,
-    );
-  }
 
   if (!resolved) {
     return {
@@ -94,18 +46,13 @@ export async function replaceInContentEditable(
     };
   }
 
-  const beforeText = snapshot ?? currentText;
-  const expectedSlice =
-    options?.expectedText ??
-    beforeText.substring(resolved.start, resolved.end);
-
   const ctx = buildTransactionContext(
-    element,
+    root,
     resolved.start,
     resolved.end,
-    replacement,
-    beforeText,
-    expectedSlice,
+    normalizeReplacementText(replacement),
+    currentText,
+    currentText.slice(resolved.start, resolved.end),
   );
 
   return await applyEditorTransaction(ctx);

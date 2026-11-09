@@ -10,7 +10,7 @@ This document contains the low-level architectural details, file tree structure,
 graph TD
     subgraph LiveProofreading["Live proofreading (local, no network)"]
         User([User]) -->|Types| Field[Focused Field]
-        Field -->|debounce ~500ms| Lint[Harper WASM linter]
+        Field -->|debounce ~500ms, changed paragraphs| Lint[Background Harper WASM linter]
         Lint -->|Issues| Underline[Red/Blue underlines]
         Underline -->|Hover or click| Card[Suggestion card]
         Card -->|Apply fix| Tx[Transaction Engine]
@@ -52,7 +52,7 @@ Injected into every webpage. It handles UI rendering, user interaction, and edit
 The extension's central nervous system.
 - **AI Orchestration**: Routes prompts to OpenRouter, OpenAI-compatible endpoints, Anthropic, Google AI Studio, Groq, or DeepSeek via the Vercel AI SDK. See [service-worker.ts](file:///disk2/desktop/extensions-A/src/background/service-worker.ts).
 - **Smart Provider Fallback**: If the active provider fails, retries the same text with the user's other configured providers in order until one succeeds (user-opt-out via `enableProviderFallback`). Per-action `provider`/`model`/`temperature` fields are stored on actions but are **not currently read at runtime** — the global provider/model setting and a fixed temperature (0.7) are used for every request.
-- **Grammar Fallback**: Serves `LINT_TEXT` / `WARMUP_LINTER` messages with its own Harper linter for tabs whose page CSP blocks WASM, and mirrors dictionary/ignore updates (`PROOFREAD_STATE_ADDED`) so both linter instances agree.
+- **Off-page Proofreading**: Serves every `LINT_TEXT` / `WARMUP_LINTER` request in the service worker, keeping synchronous Harper WASM work off the page's UI thread and independent of page CSP. One queue serializes linting, startup and dictionary/ignore updates (`PROOFREAD_STATE_ADDED`); the background is the sole state writer. Cold-start linter setup retries once — the wasm fetch can reject transiently while the service worker is starting — and a failed warmup is only logged as a warning because the next check re-initializes.
 - **Global Commands**: Listens for the manifest-defined keyboard shortcuts (`toggle-menu` Alt+Shift+D, `improve-writing` Alt+Shift+I, `fix-spelling` Alt+Shift+G, `paraphrase` Alt+Shift+P) and relays them to the active tab as `COMMAND_TRIGGERED`.
 - **Response Sanitization**: Strips raw tag leakage (e.g. `</assistant>`, `</thought>`) from model output before saving history or returning to the content script.
 - **Marketplace**: Fetches and caches the public Actions Registry (6h TTL) and installs/validates individual action JSONs. See the [Marketplace Registry](#marketplace-registry) section.
@@ -71,8 +71,8 @@ Interacting with web editors is the project's biggest challenge. Hone uses a tie
 1. **Framework Detection**: [editor-detection.ts](file:///disk2/desktop/extensions-A/src/content/editor-detection.ts) fingerprints the element (native, Lexical, Slate, ProseMirror, Draft.js, Twitter/X, generic `contenteditable`), and [adapters.ts](file:///disk2/desktop/extensions-A/src/content/adapters.ts) wraps it in the right `EditableAdapter` (sensitive fields are refused entirely, see [sensitive-fields.ts](file:///disk2/desktop/extensions-A/src/content/sensitive-fields.ts)).
 2. **React Fiber Traversal**: To support editors like Discord (Slate) and Twitter/X, Hone traverses the React Fiber tree (`__reactFiber$`) in the page context (Main World) to find the internal `editor` instance or trigger event handler props (`onChange`, `onChangeText`, `onInput`) directly. See [main-world-bridge.ts](file:///disk2/desktop/extensions-A/src/content/main-world-bridge.ts) and [transaction-engine.ts](file:///disk2/desktop/extensions-A/src/content/transaction-engine.ts).
 3. **Event Simulation**: Insertions use `beforeinput` with `insertReplacementText` or simulated `paste` events so editors record the change in their undo/redo history. Deletions (empty replacement, e.g. "Remove the space") use `execCommand("delete")` — `insertText` with an empty string is a guaranteed no-op in Chrome — with a `deleteByCut` beforeinput fallback.
-4. **Context Snapshotting**: Before replacement, the system captures the field text and the expected span text so the target can be re-located (near the original offset, then anywhere) if the editor changed while the AI was thinking. See `locateTextSpan` in [adapters.ts](file:///disk2/desktop/extensions-A/src/content/adapters.ts) and `locatePlainTextSpan` in [rich-editor-replace.ts](file:///disk2/desktop/extensions-A/src/content/rich-editor-replace.ts).
-5. **Verification**: Every commit is followed by a `verifyDomReplace` polling loop that re-reads the editor text and matches it against the expected result; half-applied strategies abort the chain so nothing is inserted twice.
+4. **Canonical Text and Snapshotting**: [plain-text-dom.ts](file:///disk2/desktop/extensions-A/src/content/plain-text-dom.ts) maps text, DOM points, selections and highlights through the same newline-aware model: one LF per block boundary or meaningful `<br>`, preserving empty paragraphs and ignoring caret-placeholder BRs. It avoids `Range.toString()` (which drops structural newlines) and `innerText` (which adds layout-dependent spacing). Replacement targets are resolved against current text using their original snapshot; missing, edited or ambiguous spans fail rather than replacing an unrelated occurrence.
+5. **Verification**: Commits must produce the exact canonical text splice and an actual change. Whitespace normalization and prefix probes cannot stand in for success, so lost newlines, no-op deletions and partial writes fail. Changed-but-unverified attempts stop the strategy chain. Bridge requests are correlated, snapshots are revalidated before mutation, and native fields prefer undo-preserving editing commands over setter fallbacks.
 
 ### **Advanced UI Components**
 The project includes high-fidelity custom components designed for a native-like feel:
@@ -83,13 +83,13 @@ The project includes high-fidelity custom components designed for a native-like 
 
 ### **Live Proofreading with Harper.js (QuillBot-style)**
 Hone integrates Harper.js (a well-known open-source grammar checker) for instant, offline spelling and grammar correction **while you type**:
-- **WASM Module**: Harper.js runs as a WebAssembly module in the content script ([grammar-worker.ts](file:///disk2/desktop/extensions-A/src/content/grammar-worker.ts)); if the page's CSP blocks WASM, checking transparently moves to the service worker (`LINT_TEXT` message → [background/grammar-worker.ts](file:///disk2/desktop/extensions-A/src/background/grammar-worker.ts)).
+- **WASM Module**: Harper.js runs only in the extension service worker ([background/grammar-worker.ts](file:///disk2/desktop/extensions-A/src/background/grammar-worker.ts)). The content [grammar-worker.ts](file:///disk2/desktop/extensions-A/src/content/grammar-worker.ts) is a messaging client: no page-thread WASM compilation, linting, or CSP fallback race. Harper 2.0.0 already reports UTF-16 offsets, including after emoji; the pipeline does not convert them a second time.
 - **Issues, not corrections**: Harper's lints are converted to positioned issues with labeled fixes ([proofread-issues.ts](file:///disk2/desktop/extensions-A/src/content/proofread-issues.ts), modeled on markview's `spell::harper_issues`: spelling lints win overlaps, suggestions map to Replace/InsertAfter/Remove fixes, Markdown is stripped from messages).
-- **Debounced live loop** ([live-proofread.ts](file:///disk2/desktop/extensions-A/src/content/live-proofread.ts)): the focused field is linted ~500ms after typing settles (IME composition aware), with a per-tab lint cache so refocusing is instant. Fields over 8,000 characters are skipped.
-- **Underlines**: contenteditable spans use the **CSS Custom Highlight API** (live DOM Ranges that track edits between checks); `input`/`textarea` get wavy overlay strips measured by the mirror in `span-geometry.ts`. Red = spelling, blue = grammar (Google Docs/Word convention).
+- **Debounced paragraph loop**: [proofread-scheduler.ts](file:///disk2/desktop/extensions-A/src/content/proofread-scheduler.ts) owns the 500ms trailing debounce independently of card timers. Input, IME composition, state changes and teardown invalidate pending results immediately; at most one lint request is outstanding per controller. Newline-delimited paragraphs retain cached relative issues, which shift with their paragraph when preceding text changes. Only changed/uncached paragraphs are linted, and the final non-whitespace token is excluded until a space, tab or newline completes it. While a changed paragraph awaits its lint, its previously painted issues are carried across the edit via a common prefix/suffix diff (`rebaseIssues`): spans untouched by the edit keep their underlines (shifted when text before them changed), and only spans overlapping the edit drop — so highlights never blink out mid-typing. The 8,000-character limit applies per paragraph, not to the whole field; oversized paragraphs do not disable other paragraphs. [live-proofread.ts](file:///disk2/desktop/extensions-A/src/content/live-proofread.ts) owns DOM events, painting, cards and fixes.
+- **Underlines**: contenteditable spans use the **CSS Custom Highlight API** with a single DOM-text map per paint; `input`/`textarea` get wavy overlay strips using one mirror write followed by batched range reads in `span-geometry.ts`, rather than rewriting and laying out the mirror for every error. While a field is being proofread, the controller sets `spellcheck="false"` on it (native spellcheck is element-scoped and cannot be exempted per word) and restores the field's original attribute on stop, so the browser's own red squiggle never doubles up with Hone's. Input/scroll/resize invalidate geometry; issues overlapping an edit disappear immediately while all other spans stay painted with correctly rebased offsets. Red = spelling, blue = grammar (Google Docs/Word convention).
 - **Suggestion cards** ([suggestion-card.tsx](file:///disk2/desktop/extensions-A/src/content/suggestion-card.tsx)): hovering ~160ms over an underlined issue — or **clicking** it (click again to dismiss) — opens a floating-ui-anchored, options-only card: every Harper fix (click applies it through the full `replaceRange` transaction engine), plus "Add to dictionary" (spelling) and "Ignore". A window-level close arbiter keeps the card open only while the pointer is over the card or the field — geometry-based, since events leaving the shadow root are retargeted to the host.
-- **Persistent personal dictionary & ignores** ([proofread-dictionary.ts](file:///disk2/desktop/extensions-A/src/content/proofread-dictionary.ts) + [harper-lint.ts](file:///disk2/desktop/extensions-A/src/content/harper-lint.ts)): "Add to dictionary" feeds Harper's own dictionary (`importWords`), and Ignore stores Harper's stable `contextHash`; both live in `chrome.storage.local`, are filtered at lint time in both linter worlds (content + background), and survive restarts. The lint pipeline ([harper-lint.ts](file:///disk2/desktop/extensions-A/src/content/harper-lint.ts)) is shared by both worlds.
-- **Language Detection**: Uses Chrome's `chrome.i18n.detectLanguage` API plus a spelling-density guard (skip when >35% of words are flagged) so non-English text is never underlined.
+- **Persistent personal dictionary & ignores** ([proofread-dictionary.ts](file:///disk2/desktop/extensions-A/src/content/proofread-dictionary.ts) + [harper-lint.ts](file:///disk2/desktop/extensions-A/src/content/harper-lint.ts)): "Add to dictionary" feeds Harper's own dictionary (`importWords`), and Ignore stores Harper's stable `contextHash`. The background queue persists these in `chrome.storage.local` before acknowledging the request and applies them before subsequent linting. Content scripts observe storage changes even while no field is focused, invalidate paragraph caches and refresh active controllers. Failed writes/imports are not reported as successful; failed lint responses are not cached as clean text.
+- **Language Detection**: Uses Chrome's `chrome.i18n.detectLanguage` API. Reliable non-English skips linting; reliable English outranks the spelling-density fallback. A language-agnostic backstop applies regardless of detection: if 5+ consecutive words in a paragraph are all misspelled (`hasConsecutiveSpellingErrors`), the text is not English prose — romanized Banglish/Hinglish/Urdu and other transliterations flag word after word, while correct English function words always break a typo run — so all issues for that paragraph are suppressed. The density guard (≥6 words, >60% flagged) remains only for uncertain detection.
 - **Privacy-First**: All processing happens locally in the browser — no text is sent to external servers for grammar checking. The `liveProofread` setting lives in the popup and the Customizations tab.
 
 ### **Word-Level Diff Visualization**
@@ -114,7 +114,7 @@ When an action runs, the rewrite target is resolved by `resolveReplacementSpan` 
 ```text
 src/
 ├── background/
-│   ├── grammar-worker.ts      # [Logic] Background Harper linter (CSP fallback): same lint pipeline, serves LINT_TEXT.
+│   ├── grammar-worker.ts      # [Logic] Sole Harper linter: serialized off-page checks and state writes.
 │   └── service-worker.ts      # [Core] AI provider routing + smart fallback, grammar/marketplace messages,
 │                              #       manifest commands, response sanitization, history saving, sender checks.
 ├── components/
@@ -163,25 +163,26 @@ src/
 │   ├── content.css            # [Styles] Scoped styles for the Shadow DOM container (incl. squiggle underlines).
 │   ├── editor-detection.ts    # [Logic] Framework fingerprinting and editor-root resolution (incl. X compose).
 │   ├── floating-action-menu.tsx # [UI] 2-column floating menu with action list, accordions and preview card.
-│   ├── grammar-worker.ts      # [Logic] Content-side Harper linter: lint → positioned issues (background CSP fallback,
-│   │                          #       dictionary/ignore entry points synced with the service worker).
-│   ├── harper-lint.ts         # [Logic] Shared lint pipeline: context hashes, persistent-ignore filtering, conversion.
+│   ├── grammar-worker.ts      # [Logic] Background lint/state messaging client and storage-change subscription.
+│   ├── harper-lint.ts         # [Logic] Background lint pipeline: context hashes, persistent-ignore filtering, conversion.
 │   ├── highlight-shimmer.tsx  # [UI] Loading shimmer overlay for the AI-processing span.
-│   ├── index.tsx              # [Entry] Mounts the React app into a Shadow Root, injects main-world-bridge.js,
+│   ├── index.tsx              # [Entry] Mounts the React app into a Shadow Root,
 │   │                          #       warms the WASM linter on first field focus.
 │   ├── keyboard-guard.ts      # [Utility] Activation-key detection/suppression so menu keys never reach the field.
 │   ├── live-proofread.ts      # [Logic] Live proofreading controller: debounced lint loop, CSS Highlight underlines,
 │   │                          #       hover/click hit-testing and cards, fix application, dictionary/ignore actions.
 │   ├── main-world-bridge.ts   # [Bridge] Main-world script: Slate/Lexical/Twitter/React-input transactions,
-│   │                          #       reached via window.postMessage from the isolated world.
+│   │                          #       registered as a static MAIN-world content script in manifest.json
+│   │                          #       (no script-tag/URL injection), reached via window.postMessage.
 │   ├── overlay-chrome.tsx     # [UI] TriggerDot (field-corner chevron) and overlay toast.
-│   ├── plain-text-dom.ts      # [Logic] Plain-text offsets over contenteditable using one Range.toString() model.
+│   ├── plain-text-dom.ts      # [Logic] Newline-aware canonical text/DOM map shared by both execution worlds.
 │   ├── positioning.ts         # [UI] Floating-UI integration (flip/shift/autoUpdate) for menu and cards.
 │   ├── preview-panel.tsx      # [Stub] Reserved for preview panel extraction.
 │   ├── preview-types.ts       # [Stub] Reserved for preview type extraction.
 │   ├── proofread-dictionary.ts # [Data] Persistent personal dictionary + ignored lint hashes (chrome.storage).
 │   ├── proofread-issues.ts    # [Logic] Pure Harper lint → issue conversion (spelling-first overlap dedupe,
 │   │                          #        labeled fixes, plain messages, ignore keys, non-English guard).
+│   ├── proofread-scheduler.ts # [Logic] Debounce, paragraph cache/rebasing, incomplete-token exclusion, cancellation.
 │   ├── rich-editor-replace.ts # [Logic] High-level replacement orchestration: span re-location → transaction engine.
 │   ├── sensitive-fields.ts    # [Security] Password/payment/OTP field detection — never adapted, never captured.
 │   ├── span-geometry.ts       # [Logic] Mirror-based measurement of character spans → viewport rects.
@@ -191,6 +192,7 @@ src/
 │   ├── target-text-highlight.ts # [Logic] Target-span painting: CSS Highlight API + native ::selection styling.
 │   ├── transaction-engine.ts  # [Logic] Low-level framework commits (Main-World Slate/Lexical/Twitter bridges,
 │   │                          #        beforeinput, deleteByCut deletions, execCommand, paste) with verification.
+│   ├── transaction-text.ts    # [Logic] Pure snapshot relocation and exact, newline-sensitive verification.
 │   └── word-diff.ts           # [Logic] Word-level LCS diff algorithm for visualizing text changes.
 ├── hooks/
 │   └── use-mobile.ts          # [Utility] Responsive breakpoint hooks targeting mobile layouts.
@@ -227,7 +229,16 @@ src/
 └── main.tsx                   # [Dev] Entry point for the Vite development landing page.
 
 tests/
-├── proofread-issues.test.ts   # Harper lint → issue conversion rules (overlaps, fix labels, ignore keys).
+├── proofread-issues.test.ts    # Harper lint → issue conversion rules (overlaps, fix labels, ignore keys).
+├── proofread-scheduler.test.ts # Debounce, IME, stale responses, paragraph caching and unfinished tokens.
+├── plain-text-dom.test.ts     # Canonical newlines and round-trip DOM/UTF-16 offsets.
+├── transaction-text.test.ts   # Snapshot relocation, no-ops, partial writes and newline-sensitive verification.
+├── background-grammar-worker.test.ts # Serialized state/checks, failure propagation and real Harper UTF-16 spans.
+├── content-grammar-worker.test.ts    # Off-page messaging and storage-change subscription.
+├── proofread-dictionary.test.ts      # Persistence failure and dictionary/ignore bounds.
+├── editor-browser.html       # Vite browser fixture with real controller/card/adapters and simulated extension APIs.
+├── editor-browser.tsx        # Interactive native, React-controlled and contenteditable fixtures.
+├── proofread-browser-worker.ts # Runs real background Harper logic off-page for the browser fixture.
 └── sensitive-fields.test.ts   # Secret-field detection contract: passwords/payment/OTP never adapted.
 ```
 
