@@ -17,6 +17,21 @@ import {
   loadProofreadState,
 } from "./proofread-dictionary";
 
+const configuredLinters = new WeakSet<Linter>();
+
+async function ensureProofreadRules(linter: Linter): Promise<void> {
+  if (configuredLinters.has(linter)) return;
+  if (typeof linter.getLintConfig === "function" && typeof linter.setLintConfig === "function") {
+    const config = await linter.getLintConfig();
+    if (config && config.LongSentences !== false) {
+      // Disable Harper's built-in LongSentences rule at lint time so its
+      // whole-sentence Readability span cannot wipe out inner spelling/grammar lints.
+      await linter.setLintConfig({ ...config, LongSentences: false });
+    }
+  }
+  configuredLinters.add(linter);
+}
+
 /** Lint text into positioned issues, honoring the personal dictionary and
  *  the persistent ignore list. The density guard is a fallback for text whose
  *  language could not be confidently detected; confident English skips it. */
@@ -25,6 +40,7 @@ export async function runHarperLint(
   text: string,
   options?: { densityGuard?: boolean },
 ): Promise<ProofreadIssue[]> {
+  await ensureProofreadRules(linter);
   await loadProofreadState();
 
   const lints = await linter.lint(text, { language: "plaintext" });
@@ -65,8 +81,9 @@ export async function runHarperLint(
   return issues;
 }
 
-/** Feed the persisted personal dictionary into a freshly set-up linter. */
+/** Feed the persisted personal dictionary and rule tuning into a freshly set-up linter. */
 export async function primeLinterState(linter: Linter): Promise<void> {
+  await ensureProofreadRules(linter);
   await loadProofreadState();
   const words = getDictionaryWords();
   if (words.length === 0) return;

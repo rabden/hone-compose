@@ -5,7 +5,7 @@
  * Loading shimmer is handled separately in highlight-shimmer.tsx
  */
 
-import { domPointFromOffset } from "./plain-text-dom";
+import { domRangePoints } from "./plain-text-dom";
 import { getAdaptiveHighlightColors } from "./span-geometry";
 import type { EditableAdapter } from "./adapters";
 
@@ -48,11 +48,10 @@ function clearHighlightCssVar() {
 
 function createRange(root: HTMLElement, start: number, end: number): Range | null {
   try {
-    const startPair = domPointFromOffset(root, Math.max(0, start));
-    const endPair = domPointFromOffset(root, Math.max(0, end));
+    const { from, to } = domRangePoints(root, Math.max(0, start), Math.max(0, end));
     const range = document.createRange();
-    range.setStart(startPair.node, startPair.offset);
-    range.setEnd(endPair.node, endPair.offset);
+    range.setStart(from.node, from.offset);
+    range.setEnd(to.node, to.offset);
     return range;
   } catch {
     return null;

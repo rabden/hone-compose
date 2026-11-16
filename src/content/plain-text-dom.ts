@@ -1,12 +1,18 @@
 /** One newline-aware offset model for editor text, selections and highlights. */
 
-type DomPoint = { node: Node; offset: number };
+export type DomPoint = { node: Node; offset: number };
+export type PointAffinity = "start" | "end";
 type TextRun = { start: number; end: number; from: DomPoint; to: DomPoint; text: boolean };
 
 const BLOCK_TAGS = new Set([
   "ADDRESS", "ARTICLE", "ASIDE", "BLOCKQUOTE", "DIV", "DL", "DT", "DD",
   "FIGCAPTION", "FIGURE", "FOOTER", "H1", "H2", "H3", "H4", "H5", "H6",
   "HEADER", "LI", "MAIN", "NAV", "OL", "P", "PRE", "SECTION", "UL",
+]);
+
+const VOID_NON_TEXT_TAGS = new Set([
+  "AUDIO", "CANVAS", "EMBED", "HR", "IFRAME", "IMG", "INPUT",
+  "OBJECT", "SELECT", "SVG", "TEXTAREA", "VIDEO",
 ]);
 
 export function getPlainTextMap(root: HTMLElement) {
@@ -33,64 +39,120 @@ export function getPlainTextMap(root: HTMLElement) {
     );
   }
 
-  function walk(node: Node): void {
+  function isIgnorableTrailing(node: Node): boolean {
+    if (node.nodeType === Node.COMMENT_NODE || ignored(node)) return true;
+    if (node.nodeType === Node.TEXT_NODE) return !node.textContent;
+    if (!(node instanceof Element)) return false;
+    if (BLOCK_TAGS.has(node.tagName) || node.tagName === "BR" || VOID_NON_TEXT_TAGS.has(node.tagName)) {
+      return false;
+    }
+    return Array.from(node.childNodes).every(isIgnorableTrailing);
+  }
+
+  function pinOffsets(node: Node, pos: number): void {
+    if (node.nodeType === Node.TEXT_NODE) {
+      offsets.set(node, [pos]);
+      return;
+    }
+    const childCount = node.childNodes.length;
+    offsets.set(node, new Array(childCount + 1).fill(pos));
+    for (let i = 0; i < childCount; i++) {
+      pinOffsets(node.childNodes[i], pos);
+    }
+  }
+
+  function walk(node: Node, trailingInBlock: boolean): Node | null {
     if (node.nodeType === Node.TEXT_NODE) {
       offsets.set(node, [length]);
       const value = node.textContent ?? "";
       append(value, { node, offset: 0 }, { node, offset: value.length }, true);
-      return;
+      return null;
     }
     const children = Array.from(node.childNodes);
     const boundaries: number[] = [];
     offsets.set(node, boundaries);
+    let lastMeaningful = children.length - 1;
+    while (lastMeaningful >= 0 && isIgnorableTrailing(children[lastMeaningful])) {
+      lastMeaningful--;
+    }
     let previous: Node | null = null;
     let previousBlock = false;
-    let previousEmpty = false;
+    let previousEmptyNode: Node | null = null;
     for (let i = 0; i < children.length; i++) {
       const child = children[i];
       boundaries[i] = length;
-      if (ignored(child) || child.nodeType === Node.COMMENT_NODE) continue;
+      if (ignored(child) || child.nodeType === Node.COMMENT_NODE) {
+        pinOffsets(child, length);
+        continue;
+      }
       const block = child instanceof Element && BLOCK_TAGS.has(child.tagName);
-      if (previous && (block || previousBlock) && (lastChar !== "\n" || previousEmpty)) {
-        const from = previousEmpty
-          ? { node: previous, offset: previous.childNodes.length }
+      if (previous && (block || previousBlock) && (lastChar !== "\n" || previousEmptyNode !== null)) {
+        const from = previousEmptyNode
+          ? { node: previousEmptyNode, offset: 0 }
           : runs.at(-1)!.to;
         append("\n", from, { node: child, offset: 0 });
       }
       boundaries[i] = length;
       const before = length;
+      let childEmptyNode: Node | null = null;
       if (child instanceof Element && child.tagName === "BR") {
-        // Editors keep a final BR as a caret placeholder, not another line.
-        const placeholder = i === children.length - 1 &&
-          (node === root || node instanceof Element && BLOCK_TAGS.has(node.tagName));
+        // Editors keep a final BR inside a block (even wrapped in inline spans) as a caret placeholder.
+        const placeholder = trailingInBlock && i === lastMeaningful;
         offsets.set(child, [length]);
         if (!placeholder) append("\n", { node, offset: i }, { node, offset: i + 1 });
       } else {
-        walk(child);
+        const isTrailing = trailingInBlock && i === lastMeaningful;
+        childEmptyNode = walk(child, block ? true : isTrailing);
       }
-      if (block || length > before) {
+      if (block) {
         previous = child;
-        previousBlock = block;
-        previousEmpty = length === before;
+        previousBlock = true;
+        previousEmptyNode = length === before ? (childEmptyNode ?? child) : childEmptyNode;
+      } else if (length > before) {
+        previous = child;
+        previousBlock = false;
+        previousEmptyNode = childEmptyNode;
       }
     }
     boundaries[children.length] = length;
+    return previousEmptyNode;
   }
-  walk(root);
+  walk(root, true);
 
-  function pointAt(index: number): DomPoint {
+  function pointAt(index: number, affinity?: PointAffinity): DomPoint {
+    if (runs.length === 0) return { node: root, offset: 0 };
     const target = Math.max(0, Math.min(index, length));
+    if (target === length) return runs.at(-1)!.to;
+
     let lo = 0;
     let hi = runs.length - 1;
     while (lo <= hi) {
       const mid = (lo + hi) >>> 1;
-      if (runs[mid].end < target) lo = mid + 1;
+      if (runs[mid].end <= target) lo = mid + 1;
       else hi = mid - 1;
     }
     const run = runs[lo];
-    if (!run) return { node: root, offset: root.childNodes.length };
+    if (!run) return runs.at(-1)!.to;
+
+    if (target > 0 && run.start === target && (
+      affinity === "end" ||
+      (affinity === undefined && runs[lo - 1].text && !run.text)
+    )) {
+      return runs[lo - 1].to;
+    }
+
     if (run.text) return { node: run.from.node, offset: target - run.start };
-    return target <= run.start ? run.from : run.to;
+    return run.from;
+  }
+
+  function rangePoints(start: number, end: number): { from: DomPoint; to: DomPoint } {
+    const s = Math.max(0, Math.min(start, length));
+    const e = Math.max(s, Math.min(end, length));
+    if (e === s) {
+      const point = pointAt(s);
+      return { from: point, to: point };
+    }
+    return { from: pointAt(s, "start"), to: pointAt(e, "end") };
   }
 
   function offsetAt(node: Node, offset: number): number {
@@ -102,7 +164,7 @@ export function getPlainTextMap(root: HTMLElement) {
     return values[Math.max(0, Math.min(offset, values.length - 1))] ?? 0;
   }
 
-  return { text: chunks.join(""), pointAt, offsetAt };
+  return { text: chunks.join(""), pointAt, rangePoints, offsetAt };
 }
 
 export function extractPlainText(root: HTMLElement): string {
@@ -113,8 +175,20 @@ export function offsetFromDomPoint(root: HTMLElement, node: Node, offset: number
   return getPlainTextMap(root).offsetAt(node, offset);
 }
 
-export function domPointFromOffset(root: HTMLElement, charIndex: number): DomPoint {
-  return getPlainTextMap(root).pointAt(charIndex);
+export function domPointFromOffset(
+  root: HTMLElement,
+  charIndex: number,
+  affinity?: PointAffinity,
+): DomPoint {
+  return getPlainTextMap(root).pointAt(charIndex, affinity);
+}
+
+export function domRangePoints(
+  root: HTMLElement,
+  start: number,
+  end: number,
+): { from: DomPoint; to: DomPoint } {
+  return getPlainTextMap(root).rangePoints(start, end);
 }
 
 export function setDomSelectionByOffsets(
@@ -125,13 +199,12 @@ export function setDomSelectionByOffsets(
 ): boolean {
   const map = getPlainTextMap(root);
   if (start < 0 || end < start || end > map.text.length) return false;
-  const s = map.pointAt(start);
-  const e = map.pointAt(end);
+  const { from, to } = map.rangePoints(start, end);
   try {
     if (options?.focus !== false) root.focus({ preventScroll: true });
     const range = document.createRange();
-    range.setStart(s.node, s.offset);
-    range.setEnd(e.node, e.offset);
+    range.setStart(from.node, from.offset);
+    range.setEnd(to.node, to.offset);
     const selection = window.getSelection();
     if (!selection) return false;
     selection.removeAllRanges();

@@ -315,12 +315,10 @@ export class LiveProofreader {
 
   private buildDomRange(start: number, end: number, map: ReturnType<typeof getPlainTextMap>): Range | null {
     try {
-      const s = map.pointAt(start);
-      const e = map.pointAt(end);
-      if (!s || !e) return null;
+      const { from, to } = map.rangePoints(start, end);
       const range = document.createRange();
-      range.setStart(s.node, s.offset);
-      range.setEnd(e.node, e.offset);
+      range.setStart(from.node, from.offset);
+      range.setEnd(to.node, to.offset);
       return range;
     } catch {
       return null;

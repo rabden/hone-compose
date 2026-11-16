@@ -272,3 +272,43 @@ test("consecutive-run detection counts a word flagged through attached punctuati
   assert.equal(hasConsecutiveSpellingErrors(issues, text), true);
   assert.equal(hasConsecutiveSpellingErrors(issues, text, 6), false);
 });
+
+test("readability lints are dropped and suggestionless lints do not shadow concrete fixes", () => {
+  const text = "so this is a long sentence with a tset error";
+  const issues = harperLintsToIssues(
+    [
+      lint({
+        span: { start: 0, end: text.length },
+        lintKind: "Readability",
+        message: "This sentence is long.",
+        suggestions: [],
+      }),
+      lint({
+        span: { start: 0, end: 10 },
+        lintKind: "Style",
+        message: "Style note.",
+        suggestions: [],
+      }),
+      lint({
+        span: { start: 0, end: 2 },
+        lintKind: "Capitalization",
+        message: "Capitalize `so`.",
+        suggestions: [{ kind: 0, replacementText: "So" }],
+      }),
+      lint({
+        span: { start: 34, end: 38 },
+        lintKind: "Spelling",
+        suggestions: [{ kind: 0, replacementText: "test" }],
+      }),
+    ],
+    text,
+  );
+
+  assert.deepEqual(
+    issues.map((i) => ({ text: text.slice(i.start, i.end), category: i.category, fixes: i.fixes.length })),
+    [
+      { text: "so", category: "Capitalization", fixes: 1 },
+      { text: "tset", category: "Spelling", fixes: 1 },
+    ],
+  );
+});

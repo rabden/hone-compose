@@ -61,9 +61,9 @@ export function SuggestionCard({
       }}
     >
       {issue.fixes.length === 0 ? (
-        <span className="px-2 py-2 text-[11px] italic text-muted-foreground/70">
-          No suggestions
-        </span>
+        <p className="px-2 py-1.5 text-[11px] leading-snug text-muted-foreground">
+          {issue.message || "No suggestions"}
+        </p>
       ) : (
         <div className="flex max-h-56 flex-col overflow-y-auto">
           {issue.fixes.map((fix, i) => (

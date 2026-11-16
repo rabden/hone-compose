@@ -65,7 +65,6 @@ const CATEGORY_NAMES: Record<string, string> = {
   wordchoice: "Word choice",
   redundancy: "Repetition",
   repetition: "Repetition",
-  readability: "Style",
   enhancement: "Style",
   style: "Style",
   regionalism: "Usage",
@@ -103,19 +102,27 @@ export function ignoreKey(issue: Pick<ProofreadIssue, "kind" | "message">, flagg
 
 /**
  * Convert raw Harper lints into display issues:
+ * - drop Readability lints (e.g. long-sentence warnings)
  * - clamp spans to the text and drop empty ones
- * - sort spelling first (a misspelling wins when rules flag the same words)
+ * - sort spelling first, then concrete grammar/usage; at the same start offset,
+ *   prefer actionable lints with suggestions and narrower spans
  * - drop lints overlapping an already-taken span
  * - map suggestions to labeled fixes, dedupe, cap at 6
  */
 export function harperLintsToIssues(lints: RawLint[], text: string): ProofreadIssue[] {
   const len = text.length;
-  const sorted = [...lints].sort((a, b) => {
-    const aSpelling = a.lintKind.toLowerCase() === "spelling" ? 0 : 1;
-    const bSpelling = b.lintKind.toLowerCase() === "spelling" ? 0 : 1;
-    if (aSpelling !== bSpelling) return aSpelling - bSpelling;
-    return a.span.start - b.span.start;
-  });
+  const sorted = lints
+    .filter((lint) => lint.lintKind.toLowerCase() !== "readability")
+    .sort((a, b) => {
+      const aSpelling = a.lintKind.toLowerCase() === "spelling" ? 0 : 1;
+      const bSpelling = b.lintKind.toLowerCase() === "spelling" ? 0 : 1;
+      if (aSpelling !== bSpelling) return aSpelling - bSpelling;
+      if (a.span.start !== b.span.start) return a.span.start - b.span.start;
+      const aHasFixes = a.suggestions.length > 0 ? 0 : 1;
+      const bHasFixes = b.suggestions.length > 0 ? 0 : 1;
+      if (aHasFixes !== bHasFixes) return aHasFixes - bHasFixes;
+      return (a.span.end - a.span.start) - (b.span.end - b.span.start);
+    });
 
   const taken: { start: number; end: number }[] = [];
   const out: ProofreadIssue[] = [];

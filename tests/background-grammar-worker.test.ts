@@ -343,3 +343,22 @@ test("a run of consecutive misspellings suppresses romanized text even when dete
     await (await background.getLinter()).dispose();
   }
 });
+
+test("long sentences (41+ words) do not suppress spelling or capitalization issues", { timeout: 10000 }, async (t) => {
+  stubChrome(t);
+  const background = await freshBackground();
+  try {
+    const longRunOn =
+      "so I bought them and at first they were at low charge weren’t pairing with the reciever, " +
+      "charged them all up then they connected fine the reciever and transmitter both connected " +
+      "but only one transmitter connects other just stays open and blinks light red green.";
+    const issues = await background.lintForIssues(longRunOn);
+    assert.equal(issues.some((i) => i.category === "Style" && i.start === 0 && i.end === longRunOn.length), false);
+    const flagged = issues.map((i) => longRunOn.slice(i.start, i.end));
+    assert.ok(flagged.includes("so"), `expected capitalization lint on "so", got ${JSON.stringify(flagged)}`);
+    assert.equal(flagged.filter((w) => w === "reciever").length, 2);
+    assert.ok(issues.every((i) => i.fixes.length > 0));
+  } finally {
+    await (await background.getLinter()).dispose();
+  }
+});

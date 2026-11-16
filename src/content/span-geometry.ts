@@ -72,11 +72,10 @@ export function getSpansClientRects(
   // All writes happen before the first range read, avoiding per-issue layout.
   return spans.map(({ start, end }) => {
     if (end <= start || start < 0 || end > map.text.length) return [];
-    const s = map.pointAt(start);
-    const e = map.pointAt(end);
+    const { from, to } = map.rangePoints(start, end);
     const range = document.createRange();
-    range.setStart(s.node, s.offset);
-    range.setEnd(e.node, e.offset);
+    range.setStart(from.node, from.offset);
+    range.setEnd(to.node, to.offset);
     return Array.from(range.getClientRects()).flatMap((rect) => {
       const left = Math.max(rect.left, clip?.left ?? rect.left);
       const right = Math.min(rect.right, clip?.right ?? rect.right);

@@ -3,10 +3,11 @@
  */
 
 import {
-  domPointFromOffset,
+  domRangePoints,
   extractPlainText,
   offsetFromDomPoint,
   selectPlainTextRange,
+  type PointAffinity,
 } from "./plain-text-dom";
 import {
   expectedTextAfterReplace,
@@ -126,14 +127,13 @@ function getStaticTargetRange(
   if (typeof StaticRange === "undefined") return [];
 
   try {
-    const startPair = domPointFromOffset(root, Math.max(0, start));
-    const endPair = domPointFromOffset(root, Math.max(0, end));
+    const { from, to } = domRangePoints(root, Math.max(0, start), Math.max(0, end));
     return [
       new StaticRange({
-        startContainer: startPair.node,
-        startOffset: startPair.offset,
-        endContainer: endPair.node,
-        endOffset: endPair.offset,
+        startContainer: from.node,
+        startOffset: from.offset,
+        endContainer: to.node,
+        endOffset: to.offset,
       }),
     ];
   } catch {
@@ -230,7 +230,18 @@ function getSlateTextLeaves(root: HTMLElement, editor: SlateEditor): SlateLeaf[]
   return leaves;
 }
 
-function getSlatePointFromOffset(leaves: SlateLeaf[], offset: number): SlatePoint | null {
+function getSlatePointFromOffset(
+  leaves: SlateLeaf[],
+  offset: number,
+  affinity?: PointAffinity,
+): SlatePoint | null {
+  if (affinity === "start") {
+    for (const leaf of leaves) {
+      if (offset >= leaf.startOffset && offset < leaf.endOffset) {
+        return { path: leaf.path, offset: offset - leaf.startOffset };
+      }
+    }
+  }
   for (const leaf of leaves) {
     if (offset >= leaf.startOffset && offset <= leaf.endOffset) {
       return { path: leaf.path, offset: offset - leaf.startOffset };
@@ -325,8 +336,8 @@ async function runSlateTransaction(root: HTMLElement, tx: TextTransaction): Prom
   if (!(await prepareDomSelection(root, tx)) || !selectionMatches(root, tx)) return false;
   const leaves = getSlateTextLeaves(root, editor);
   if (!leaves) return false;
-  const anchor = getSlatePointFromOffset(leaves, tx.start);
-  const focus = getSlatePointFromOffset(leaves, tx.end);
+  const anchor = getSlatePointFromOffset(leaves, tx.start, tx.end > tx.start ? "start" : undefined);
+  const focus = getSlatePointFromOffset(leaves, tx.end, tx.end > tx.start ? "end" : undefined);
   if (!anchor || !focus) return false;
   const selection = { anchor, focus };
   if (typeof editor.apply === "function") {
